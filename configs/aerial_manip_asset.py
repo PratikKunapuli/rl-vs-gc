@@ -9,9 +9,9 @@ from utils.assets import MODELS_PATH
 AERIAL_MANIPULATOR_CFG = ArticulationCfg(
     prim_path="{ENV_REGEX_NS}/Robot",
     spawn=sim_utils.UsdFileCfg(
-        usd_path=f"{MODELS_PATH}/aerialmanipulator.usd",
+        usd_path=f"{MODELS_PATH}/aerial_manipulator.usd",
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
-            disable_gravity=True,
+            disable_gravity=False,
             max_depenetration_velocity=10.0,
             enable_gyroscopic_forces=True,
         ),
@@ -28,23 +28,24 @@ AERIAL_MANIPULATOR_CFG = ArticulationCfg(
         pos=(0.0, 0.0, 0.5),
         # Default joint positions and velocities is 0.0
     ),
-    actuators={
-        # "base": ImplicitActuatorCfg(
-        #     joint_names_expr=[".*"],
-        #     stiffness=0.0,
-        #     damping=0.0,
-        # ),
+
+    # Available joints: joint1, joint2
+    actuators={ 
         "shoulder": IdealPDActuatorCfg( # Stiffness, damping, armature, friction need to be set. 
             joint_names_expr=["joint1"],
-            stiffness=0.01,
-            damping=0.01,
+            effort_limit=0.9,
+            velocity_limit=20.0,
+            stiffness=0.0,
+            damping=0.0,
             armature=0.0,
             friction=0.0,
         ),
         "wrist": IdealPDActuatorCfg( # Stiffness, damping, armature, friction need to be set. 
             joint_names_expr=["joint2"],
-            stiffness=0.01,
-            damping=0.01,
+            effort_limit=0.1,
+            velocity_limit=10.0,
+            stiffness=0.0,
+            damping=0.0,
             armature=0.0,
             friction=0.0,
         ),

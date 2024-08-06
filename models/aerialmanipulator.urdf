@@ -487,7 +487,7 @@ One or more components have overridden mass properties:
   </joint>
 
 
-  <transmission name="joint2">
+  <!-- <transmission name="joint2">
     <type>transmission_interface/SimpleTransmission</type>
     <joint name="joint2">
       <hardwareInterface>EffortJointInterface</hardwareInterface>
@@ -507,10 +507,10 @@ One or more components have overridden mass properties:
       <mechanicalReduction>1</mechanicalReduction>
       <hardwareInterface>EffortJointInterface</hardwareInterface>
     </actuator>
-  </transmission>
+  </transmission> -->
 
 
-  <joint name="jointend" type="fixed">
+  <joint name="jointend" type="fixed" dont_collapse="true">
     <parent link="endeffector"/>
     <child link="link2"/>
     <origin rpy="-1.57 0 0" xyz="0 0 0"/>
@@ -611,7 +611,7 @@ One or more components have overridden mass properties:
 
 
 
-  <joint name="motor1" type="fixed" >
+  <joint name="motor1" type="fixed">
     <parent link="vehicle"/>
     <child link="motor1"/>
     <origin xyz=".09057 .084212 .004" rpy="0 0 0" />
