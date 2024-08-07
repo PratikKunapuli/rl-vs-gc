@@ -5,6 +5,7 @@ setup(
     version='1.0',
     packages=find_packages(),
     install_requires=[
-        # Add any dependencies your package requires
+        'gymnasium',
+        'torch'
     ],
 )

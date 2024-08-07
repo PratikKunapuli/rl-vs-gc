@@ -133,7 +133,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         # Robot specific data
         self._body_id = self._robot.find_bodies("vehicle")[0]
         self._ee_id = self._robot.find_bodies("endeffector")[0] # also the root of the system
-        self._joint_ids = self.robots.find_joints(".*joint.*")[0]
+        self._joint_ids = self._robot.find_joints(".*joint.*")[0]
         self._total_mass = self._robot.root_physx_view.get_masses().sum()
         self._gravity_magnitude = torch.tensor(self.cfg.sim.gravity, device=self.device).norm()
 
@@ -145,7 +145,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         self.set_debug_vis(self.cfg.debug_vis)
 
     def _pre_physics_step(self, actions: torch.Tensor):
-        self._actions = actions.clone().clamp(-1.0, 1.0) # clamp the actions to [-1, 1]
+        self._actions = actions.clone().clamp(-1.0, 1.0).to(self.device) # clamp the actions to [-1, 1]
 
         # Need to compute joint torques, body forces, and body moments
         # TODO: Implement pre-physics step
@@ -168,7 +168,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         Apply the propellor forces/moments to the body.
         """
         self._robot.set_joint_effort_target(self._joint_torques, joint_ids=self._joint_ids)
-        self._robot.set_external_force_and_torque(self._body_forces, self._body_moment, body_id=self._body_id)
+        self._robot.set_external_force_and_torque(self._body_forces, self._body_moment, body_ids=self._body_id)
 
     def _get_observations(self) -> torch.Dict[str, torch.Tensor | torch.Dict[str, torch.Tensor]]:
         """
@@ -189,22 +189,16 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         joint_pos = self._robot.data.joint_pos
         joint_vel = self._robot.data.joint_vel
 
-        # Update frame positions for debug visualization
-        self._frame_positions[:, 0] = self._robot.data.root_pos_w.clone()
-        self._frame_positions[:, 1] = self._desired_pos_w.clone()
-        self._frame_orientations[:, 0] = self._robot.data.root_quat_w.clone()
-        self._frame_orientations[:, 1] = self._desired_ori_w.clone()
-
         obs = torch.cat(
             [
-                pos_error_b,                    # (num_envs, 3)
-                matrix_from_quat(ori_error_b),  # (num_envs, 9)
-                lin_vel_b,                      # (num_envs, 3)
-                ang_vel_b,                      # (num_envs, 3)
-                joint_pos,                      # (num_envs, num_joints) = (num_envs, 2)
-                joint_vel                       # (num_envs, num_joints) = (num_envs, 2)
+                pos_error_b,                                # (num_envs, 3)
+                matrix_from_quat(ori_error_b).flatten(-2),  # (num_envs, 9)
+                lin_vel_b,                                  # (num_envs, 3)
+                ang_vel_b,                                  # (num_envs, 3)
+                joint_pos,                                  # (num_envs, num_joints) = (num_envs, 2)
+                joint_vel                                   # (num_envs, num_joints) = (num_envs, 2)
             ],
-            dim=-1                              # (num_envs, 22)
+            dim=-1                                          # (num_envs, 22)
         )
         return {"policy": obs}
     
@@ -231,7 +225,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
             "endeffector_ang_vel": ang_vel_error * self.cfg.ang_vel_reward_scale * self.step_dt,
             "joint_vel": joint_vel_error * self.cfg.joint_vel_reward_scale * self.step_dt,
         }
-        reward = torch.sum(torch.stack(list(reward.values())), dim=0)
+        reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
 
         # Logging
         for key, value in rewards.items():
@@ -280,7 +274,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         # Sample new goal position and orientation
         self._desired_pos_w[env_ids, :2] = torch.zeros_like(self._desired_pos_w[env_ids, :2]).uniform_(-2.0, 2.0)
         self._desired_pos_w[env_ids, :2] += self._terrain.env_origins[env_ids, :2]
-        self._desired_pos_w[env_ids, 2] = torch.zeros_like(self._desired_pos_w[env_ids, 2]).uniform(0.5, 2.0)
+        self._desired_pos_w[env_ids, 2] = torch.zeros_like(self._desired_pos_w[env_ids, 2]).uniform_(0.5, 2.0)
         self._desired_ori_w[env_ids] = random_orientation(env_ids.size(0), device=self.device)
 
         # Reset Robot state
@@ -325,4 +319,9 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
 
     def _debug_vis_callback(self, event):
         # update the markers
-        self.frame_visualizer.visualize(self._frame_positions, self._frame_orientations)
+        # Update frame positions for debug visualization
+        self._frame_positions[:, 0] = self._robot.data.root_pos_w
+        self._frame_positions[:, 1] = self._desired_pos_w
+        self._frame_orientations[:, 0] = self._robot.data.root_quat_w
+        self._frame_orientations[:, 1] = self._desired_ori_w
+        self.frame_visualizer.visualize(self._frame_positions.flatten(0, 1), self._frame_orientations.flatten(0,1))

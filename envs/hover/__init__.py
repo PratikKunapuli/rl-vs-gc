@@ -9,6 +9,7 @@ Aerial Manipulator environment for hovering.
 
 import gymnasium as gym
 
+from . import hover_env
 from .hover_env import AerialManipulatorHoverEnv, AerialManipulatorHoverEnvCfg
 from . import agents
 
@@ -18,7 +19,7 @@ from . import agents
 
 gym.register(
     id="Isaac-AerialManipulator-Hover-v0",
-    entry_point = "hover.hover_env:AerialManipulatorHoverEnv",
+    entry_point = "envs.hover.hover_env:AerialManipulatorHoverEnv",
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": AerialManipulatorHoverEnvCfg,

@@ -11,14 +11,14 @@ AERIAL_MANIPULATOR_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
         usd_path=f"{MODELS_PATH}/aerial_manipulator.usd",
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
-            disable_gravity=False,
+            disable_gravity=True,
             max_depenetration_velocity=10.0,
             enable_gyroscopic_forces=True,
         ),
         articulation_props=sim_utils.ArticulationRootPropertiesCfg(
             enabled_self_collisions=False,
             solver_position_iteration_count=4,
-            solver_velocity_iteration_count=0,
+            solver_velocity_iteration_count=0, 
             sleep_threshold=0.005,
             stabilization_threshold=0.001,
         ),
@@ -33,8 +33,8 @@ AERIAL_MANIPULATOR_CFG = ArticulationCfg(
     actuators={ 
         "shoulder": IdealPDActuatorCfg( # Stiffness, damping, armature, friction need to be set. 
             joint_names_expr=["joint1"],
-            effort_limit=0.9,
-            velocity_limit=20.0,
+            effort_limit=0.6,
+            velocity_limit=float(1e9),
             stiffness=0.0,
             damping=0.0,
             armature=0.0,
@@ -42,8 +42,8 @@ AERIAL_MANIPULATOR_CFG = ArticulationCfg(
         ),
         "wrist": IdealPDActuatorCfg( # Stiffness, damping, armature, friction need to be set. 
             joint_names_expr=["joint2"],
-            effort_limit=0.1,
-            velocity_limit=10.0,
+            effort_limit=0.3,
+            velocity_limit=float(1e9),
             stiffness=0.0,
             damping=0.0,
             armature=0.0,
