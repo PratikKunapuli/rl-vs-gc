@@ -58,14 +58,16 @@ def main():
     env = gym.wrappers.RecordVideo(env, **video_kwargs)
 
 
+    import code; code.interact(local=locals())
+
     obs_dict, info = env.reset()
     done = False
     
     while simulation_app.is_running():
         obs_tensor = obs_dict["policy"]
         # action = env.action_space.sample()
-        # action = torch.tensor([(-1.0/3.0), 0.0, 0.0, 0.0, 0.0, 0.0]) # nominal hover action with gravity enabled
-        action = torch.tensor([-1.0, 0.0, 0.0, 1.0, 0.0, 0.0]) # nominal hover action with gravity disabled.
+        action = torch.tensor([(-1.0/3.0), 0.0, 0.0, 0.0, 0.0, 0.0]) # nominal hover action with gravity enabled
+        # action = torch.tensor([-1.0, 0.0, 0.0, 0.0, 0.0, 1.0]) # nominal hover action with gravity disabled.
 
 
         action = torch.tile(action, (args_cli.num_envs, 1))

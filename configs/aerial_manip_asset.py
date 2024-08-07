@@ -11,7 +11,7 @@ AERIAL_MANIPULATOR_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
         usd_path=f"{MODELS_PATH}/aerial_manipulator.usd",
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
-            disable_gravity=True,
+            disable_gravity=False,
             max_depenetration_velocity=10.0,
             enable_gyroscopic_forces=True,
         ),

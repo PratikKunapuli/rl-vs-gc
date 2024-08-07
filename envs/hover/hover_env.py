@@ -85,10 +85,11 @@ class AerialManipulatorHoverEnvCfg(DirectRLEnvCfg):
     robot: ArticulationCfg = AERIAL_MANIPULATOR_CFG.replace(prim_path="/World/envs/env_.*/Robot")
 
     # action scaling
-    moment_scale = 0.01
+    moment_scale_xy = 1.0
+    moment_scale_z = 0.05
     thrust_to_weight = 3.0
-    shoulder_torque_scalar = 0.9
-    wrist_torque_scalar = 0.1
+    shoulder_torque_scalar = robot.actuators["shoulder"].effort_limit
+    wrist_torque_scalar = robot.actuators["wrist"].effort_limit
 
     # reward scales
     lin_vel_reward_scale = -0.05
@@ -107,8 +108,8 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         # Actions / Actuation interfaces
         self._actions = torch.zeros(self.num_envs, self.cfg.num_actions, device=self.device)
         self._joint_torques = torch.zeros(self.num_envs, self.cfg.num_joints, device=self.device)
-        self._body_forces = torch.zeros(self.num_envs, 3, device=self.device)
-        self._body_moment = torch.zeros(self.num_envs, 3, device=self.device)
+        self._body_forces = torch.zeros(self.num_envs, 1, 3, device=self.device)
+        self._body_moment = torch.zeros(self.num_envs, 1, 3, device=self.device)
 
         # Goal State
         self._desired_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
@@ -132,6 +133,8 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
 
         # Robot specific data
         self._body_id = self._robot.find_bodies("vehicle")[0]
+        assert len(self._body_id) == 1, "There should be only one body with the name 'vehicle'"
+
         self._ee_id = self._robot.find_bodies("endeffector")[0] # also the root of the system
         self._joint_ids = self._robot.find_joints(".*joint.*")[0]
         self._total_mass = self._robot.root_physx_view.get_masses().sum()
@@ -157,15 +160,16 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         # Action[3] = Body Z moment
         # Action[4] = Joint 1 Torque
         # Action[5] = Joint 2 Torque
-        self._body_forces[:, 2] = (self._actions[:, 0] + 1.0) / 2.0 * (self._total_mass * self._gravity_magnitude * self.cfg.thrust_to_weight)
-        self._body_moment[:, :] = self._actions[:, 1:4] * self.cfg.moment_scale
-        self._joint_torques[:, 0] = self._actions[:, 4] * self.cfg.shoulder_torque_scalar
-        self._joint_torques[:, 1] = self._actions[:, 5] * self.cfg.wrist_torque_scalar
+        self._body_forces[:, 0, 2] = (self._actions[:, 0] + 1.0) / 2.0 * (self._total_mass * self._gravity_magnitude * self.cfg.thrust_to_weight)
+        self._body_moment[:, 0, :2] = self._actions[:, 1:3] * self.cfg.moment_scale_xy
+        self._body_moment[:, 0, 2] = self._actions[:, 3] * self.cfg.moment_scale_z
+        self._joint_torques[:, 1] = self._actions[:, 4] * self.cfg.shoulder_torque_scalar # joint IDs are flipped
+        self._joint_torques[:, 0] = self._actions[:, 5] * self.cfg.wrist_torque_scalar
 
     def _apply_action(self):
         """
         Apply the torques directly to the joints based on the actions.
-        Apply the propellor forces/moments to the body.
+        Apply the propellor forces/moments to the vehicle body.
         """
         self._robot.set_joint_effort_target(self._joint_torques, joint_ids=self._joint_ids)
         self._robot.set_external_force_and_torque(self._body_forces, self._body_moment, body_ids=self._body_id)
@@ -239,7 +243,10 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         """
 
         # Check if end effector or body has collided with the ground
-        died = torch.logical_or(self._robot.data.root_pos_w[:, 2] < 0.0, self._robot.data.body_state_w[:, self._body_id, 2] < 0.0)
+        died = torch.logical_or(self._robot.data.root_pos_w[:, 2] < 0.0, self._robot.data.body_state_w[:, self._body_id, 2].squeeze() < 0.0)
+
+        # Check if the robot is too high
+        died = torch.logical_or(died, self._robot.data.root_pos_w[:, 2] > 10.0)
 
         time_out = self.episode_length_buf >= self.max_episode_length - 1
         return died, time_out
