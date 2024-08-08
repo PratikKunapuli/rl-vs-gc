@@ -166,3 +166,5 @@ cython_debug/
 
 # Log files
 /logs
+rl/logs
+rl/runs
