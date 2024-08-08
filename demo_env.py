@@ -18,13 +18,13 @@ parser.add_argument("--seed", type=int, default=None, help="Seed used for the en
 parser.add_argument("--max_iterations", type=int, default=None, help="RL Policy training iterations.")
 
 args_cli = parser.parse_args()
-# always enable cameras to record video
-if args_cli.video:
-    args_cli.enable_cameras = True
+
 
 # simulation_app = SimulationApp(vars(args_cli))
 
-args_cli.headless=False
+# args_cli.headless=False
+args_cli.headless=True
+args_cli.enable_cameras=True
 # Launch app
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
@@ -51,14 +51,13 @@ def main():
 
     video_kwargs = {
         "video_folder": "videos",
-        "step_trigger": lambda step: step == 0,
-        "video_length": args_cli.video_length,
-        "name_prefix": "demo_env"
+        # "step_trigger": lambda step: step == 0,
+        "episode_trigger": lambda episode: episode == 0,
+        # "video_length": args_cli.video_length,
+        "name_prefix": "demo_env_multi_headless"
     }
     env = gym.wrappers.RecordVideo(env, **video_kwargs)
 
-
-    import code; code.interact(local=locals())
 
     obs_dict, info = env.reset()
     done = False
@@ -70,7 +69,7 @@ def main():
         # action = torch.tensor([-1.0, 0.0, 0.0, 0.0, 0.0, 1.0]) # nominal hover action with gravity disabled.
 
 
-        action = torch.tile(action, (args_cli.num_envs, 1))
+        action = torch.tile(action, (args_cli.num_envs, 1)).to(obs_tensor.device)
 
         obs_dict, reward, terminated, truncated, info = env.step(action)
 

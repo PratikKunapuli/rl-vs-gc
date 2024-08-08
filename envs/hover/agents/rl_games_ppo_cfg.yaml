@@ -26,7 +26,7 @@ params:
           val: 0
         fixed_sigma: True
     mlp:
-      units: [64, 64]
+      units: [256, 256]
       activation: elu
       d2rl: False
 
@@ -39,8 +39,8 @@ params:
   load_path: '' # path to the checkpoint to load
 
   config:
-    name: quadcopter_direct
-    env_name: rlgpu
+    name: aerial_manipulator_hover_ctbm
+    env_name: Isaac-AerialManipulator-Hover-v0
     device: 'cuda:0'
     device_name: 'cuda:0'
     multi_gpu: False

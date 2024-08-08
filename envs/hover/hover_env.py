@@ -137,7 +137,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
 
         self._ee_id = self._robot.find_bodies("endeffector")[0] # also the root of the system
         self._joint_ids = self._robot.find_joints(".*joint.*")[0]
-        self._total_mass = self._robot.root_physx_view.get_masses().sum()
+        self._total_mass = self._robot.root_physx_view.get_masses()[0].sum()
         self._gravity_magnitude = torch.tensor(self.cfg.sim.gravity, device=self.device).norm()
 
         # Visualization marker data
@@ -148,7 +148,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         self.set_debug_vis(self.cfg.debug_vis)
 
     def _pre_physics_step(self, actions: torch.Tensor):
-        self._actions = actions.clone().clamp(-1.0, 1.0).to(self.device) # clamp the actions to [-1, 1]
+        self._actions = actions.clone().clamp(-1.0, 1.0) # clamp the actions to [-1, 1]
 
         # Need to compute joint torques, body forces, and body moments
         # TODO: Implement pre-physics step
@@ -165,6 +165,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         self._body_moment[:, 0, 2] = self._actions[:, 3] * self.cfg.moment_scale_z
         self._joint_torques[:, 1] = self._actions[:, 4] * self.cfg.shoulder_torque_scalar # joint IDs are flipped
         self._joint_torques[:, 0] = self._actions[:, 5] * self.cfg.wrist_torque_scalar
+
 
     def _apply_action(self):
         """
@@ -246,7 +247,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         died = torch.logical_or(self._robot.data.root_pos_w[:, 2] < 0.0, self._robot.data.body_state_w[:, self._body_id, 2].squeeze() < 0.0)
 
         # Check if the robot is too high
-        died = torch.logical_or(died, self._robot.data.root_pos_w[:, 2] > 10.0)
+        # died = torch.logical_or(died, self._robot.data.root_pos_w[:, 2] > 10.0)
 
         time_out = self.episode_length_buf >= self.max_episode_length - 1
         return died, time_out
@@ -261,12 +262,14 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
 
         # Logging the episode sums
         final_distance_to_goal = torch.linalg.norm(self._desired_pos_w[env_ids] - self._robot.data.root_pos_w[env_ids], dim=1).mean()
+        final_ori_error_to_goal = quat_error_magnitude(self._desired_ori_w[env_ids], self._robot.data.root_quat_w[env_ids]).mean()
         extras = dict()
         for key in self._episode_sums.keys():
             episodic_sum_avg = self._episode_sums[key][env_ids].mean()
             extras["Episode Reward/" + key] = episodic_sum_avg / self.max_episode_length_s
             self._episode_sums[key][env_ids] = 0.0
         extras["Metrics/Final Distance to Goal"] = final_distance_to_goal
+        extras["Metrics/Final Orientation Error to Goal"] = final_ori_error_to_goal
         extras["Episode Termination/died"] = torch.count_nonzero(self.reset_terminated[env_ids]).item()
         extras["Episode Termination/time_out"] = torch.count_nonzero(self.reset_time_outs[env_ids]).item()
         self.extras["log"] = dict()
@@ -289,9 +292,9 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         joint_vel = self._robot.data.default_joint_vel[env_ids]
         default_root_state = self._robot.data.default_root_state[env_ids]
         default_root_state[:, :3] += self._terrain.env_origins[env_ids]
-        self._robot.write_joint_state_to_sim(joint_pos, joint_vel)
-        self._robot.write_root_pose_to_sim(default_root_state[:, :7])
-        self._robot.write_root_velocity_to_sim(default_root_state[:, 7:])
+        self._robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
+        self._robot.write_root_pose_to_sim(default_root_state[:, :7], env_ids=env_ids)
+        self._robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids=env_ids)
 
     def _setup_scene(self):
         self._robot = Articulation(self.cfg.robot)
