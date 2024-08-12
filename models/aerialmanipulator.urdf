@@ -472,13 +472,15 @@ One or more components have overridden mass properties:
   <!-- Physical Joints -->
 
   <joint name="joint1" type="continuous">
+  <!-- <joint name="joint1" type="fixed" dont_collapse="true"> -->
     <parent link="link1"/>
     <child link="vehicle"/>
     <axis rpy="0 0 0" xyz="0 1 0"/>
     <origin rpy="0 1.57079632679 0" xyz="0 0 -.1607"/>
     <limit velocity="1e9" effort=".9" lower="-3.0" upper="3.0" />
   </joint>
-  <joint name="joint2" type="continuous">
+  <!-- <joint name="joint2" type="continuous"> -->
+  <joint name="joint2" type="fixed" dont_collapse="true">
     <parent link="link2"/>
     <child link="link1"/>
     <origin rpy="0 0 -1.57079632679" xyz=" 0 0 -.0625"/>
@@ -611,49 +613,53 @@ One or more components have overridden mass properties:
 
 
 
-  <joint name="motor1" type="fixed">
+  <joint name="motor1" type="fixed" dont_collapse="true">
     <parent link="vehicle"/>
     <child link="motor1"/>
     <origin xyz=".09057 .084212 .004" rpy="0 0 0" />
   </joint>
-  <joint name="motor2" type="fixed">
+  <joint name="motor2" type="fixed" dont_collapse="true">
     <parent link="vehicle"/>
     <child link="motor2"/>
     <origin xyz="-.09057 .084212 .004" rpy="0 0 0" />
   </joint>
-  <joint name="motor3" type="fixed">
+  <joint name="motor3" type="fixed" dont_collapse="true">
     <parent link="vehicle"/>
     <child link="motor3"/>
     <origin xyz="-.09057 -.084212 .004" rpy="0 0 0" />
   </joint>
-  <joint name="motor4" type="fixed">
+  <joint name="motor4" type="fixed" dont_collapse="true">
     <parent link="vehicle"/>
     <child link="motor4"/>
     <origin xyz=".09057 -.084212 .004" rpy="0 0 0" />
   </joint>
 
-  <joint name="prop1" type="fixed">
+  <joint name="prop1" type="continuous">
     <parent link="motor1"/>
     <child link="prop1"/>
     <origin xyz="0 0 .016" rpy="0 0 0"/>
+    <axis rpy="0 0 0" xyz="0 0 1"/>
     <propeller kf="1e-1" km="1e-2" min="-100" max="100"/>
   </joint>
-  <joint name="prop2" type="fixed">
+  <joint name="prop2" type="continuous">
     <parent link="motor2"/>
     <child link="prop2"/>
     <origin xyz="0 0 .016" rpy="0 0 0"/>
+    <axis rpy="0 0 0" xyz="0 0 1"/>
     <propeller kf="1e-1" km="-1e-2" min="-100" max="100"/>
   </joint>
-  <joint name="prop3" type="fixed">
+  <joint name="prop3" type="continuous">
     <parent link="motor3"/>
     <child link="prop3"/>
     <origin xyz="0 0 .016" rpy="0 0 0"/>
+    <axis rpy="0 0 0" xyz="0 0 1"/>
     <propeller kf="1e-1" km="1e-2" min="-100" max="100"/>
   </joint>
-  <joint name="prop4" type="fixed">
+  <joint name="prop4" type="continuous">
     <parent link="motor4"/>
     <child link="prop4"/>
     <origin xyz="0 0 .016" rpy="0 0 0"/>
+    <axis rpy="0 0 0" xyz="0 0 1"/>
     <propeller kf="1e-1" km="-1e-2" min="-100" max="100"/>
   </joint>
 

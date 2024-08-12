@@ -22,8 +22,8 @@ args_cli = parser.parse_args()
 
 # simulation_app = SimulationApp(vars(args_cli))
 
-# args_cli.headless=False
-args_cli.headless=True
+args_cli.headless=False
+# args_cli.headless=True
 args_cli.enable_cameras=True
 # Launch app
 app_launcher = AppLauncher(args_cli)
@@ -39,11 +39,24 @@ import envs
 
 def main():
 
+    # Tasks are: 
+    # "Isaac-AerialManipulator-2DOF-Hover-v0"
+    # "Isaac-AerialManipulator-1DOF-Hover-v0"
+    # "Isaac-AerialManipulator-0DOF-Hover-v0"
+
+    # Can also specify the task body
+    # env_cfg.task_body = "root" or "vehicle" or "endeffector"
+
+    # Can also specify the task goal
+    # env_cfg.task_goal = "rand" or "fixed" or "initial"
+
     env_cfg = parse_env_cfg(args_cli.task, use_gpu=not args_cli.cpu, num_envs= args_cli.num_envs, use_fabric=not args_cli.disable_fabric)
-    env_cfg.viewer.eye = (2.0, 1.0, 0.2)
-    env_cfg.viewer.lookat = (0.0, 0.0, 0.5)
+    env_cfg.viewer.eye = (2.0, 1.0, 4.5)
+    env_cfg.viewer.lookat = (0.0, 0.0, 5.0)
     env_cfg.viewer.origin_type = "env"
     env_cfg.viewer.env_index = 0
+
+    import code; code.interact(local=locals())
 
     print(env_cfg.robot.spawn)
 
@@ -61,11 +74,14 @@ def main():
 
     obs_dict, info = env.reset()
     done = False
+    # input("Press Enter to continue...")
     
     while simulation_app.is_running():
         obs_tensor = obs_dict["policy"]
         # action = env.action_space.sample()
-        action = torch.tensor([(-1.0/3.0), 0.0, 0.0, 0.0, 0.0, 0.0]) # nominal hover action with gravity enabled
+        # action = torch.zeros_like(torch.from_numpy(env.action_space.sample()))
+        # action[0]= -1.0/3.0 # nominal hover action with gravity enabled 
+        action = torch.tensor([-1.0/3.0, 0.0, 0.0, 0.0, 0.0, 0.0]) # nominal hover action with gravity enabled.
         # action = torch.tensor([-1.0, 0.0, 0.0, 0.0, 0.0, 1.0]) # nominal hover action with gravity disabled.
 
 

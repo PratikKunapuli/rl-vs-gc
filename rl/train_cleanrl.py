@@ -5,7 +5,7 @@ from omni.isaac.lab.app import AppLauncher
 parser = argparse.ArgumentParser(description="Train an RL agent with CleanRL. ")
 parser.add_argument("--video", action="store_true", default=False, help="Record videos during training.")
 parser.add_argument("--video_length", type=int, default=1000, help="Length of the recorded video (in steps).")
-parser.add_argument("--video_interval", type=int, default=2000, help="Interval between video recordings (in steps).")
+parser.add_argument("--video_interval", type=int, default=4000, help="Interval between video recordings (in steps).")
 parser.add_argument("--cpu", action="store_true", default=False, help="Use CPU pipeline.")
 parser.add_argument(
     "--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations."
@@ -18,6 +18,9 @@ parser.add_argument("--capture_video", action="store_true", default=False, help=
 parser.add_argument("--exp_name", type=str, default="cleanrl_test", help="Name of the experiment.")
 parser.add_argument("--anneal_lr", action="store_true", default=False, help="Anneal the learning rate.")
 parser.add_argument("--learning_rate", type=float, default=0.0026, help="Learning rate of the optimizer.")
+parser.add_argument("--total_timesteps", type=int, default=3e7, help="Total timesteps of the experiments.")
+parser.add_argument("--goal_task", type=str, default="rand", help="Goal task for the environment.")
+parser.add_argument("--frame", type=str, default="root", help="Frame of the task.")
 
 AppLauncher.add_app_launcher_args(parser)
 # parse the arguments
@@ -126,6 +129,8 @@ class Args:
     """the name of the task"""
     video: bool = True
     disable_fabric: bool = False
+    goal_task: str = "rand"
+    frame: str = "root"
 
 class RecordEpisodeStatisticsTorch(gym.Wrapper):
     def __init__(self, env, device):
@@ -256,13 +261,15 @@ def main():
 
 
     env_cfg = parse_env_cfg(
-        args.env_id, use_gpu=True, num_envs=args.num_envs, use_fabric=True
+        args_cli.task, use_gpu=True, num_envs=args.num_envs, use_fabric=True
     )
 
     # Any environment specific configuration goes here such as camera placement
+    env_cfg.goal_task = args.goal_task
+    env_cfg.task_body = args.frame
 
     # create environment
-    envs = gym.make(args.env_id, cfg=env_cfg, render_mode="rgb_array")
+    envs = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
 
     video_kwargs = {
         "video_folder": f"runs/{run_name}",
