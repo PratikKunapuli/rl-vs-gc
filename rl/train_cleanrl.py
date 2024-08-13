@@ -21,6 +21,7 @@ parser.add_argument("--learning_rate", type=float, default=0.0026, help="Learnin
 parser.add_argument("--total_timesteps", type=int, default=3e7, help="Total timesteps of the experiments.")
 parser.add_argument("--goal_task", type=str, default="rand", help="Goal task for the environment.")
 parser.add_argument("--frame", type=str, default="root", help="Frame of the task.")
+parser.add_argument("--sim_rate_hz", type=int, default=500, help="Simulation rate in Hz.")
 
 AppLauncher.add_app_launcher_args(parser)
 # parse the arguments
@@ -131,6 +132,7 @@ class Args:
     disable_fabric: bool = False
     goal_task: str = "rand"
     frame: str = "root"
+    sim_rate_hz: int = 500
 
 class RecordEpisodeStatisticsTorch(gym.Wrapper):
     def __init__(self, env, device):
@@ -251,6 +253,13 @@ def main():
         "|param|value|\n|-|-|\n%s" % ("\n".join([f"|{key}|{value}|" for key, value in vars(args).items()])),
     )
 
+    # Save args into a file
+    with open(f"runs/{run_name}/args.txt", "w") as f:
+        f.write(str(vars(args)))
+    
+    with open(f"runs/{run_name}/args_cli.txt", "w") as f:
+        f.write(str(args_cli))
+
     # TRY NOT TO MODIFY: seeding
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -265,8 +274,9 @@ def main():
     )
 
     # Any environment specific configuration goes here such as camera placement
-    env_cfg.goal_task = args.goal_task
-    env_cfg.task_body = args.frame
+    env_cfg.goal_task = args_cli.goal_task
+    env_cfg.task_body = args_cli.frame
+    env_cfg.sim_rate_hz = args_cli.sim_rate_hz
 
     # create environment
     envs = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")

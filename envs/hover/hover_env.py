@@ -14,9 +14,11 @@ from omni.isaac.lab.terrains import TerrainImporterCfg
 from omni.isaac.lab.utils import configclass
 from omni.isaac.lab.utils.assets import ISAAC_NUCLEUS_DIR
 from omni.isaac.lab.utils.math import subtract_frame_transforms, matrix_from_quat, quat_error_magnitude, random_orientation, quat_inv, quat_rotate_inverse, quat_mul
+from omni.isaac.lab_assets import CRAZYFLIE_CFG
 
 # Local imports
 from configs.aerial_manip_asset import AERIAL_MANIPULATOR_2DOF_CFG, AERIAL_MANIPULATOR_1DOF_CFG, AERIAL_MANIPULATOR_0DOF_CFG
+
 
 class AerialManipulatorEnvWindow(BaseEnvWindow):
     """Window manager for the Quadcopter environment."""
@@ -78,17 +80,20 @@ class AerialManipulatorHoverEnvBaseCfg(DirectRLEnvCfg):
     scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=2.5, replicate_physics=True)
 
     # action scaling
-    moment_scale_xy = 1.0
-    moment_scale_z = 0.05
+    # moment_scale_xy = 1.0
+    # moment_scale_z = 0.05
+    # thrust_to_weight = 3.0
+    moment_scale_xy = 0.5
+    moment_scale_z = 0.025
     thrust_to_weight = 3.0
 
     # reward scales
-    lin_vel_reward_scale = -0.1
-    ang_vel_reward_scale = -0.1 # -0.01
-    pos_distance_reward_scale = 0.0 #15.0
-    pos_error_reward_scale = -1.0
-    ori_error_reward_scale = -0.5
-    joint_vel_reward_scale = -0.01
+    lin_vel_reward_scale = -0.05 # -0.05
+    ang_vel_reward_scale = -0.01 # -0.01
+    pos_distance_reward_scale = 15.0 #15.0
+    pos_error_reward_scale = 0.0# -1.0
+    ori_error_reward_scale = 0.0 # -0.5
+    joint_vel_reward_scale = 0.0 # -0.01
 
     # Task condionionals for the environment - modifies the goal
     goal_cfg = "rand" # "rand", "fixed", or "initial"
@@ -99,6 +104,7 @@ class AerialManipulatorHoverEnvBaseCfg(DirectRLEnvCfg):
     goal_ori = None
 
     task_body = "root" # "root" or "endeffector" or "vehicle"
+    body_name = "vehicle"
 
 
 @configclass
@@ -141,6 +147,24 @@ class AerialManipulator0DOFHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
     # robot
     robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
 
+@configclass
+class CrazyflieHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
+    # env
+    num_actions = 4
+    num_joints = 0
+    num_observations = 18
+
+    moment_scale_xy = 0.01
+    moment_scale_z = 0.01
+    thrust_to_weight = 1.9
+
+    # robot
+    robot: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+
+    task_body = "vehicle"
+    body_name = "base"
+    
+
 
 class AerialManipulatorHoverEnv(DirectRLEnv):
     cfg: AerialManipulatorHoverEnvBaseCfg
@@ -176,7 +200,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
             assert self.cfg.goal_pos is not None and self.cfg.goal_ori is not None, "Goal position and orientation must be set for fixed goal task"
 
         # Robot specific data
-        self._body_id = self._robot.find_bodies("vehicle")[0]
+        self._body_id = self._robot.find_bodies(self.cfg.body_name)[0]
         assert len(self._body_id) == 1, "There should be only one body with the name 'vehicle'"
 
         self._ee_id = self._robot.find_bodies("endeffector")[0] # also the root of the system
@@ -206,8 +230,8 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         # Action[1] = Body X moment
         # Action[2] = Body Y moment
         # Action[3] = Body Z moment
-        # Action[4] = Joint 1 Torque
-        # Action[5] = Joint 2 Torque
+        # Action[4] = Joint 1 Torque if joint exists
+        # Action[5] = Joint 2 Torque if joint exists
         self._body_forces[:, 0, 2] = (self._actions[:, 0] + 1.0) / 2.0 * (self._total_mass * self._gravity_magnitude * self.cfg.thrust_to_weight)
         self._body_moment[:, 0, :2] = self._actions[:, 1:3] * self.cfg.moment_scale_xy
         self._body_moment[:, 0, 2] = self._actions[:, 3] * self.cfg.moment_scale_z
@@ -239,15 +263,15 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
             lin_vel_w = self._robot.data.root_lin_vel_w
             ang_vel_w = self._robot.data.root_ang_vel_w
         elif self.cfg.task_body == "endeffector":
-            base_pos = self._robot.data.body_pos_w[:, self._ee_id]
-            base_ori = self._robot.data.body_quat_w[:, self._ee_id]
+            base_pos = self._robot.data.body_pos_w[:, self._ee_id].squeeze()
+            base_ori = self._robot.data.body_quat_w[:, self._ee_id].squeeze()
             lin_vel_w = self._robot.data.root_lin_vel_w
             ang_vel_w = self._robot.data.root_ang_vel_w
         elif self.cfg.task_body == "vehicle":
-            base_pos = self._robot.data.body_pos_w[:, self._body_id]
-            base_ori = self._robot.data.body_quat_w[:, self._body_id]
-            lin_vel_w = self._robot.data.body_lin_vel_w[:, self._body_id]
-            ang_vel_w = self._robot.data.body_ang_vel_w[:, self._body_id]
+            base_pos = self._robot.data.body_pos_w[:, self._body_id].squeeze()
+            base_ori = self._robot.data.body_quat_w[:, self._body_id].squeeze()
+            lin_vel_w = self._robot.data.body_lin_vel_w[:, self._body_id].squeeze()
+            ang_vel_w = self._robot.data.body_ang_vel_w[:, self._body_id].squeeze()
         else:
             raise ValueError("Invalid task body: ", self.cfg.task_body)
 
@@ -299,15 +323,15 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
             lin_vel_w = self._robot.data.root_lin_vel_w
             ang_vel_w = self._robot.data.root_ang_vel_w
         elif self.cfg.task_body == "endeffector":
-            base_pos = self._robot.data.body_pos_w[:, self._ee_id]
-            base_ori = self._robot.data.body_quat_w[:, self._ee_id]
+            base_pos = self._robot.data.body_pos_w[:, self._ee_id].squeeze()
+            base_ori = self._robot.data.body_quat_w[:, self._ee_id].squeeze()
             lin_vel_w = self._robot.data.root_lin_vel_w
             ang_vel_w = self._robot.data.root_ang_vel_w
         elif self.cfg.task_body == "vehicle":
-            base_pos = self._robot.data.body_pos_w[:, self._body_id]
-            base_ori = self._robot.data.body_quat_w[:, self._body_id]
-            lin_vel_w = self._robot.data.body_lin_vel_w[:, self._body_id]
-            ang_vel_w = self._robot.data.body_ang_vel_w[:, self._body_id]
+            base_pos = self._robot.data.body_pos_w[:, self._body_id].squeeze()
+            base_ori = self._robot.data.body_quat_w[:, self._body_id].squeeze()
+            lin_vel_w = self._robot.data.body_lin_vel_w[:, self._body_id].squeeze()
+            ang_vel_w = self._robot.data.body_ang_vel_w[:, self._body_id].squeeze()
         else:
             raise ValueError("Invalid task body: ", self.cfg.task_body)
         
@@ -392,7 +416,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         if self.cfg.goal_cfg == "rand":
             self._desired_pos_w[env_ids, :2] = torch.zeros_like(self._desired_pos_w[env_ids, :2]).uniform_(-2.0, 2.0)
             self._desired_pos_w[env_ids, :2] += self._terrain.env_origins[env_ids, :2]
-            self._desired_pos_w[env_ids, 2] = torch.zeros_like(self._desired_pos_w[env_ids, 2]).uniform_(4.0, 6.0)
+            self._desired_pos_w[env_ids, 2] = torch.zeros_like(self._desired_pos_w[env_ids, 2]).uniform_(0.5, 1.5)
             self._desired_ori_w[env_ids] = random_orientation(env_ids.size(0), device=self.device)
         elif self.cfg.goal_cfg == "fixed":
             self._desired_pos_w[env_ids] = torch.tensor(self.cfg.goal_pos, device=self.device)

@@ -56,9 +56,9 @@ def design_scene():
     origins = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
     aerial_manipulator = Articulation(aerial_manipulator_cfg.replace(prim_path="/World/AerialManipulator/Robot.*"))
 
-    # crazyflie_cfg = CRAZYFLIE_CFG
-    # crazyflie_cfg.spawn.func("/World/Crazyflie/Robot_1", crazyflie_cfg.spawn, translation=(0.0, 0.0, 0.0))
-    # crazyflie = Articulation(CRAZYFLIE_CFG.replace(prim_path="/World/Crazyflie/Robot.*"))
+    crazyflie_cfg = CRAZYFLIE_CFG
+    crazyflie_cfg.spawn.func("/World/Crazyflie/Robot_1", crazyflie_cfg.spawn, translation=(0.0, 0.0, 0.0))
+    crazyflie = Articulation(CRAZYFLIE_CFG.replace(prim_path="/World/Crazyflie/Robot.*"))
 
     # Create Marker for visualization
     marker_cfg = VisualizationMarkersCfg(prim_path="/Visuals/Markers",
@@ -69,7 +69,8 @@ def design_scene():
             ),})
     marker = VisualizationMarkers(marker_cfg)
 
-    scene_entities = {"aerial_manipulator": aerial_manipulator, "marker": marker,}
+    # scene_entities = {"aerial_manipulator": aerial_manipulator, "marker": marker,}
+    scene_entities = {"aerial_manipulator": aerial_manipulator, "marker": marker, "crazyflie": crazyflie}
     return scene_entities, origins
 
 def main():
@@ -87,6 +88,7 @@ def main():
 
     aerial_manipulator = scene_entities["aerial_manipulator"]
     marker_frame = scene_entities["marker"]
+    crazyflie = scene_entities["crazyflie"]
 
     marker_location = torch.tensor([[0.0, 0.0, 0.5]], device=sim.device)
     marker_orientation = torch.tensor([[1.0, 0.0, 0.0, 0.0]], device=sim.device)

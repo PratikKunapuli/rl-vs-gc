@@ -10,7 +10,9 @@ Aerial Manipulator environment for hovering.
 import gymnasium as gym
 
 from . import hover_env
-from .hover_env import AerialManipulatorHoverEnv, AerialManipulator2DOFHoverEnvCfg, AerialManipulator1DOFHoverEnvCfg, AerialManipulator0DOFHoverEnvCfg
+from .hover_env import AerialManipulatorHoverEnv
+from .hover_env import AerialManipulator2DOFHoverEnvCfg, AerialManipulator1DOFHoverEnvCfg, AerialManipulator0DOFHoverEnvCfg
+from .hover_env import CrazyflieHoverEnvCfg
 from . import agents
 
 ##
@@ -49,6 +51,18 @@ gym.register(
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": AerialManipulator0DOFHoverEnvCfg,
+        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
+        "rsl_rl_cfg_entry_point": agents.rsl_rl_ppo_cfg.QuadcopterPPORunnerCfg,
+        "skrl_cfg_entry_point": f"{agents.__name__}:skrl_ppo_cfg.yaml",
+        "sb3_cfg_entry_point": f"{agents.__name__}:sb3_ppo_cfg.yaml"
+    },
+)
+
+gym.register(d="Isaac-Crazyflie-0DOF-Hover-v0",
+    entry_point = "envs.hover.hover_env:AerialManipulatorHoverEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": CrazyflieHoverEnvCfg,
         "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
         "rsl_rl_cfg_entry_point": agents.rsl_rl_ppo_cfg.QuadcopterPPORunnerCfg,
         "skrl_cfg_entry_point": f"{agents.__name__}:skrl_ppo_cfg.yaml",
