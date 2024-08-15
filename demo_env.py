@@ -67,7 +67,7 @@ def main():
         # "step_trigger": lambda step: step == 0,
         "episode_trigger": lambda episode: episode == 0,
         # "video_length": args_cli.video_length,
-        "name_prefix": "demo_env_multi_headless"
+        "name_prefix": "demo_env"
     }
     env = gym.wrappers.RecordVideo(env, **video_kwargs)
 
@@ -81,8 +81,10 @@ def main():
         # action = env.action_space.sample()
         # action = torch.zeros_like(torch.from_numpy(env.action_space.sample()))
         # action[0]= -1.0/3.0 # nominal hover action with gravity enabled 
-        action = torch.tensor([-1.0/3.0, 0.0, 0.0, 0.0, 0.0, 0.0]) # nominal hover action with gravity enabled.
+        # action = torch.tensor([-1.0/3.0, 0.0, 0.0, 0.0, 0.0, 0.0]) # nominal hover action with gravity enabled.
         # action = torch.tensor([-1.0, 0.0, 0.0, 0.0, 0.0, 1.0]) # nominal hover action with gravity disabled.
+
+        action = torch.tensor([-1.0/1.9, 0.0, 0.0, 0.0])
 
 
         action = torch.tile(action, (args_cli.num_envs, 1)).to(obs_tensor.device)

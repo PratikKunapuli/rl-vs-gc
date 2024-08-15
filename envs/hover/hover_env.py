@@ -88,6 +88,7 @@ class AerialManipulatorHoverEnvBaseCfg(DirectRLEnvCfg):
     thrust_to_weight = 3.0
 
     # reward scales
+    pos_radius = 0.8
     lin_vel_reward_scale = -0.05 # -0.05
     ang_vel_reward_scale = -0.01 # -0.01
     pos_distance_reward_scale = 15.0 #15.0
@@ -105,6 +106,7 @@ class AerialManipulatorHoverEnvBaseCfg(DirectRLEnvCfg):
 
     task_body = "root" # "root" or "endeffector" or "vehicle"
     body_name = "vehicle"
+    has_end_effector = True
 
 
 @configclass
@@ -112,8 +114,8 @@ class AerialManipulator2DOFHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
     # env
     num_actions = 6
     num_joints = 2
-    num_observations = 22
-    # 3(vel) + 3(ang vel) + 3(pos) + 9(ori) + 2(joint pos) + 2(joint vel) = 22
+    num_observations = 16
+    # 3(vel) + 3(ang vel) + 3(pos) + 3(ori) + 2(joint pos) + 2(joint vel) = 22
     
     # robot
     robot: ArticulationCfg = AERIAL_MANIPULATOR_2DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
@@ -127,8 +129,8 @@ class AerialManipulator1DOFHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
     # env
     num_actions = 5
     num_joints = 1
-    num_observations = 20 
-    # 3(vel) + 3(ang vel) + 3(pos) + 9(ori) + 1(joint pos) + 1(joint vel) = 20
+    num_observations = 14 
+    # 3(vel) + 3(ang vel) + 3(pos) + 3(ori) + 1(joint pos) + 1(joint vel) = 20
     
     # robot
     robot: ArticulationCfg = AERIAL_MANIPULATOR_1DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
@@ -141,8 +143,9 @@ class AerialManipulator0DOFHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
     # env
     num_actions = 4
     num_joints = 0
-    num_observations = 18 # TODO: Need to update this..
+    num_observations = 12 # TODO: Need to update this..
     # 3(vel) + 3(ang vel) + 3(pos) + 9(ori) = 18
+    # 3(vel) + 3(ang vel) + 3(pos) + 3(grav vector body frame) = 12
     
     # robot
     robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
@@ -152,7 +155,8 @@ class CrazyflieHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
     # env
     num_actions = 4
     num_joints = 0
-    num_observations = 18
+    # num_observations = 18
+    num_observations = 12
 
     moment_scale_xy = 0.01
     moment_scale_z = 0.01
@@ -162,7 +166,8 @@ class CrazyflieHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
     robot: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
 
     task_body = "vehicle"
-    body_name = "base"
+    body_name = "body"
+    has_end_effector = False
     
 
 
@@ -174,7 +179,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         
         # Actions / Actuation interfaces
         self._actions = torch.zeros(self.num_envs, self.cfg.num_actions, device=self.device)
-        self._joint_torques = torch.zeros(self.num_envs, self.cfg.num_joints, device=self.device)
+        self._joint_torques = torch.zeros(self.num_envs, self._robot.num_joints, device=self.device)
         self._body_forces = torch.zeros(self.num_envs, 1, 3, device=self.device)
         self._body_moment = torch.zeros(self.num_envs, 1, 3, device=self.device)
 
@@ -201,16 +206,20 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
 
         # Robot specific data
         self._body_id = self._robot.find_bodies(self.cfg.body_name)[0]
-        assert len(self._body_id) == 1, "There should be only one body with the name 'vehicle'"
+        assert len(self._body_id) == 1, "There should be only one body with the name \'vehicle\' or \'body\'"
 
-        self._ee_id = self._robot.find_bodies("endeffector")[0] # also the root of the system
+        if self.cfg.has_end_effector:
+            self._ee_id = self._robot.find_bodies("endeffector")[0] # also the root of the system
+
         
         if self.cfg.num_joints > 0:
-            self._shoulder_joint_idx = self._robot.find_joints(".*joint1")[0]
+            self._shoulder_joint_idx = self._robot.find_joints(".*joint1")[0][0]
         if self.cfg.num_joints > 1:
-            self._wrist_joint_idx = self._robot.find_joints(".*joint2")[0]
+            self._wrist_joint_idx = self._robot.find_joints(".*joint2")[0][0]
         self._total_mass = self._robot.root_physx_view.get_masses()[0].sum()
         self._gravity_magnitude = torch.tensor(self.cfg.sim.gravity, device=self.device).norm()
+        self._robot_weight = (self._total_mass * self._gravity_magnitude).item()
+        self._grav_vector_unit = torch.tensor([0.0, 0.0, -1.0], device=self.device).tile((self.num_envs, 1))
 
         # Visualization marker data
         self._frame_positions = torch.zeros(self.num_envs, 2, 3, device=self.device)
@@ -232,11 +241,11 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         # Action[3] = Body Z moment
         # Action[4] = Joint 1 Torque if joint exists
         # Action[5] = Joint 2 Torque if joint exists
-        self._body_forces[:, 0, 2] = (self._actions[:, 0] + 1.0) / 2.0 * (self._total_mass * self._gravity_magnitude * self.cfg.thrust_to_weight)
+        self._body_forces[:, 0, 2] = ((self._actions[:, 0] + 1.0) / 2.0) * (self._robot_weight * self.cfg.thrust_to_weight)
         self._body_moment[:, 0, :2] = self._actions[:, 1:3] * self.cfg.moment_scale_xy
         self._body_moment[:, 0, 2] = self._actions[:, 3] * self.cfg.moment_scale_z
         if self.cfg.num_joints > 0:
-            self._joint_torques[:, self._shoulder_joint_idx] = self._actions[:, 4] * self.cfg.shoulder_torque_scalar # joint IDs are flipped
+            self._joint_torques[:, self._shoulder_joint_idx] = self._actions[:, 4] * self.cfg.shoulder_torque_scalar
         if self.cfg.num_joints > 1:
             self._joint_torques[:, self._wrist_joint_idx] = self._actions[:, 5] * self.cfg.wrist_torque_scalar
 
@@ -263,15 +272,15 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
             lin_vel_w = self._robot.data.root_lin_vel_w
             ang_vel_w = self._robot.data.root_ang_vel_w
         elif self.cfg.task_body == "endeffector":
-            base_pos = self._robot.data.body_pos_w[:, self._ee_id].squeeze()
-            base_ori = self._robot.data.body_quat_w[:, self._ee_id].squeeze()
+            base_pos = self._robot.data.body_pos_w[:, self._ee_id].squeeze(1)
+            base_ori = self._robot.data.body_quat_w[:, self._ee_id].squeeze(1)
             lin_vel_w = self._robot.data.root_lin_vel_w
             ang_vel_w = self._robot.data.root_ang_vel_w
         elif self.cfg.task_body == "vehicle":
-            base_pos = self._robot.data.body_pos_w[:, self._body_id].squeeze()
-            base_ori = self._robot.data.body_quat_w[:, self._body_id].squeeze()
-            lin_vel_w = self._robot.data.body_lin_vel_w[:, self._body_id].squeeze()
-            ang_vel_w = self._robot.data.body_ang_vel_w[:, self._body_id].squeeze()
+            base_pos = self._robot.data.body_pos_w[:, self._body_id].squeeze(1)
+            base_ori = self._robot.data.body_quat_w[:, self._body_id].squeeze(1)
+            lin_vel_w = self._robot.data.body_lin_vel_w[:, self._body_id].squeeze(1)
+            ang_vel_w = self._robot.data.body_ang_vel_w[:, self._body_id].squeeze(1)
         else:
             raise ValueError("Invalid task body: ", self.cfg.task_body)
 
@@ -279,9 +288,14 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         # Find the error of the end-effector to the desired position and orientation
         # The root state of the robot is the end-effector frame in this case
         # Batched over number of environments, returns (num_envs, 3) and (num_envs, 4) tensors
-        pos_error_b, ori_error_b = subtract_frame_transforms(self._desired_pos_w, self._desired_ori_w, 
-                                                             base_pos, base_ori)
-        
+        # pos_error_b, ori_error_b = subtract_frame_transforms(self._desired_pos_w, self._desired_ori_w, 
+        #                                                      base_pos, base_ori)
+        pos_error_b, ori_error_b = subtract_frame_transforms(
+            self._robot.data.root_state_w[:, :3], self._robot.data.root_state_w[:, 3:7], 
+            self._desired_pos_w, self._desired_ori_w
+        )
+
+        projected_grav_b = quat_rotate_inverse(base_ori, self._grav_vector_unit)
         # Compute the linear and angular velocities of the end-effector in body frame
         lin_vel_b = quat_rotate_inverse(base_ori, lin_vel_w)
         ang_vel_b = quat_rotate_inverse(base_ori, ang_vel_w)
@@ -292,16 +306,18 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         wrist_joint_pos = torch.zeros(self.num_envs, 0, device=self.device)
         wrist_joint_vel = torch.zeros(self.num_envs, 0, device=self.device)
         if self.cfg.num_joints > 0:
-            shoulder_joint_pos = self._robot.data.joint_pos[:, self._shoulder_joint_idx]
-            shoulder_joint_vel = self._robot.data.joint_vel[:, self._shoulder_joint_idx]
+            shoulder_joint_pos = self._robot.data.joint_pos[:, self._shoulder_joint_idx].unsqueeze(1)
+            shoulder_joint_vel = self._robot.data.joint_vel[:, self._shoulder_joint_idx].unsqueeze(1)
         if self.cfg.num_joints > 1:
-            wrist_joint_pos = self._robot.data.joint_pos[:, self._wrist_joint_idx]
-            wrist_joint_vel = self._robot.data.joint_pos[:, self._wrist_joint_idx]
+            wrist_joint_pos = self._robot.data.joint_pos[:, self._wrist_joint_idx].unsqueeze(1)
+            wrist_joint_vel = self._robot.data.joint_pos[:, self._wrist_joint_idx].unsqueeze(1)
 
         obs = torch.cat(
             [
                 pos_error_b,                                # (num_envs, 3)
-                matrix_from_quat(ori_error_b).flatten(-2),  # (num_envs, 9)
+                # matrix_from_quat(ori_error_b).flatten(-2),  # (num_envs, 9)
+                # self._robot.data.projected_gravity_b,        # (num_envs, 3) # This works better than full SO3 matrix
+                projected_grav_b,                            # (num_envs, 3)
                 lin_vel_b,                                  # (num_envs, 3)
                 ang_vel_b,                                  # (num_envs, 3)
                 shoulder_joint_pos,                         # (num_envs, 1)
@@ -323,35 +339,38 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
             lin_vel_w = self._robot.data.root_lin_vel_w
             ang_vel_w = self._robot.data.root_ang_vel_w
         elif self.cfg.task_body == "endeffector":
-            base_pos = self._robot.data.body_pos_w[:, self._ee_id].squeeze()
-            base_ori = self._robot.data.body_quat_w[:, self._ee_id].squeeze()
+            base_pos = self._robot.data.body_pos_w[:, self._ee_id].squeeze(1)
+            base_ori = self._robot.data.body_quat_w[:, self._ee_id].squeeze(1)
             lin_vel_w = self._robot.data.root_lin_vel_w
             ang_vel_w = self._robot.data.root_ang_vel_w
         elif self.cfg.task_body == "vehicle":
-            base_pos = self._robot.data.body_pos_w[:, self._body_id].squeeze()
-            base_ori = self._robot.data.body_quat_w[:, self._body_id].squeeze()
-            lin_vel_w = self._robot.data.body_lin_vel_w[:, self._body_id].squeeze()
-            ang_vel_w = self._robot.data.body_ang_vel_w[:, self._body_id].squeeze()
+            base_pos = self._robot.data.body_pos_w[:, self._body_id].squeeze(1)
+            base_ori = self._robot.data.body_quat_w[:, self._body_id].squeeze(1)
+            lin_vel_w = self._robot.data.body_lin_vel_w[:, self._body_id].squeeze(1)
+            ang_vel_w = self._robot.data.body_ang_vel_w[:, self._body_id].squeeze(1)
         else:
             raise ValueError("Invalid task body: ", self.cfg.task_body)
         
         # Computes the error from the desired position and orientation
-        pos_error = torch.linalg.norm(self._desired_pos_w - base_pos, dim=-1)
+        pos_error = torch.linalg.norm(self._desired_pos_w - base_pos, dim=1)
         ori_error = quat_error_magnitude(self._desired_ori_w, base_ori)
-        pos_distance = 1.0 - torch.tanh(pos_error / 0.5)
+        pos_distance = 1.0 - torch.tanh(pos_error / self.cfg.pos_radius)
 
         # Velocity error components, used for stabliization tuning
         lin_vel_b = quat_rotate_inverse(base_ori, lin_vel_w)
         ang_vel_b = quat_rotate_inverse(base_ori, ang_vel_w)
-        lin_vel_error = torch.linalg.norm(lin_vel_b, dim=-1)
-        ang_vel_error = torch.linalg.norm(ang_vel_b, dim=-1)
+        # lin_vel_error = torch.linalg.norm(lin_vel_b, dim=-1)
+        # ang_vel_error = torch.linalg.norm(ang_vel_b, dim=-1)
+        lin_vel_error = torch.sum(torch.square(lin_vel_b), dim=1)
+        ang_vel_error = torch.sum(torch.square(ang_vel_b), dim=1)
         # if self.cfg.num_joints == 0:
         #     joint_vel_error = torch.zeros(1, device=self.device)
         # elif self.cfg.num_joints > 1:
         #     joint_vel_error = torch.linalg.norm(self._robot.data.joint_vel[self._wrist_joint_idx:self._shoulder_joint_idx], dim=-1)
         # elif self.cfg.num_joints > 0:
         #     joint_vel_error = torch.linalg.norm(self._robot.data.joint_vel[self._shoulder_joint_idx], dim=-1)
-        joint_vel_error = torch.linalg.norm(self._robot.data.joint_vel, dim=-1)
+        # joint_vel_error = torch.linalg.norm(self._robot.data.joint_vel, dim=-1)
+        joint_vel_error = torch.sum(torch.square(self._robot.data.joint_vel), dim=1)
 
         rewards = {
             "endeffector_pos_error": pos_error * self.cfg.pos_error_reward_scale * self.step_dt,
@@ -375,7 +394,10 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         """
 
         # Check if end effector or body has collided with the ground
-        died = torch.logical_or(self._robot.data.root_pos_w[:, 2] < 0.0, self._robot.data.body_state_w[:, self._body_id, 2].squeeze() < 0.0)
+        if self.cfg.has_end_effector:
+            died = torch.logical_or(self._robot.data.root_pos_w[:, 2] < 0.0, self._robot.data.body_state_w[:, self._body_id, 2].squeeze() < 0.0)
+        else:
+            died = torch.logical_or(self._robot.data.root_pos_w[:, 2] < 0.1, self._robot.data.root_pos_w[:, 2] > 2.0)
 
         # Check if the robot is too high
         # died = torch.logical_or(died, self._robot.data.root_pos_w[:, 2] > 10.0)

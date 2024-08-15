@@ -58,7 +58,8 @@ gym.register(
     },
 )
 
-gym.register(d="Isaac-Crazyflie-0DOF-Hover-v0",
+gym.register(
+    id="Isaac-Crazyflie-0DOF-Hover-v0",
     entry_point = "envs.hover.hover_env:AerialManipulatorHoverEnv",
     disable_env_checker=True,
     kwargs={

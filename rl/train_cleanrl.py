@@ -4,8 +4,8 @@ from omni.isaac.lab.app import AppLauncher
 # add argparse arguments
 parser = argparse.ArgumentParser(description="Train an RL agent with CleanRL. ")
 parser.add_argument("--video", action="store_true", default=False, help="Record videos during training.")
-parser.add_argument("--video_length", type=int, default=1000, help="Length of the recorded video (in steps).")
-parser.add_argument("--video_interval", type=int, default=4000, help="Interval between video recordings (in steps).")
+parser.add_argument("--video_length", type=int, default=250, help="Length of the recorded video (in steps).")
+parser.add_argument("--video_interval", type=int, default=2000, help="Interval between video recordings (in steps).")
 parser.add_argument("--cpu", action="store_true", default=False, help="Use CPU pipeline.")
 parser.add_argument(
     "--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations."
@@ -22,6 +22,8 @@ parser.add_argument("--total_timesteps", type=int, default=3e7, help="Total time
 parser.add_argument("--goal_task", type=str, default="rand", help="Goal task for the environment.")
 parser.add_argument("--frame", type=str, default="root", help="Frame of the task.")
 parser.add_argument("--sim_rate_hz", type=int, default=500, help="Simulation rate in Hz.")
+parser.add_argument("--policy_rate_hz", type=int, default=100, help="Policy rate in Hz.")
+parser.add_argument("--pos_radius", type=float, default=0.8, help="Position radius for the task.")
 
 AppLauncher.add_app_launcher_args(parser)
 # parse the arguments
@@ -114,7 +116,7 @@ class Args:
 
     # Miscellaneous
     save_interval: int = 500000
-    video_length: int = 1000
+    video_length: int = 250
 
     save_model: bool = True
 
@@ -133,6 +135,8 @@ class Args:
     goal_task: str = "rand"
     frame: str = "root"
     sim_rate_hz: int = 500
+    policy_rate_hz: int = 100
+    pos_radius: float = 0.8
 
 class RecordEpisodeStatisticsTorch(gym.Wrapper):
     def __init__(self, env, device):
@@ -273,10 +277,25 @@ def main():
         args_cli.task, use_gpu=True, num_envs=args.num_envs, use_fabric=True
     )
 
+
+
     # Any environment specific configuration goes here such as camera placement
-    env_cfg.goal_task = args_cli.goal_task
-    env_cfg.task_body = args_cli.frame
-    env_cfg.sim_rate_hz = args_cli.sim_rate_hz
+    if "Quadcopter" not in args_cli.task:
+        env_cfg.goal_task = args_cli.goal_task
+        env_cfg.task_body = args_cli.frame
+        env_cfg.sim_rate_hz = args_cli.sim_rate_hz
+        env_cfg.policy_rate_hz = args_cli.policy_rate_hz
+        env_cfg.sim.dt = 1/env_cfg.sim_rate_hz
+        env_cfg.decimation = env_cfg.sim_rate_hz // env_cfg.policy_rate_hz
+        env_cfg.sim.render_interval = env_cfg.decimation
+        env_cfg.pos_radius = args_cli.pos_radius
+
+    # env_cfg.viewer.eye = (-2.0, 2.0, 2.0)
+    # env_cfg.viewer.lookat = (0.0, 0.0, 0.5)
+    # env_cfg.viewer.origin_type = "env"
+    # env_cfg.viewer.env_index = 0
+
+    print(env_cfg)
 
     # create environment
     envs = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
@@ -285,7 +304,7 @@ def main():
         "video_folder": f"runs/{run_name}",
         "step_trigger": lambda step: step % args_cli.video_interval == 0,
         # "episode_trigger": lambda episode: (episode % args.save_interval) == 0,
-        "video_length": args.video_length,
+        "video_length": args_cli.video_length,
         "name_prefix": "training_video"
     }
     envs = gym.wrappers.RecordVideo(envs, **video_kwargs)
@@ -353,13 +372,20 @@ def main():
 
             # TRY NOT TO MODIFY: execute the game and log data.
             next_obs, rewards[step], next_done, next_truncated, info = envs.step(action)
-            if 0 <= step <= 2:
-                for idx, d in enumerate(next_done):
-                    if d or next_truncated[idx]:
-                        episodic_return = info["r"][idx].item()
-                        print(f"global_step={global_step}, episodic_return={episodic_return}")
-                        writer.add_scalar("charts/episodic_return", episodic_return, global_step)
-                        writer.add_scalar("charts/episodic_length", info["l"][idx], global_step)
+            # if 0 <= step <= 2:
+            for idx, d in enumerate(next_done):
+                if d or next_truncated[idx]:
+                    episodic_return = info["r"][idx].item()
+                    print(f"global_step={global_step}, episodic_return={episodic_return}")
+                    writer.add_scalar("charts/episodic_return", episodic_return, global_step)
+                    writer.add_scalar("charts/episodic_length", info["l"][idx], global_step)
+
+                    if "Quadcopter" in args_cli.task: # original isaac lab env
+                        writer.add_scalar("charts/episodic_summed_vel_reward", info["log"]["Episode Reward/lin_vel"].item(), global_step)
+                        writer.add_scalar("charts/episodic_summed_ang_vel_reward", info["log"]["Episode Reward/ang_vel"].item(), global_step)
+                        writer.add_scalar("charts/episodic_summed_pos_reward", info["log"]["Episode Reward/distance_to_goal"].item(), global_step)
+                        writer.add_scalar("charts/episode_final_distance_to_goal", info["log"]["Metrics/final_distance_to_goal"], global_step)
+                    else: 
                         writer.add_scalar("charts/episodic_summed_vel_reward", info["log"]["Episode Reward/endeffector_lin_vel"].item(), global_step)
                         writer.add_scalar("charts/episodic_summed_ang_vel_reward", info["log"]["Episode Reward/endeffector_ang_vel"].item(), global_step)
                         writer.add_scalar("charts/episodic_summed_pos_reward", info["log"]["Episode Reward/endeffector_pos_distance"].item(), global_step)
@@ -367,17 +393,17 @@ def main():
                         writer.add_scalar("charts/episodic_summed_joint_vel_reward", info["log"]["Episode Reward/joint_vel"].item(), global_step)
                         writer.add_scalar("charts/episode_final_distance_to_goal", info["log"]["Metrics/Final Distance to Goal"], global_step)
                         writer.add_scalar("charts/episode_final_orientation_error", info["log"]["Metrics/Final Orientation Error to Goal"], global_step)
-
-                        # save model on best episodic return
-                        if episodic_return > max_episode_return:
-                            max_episode_return = episodic_return
-                            torch.save(agent.state_dict(), f"runs/{run_name}/best_cleanrl_model.pt")
-                            
-                        if "consecutive_successes" in info:  # ShadowHand and AllegroHand metric
-                            writer.add_scalar(
-                                "charts/consecutive_successes", info["consecutive_successes"].item(), global_step
-                            )
-                        break
+                    
+                    # save model on best episodic return
+                    if episodic_return > max_episode_return:
+                        max_episode_return = episodic_return
+                        torch.save(agent.state_dict(), f"runs/{run_name}/best_cleanrl_model.pt")
+                        
+                    if "consecutive_successes" in info:  # ShadowHand and AllegroHand metric
+                        writer.add_scalar(
+                            "charts/consecutive_successes", info["consecutive_successes"].item(), global_step
+                        )
+                    break
             
             # Save the model every 500k global steps but since there's many environments it could step over 500k
             if save_steps >= args.save_interval:
