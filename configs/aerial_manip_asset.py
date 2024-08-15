@@ -24,7 +24,7 @@ AERIAL_MANIPULATOR_CFG = ArticulationCfg(
         copy_from_source=False,
     ),
     init_state=ArticulationCfg.InitialStateCfg(
-        pos=(0.0, 0.0, 5.0),
+        pos=(0.0, 0.0, 0.5),
         # Default joint positions and velocities is 0.0
     ),
 
@@ -72,7 +72,7 @@ AERIAL_MANIPULATOR_2DOF_CFG = ArticulationCfg(
         copy_from_source=False,
     ),
     init_state=ArticulationCfg.InitialStateCfg(
-        pos=(0.0, 0.0, 5.0),
+        pos=(0.0, 0.0, 0.5),
         # Default joint positions and velocities is 0.0
         joint_pos={
             ".*": 0.0,
@@ -135,7 +135,7 @@ AERIAL_MANIPULATOR_1DOF_CFG = ArticulationCfg(
         copy_from_source=False,
     ),
     init_state=ArticulationCfg.InitialStateCfg(
-        pos=(0.0, 0.0, 5.0),
+        pos=(0.0, 0.0, 0.5),
         # Default joint positions and velocities is 0.0
         joint_pos={
             ".*": 0.0,
@@ -188,7 +188,7 @@ AERIAL_MANIPULATOR_0DOF_CFG = ArticulationCfg(
         copy_from_source=False,
     ),
     init_state=ArticulationCfg.InitialStateCfg(
-        pos=(0.0, 0.0, 5.0),
+        pos=(0.0, 0.0, 0.5),
         # Default joint positions and velocities is 0.0
         joint_pos={
             ".*": 0.0,
