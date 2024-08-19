@@ -17,7 +17,7 @@ from omni.isaac.lab.utils.math import subtract_frame_transforms, matrix_from_qua
 from omni.isaac.lab_assets import CRAZYFLIE_CFG
 
 # Local imports
-from configs.aerial_manip_asset import AERIAL_MANIPULATOR_2DOF_CFG, AERIAL_MANIPULATOR_1DOF_CFG, AERIAL_MANIPULATOR_0DOF_CFG
+from configs.aerial_manip_asset import AERIAL_MANIPULATOR_2DOF_CFG, AERIAL_MANIPULATOR_1DOF_CFG, AERIAL_MANIPULATOR_1DOF_WRIST_CFG, AERIAL_MANIPULATOR_0DOF_CFG
 
 
 class AerialManipulatorEnvWindow(BaseEnvWindow):
@@ -110,6 +110,9 @@ class AerialManipulatorHoverEnvBaseCfg(DirectRLEnvCfg):
     body_name = "vehicle"
     has_end_effector = True
 
+    shoulder_joint_active = True
+    wrist_joint_active = True
+
 
 @configclass
 class AerialManipulator2DOFHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
@@ -139,6 +142,20 @@ class AerialManipulator1DOFHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
 
 
     shoulder_torque_scalar = robot.actuators["shoulder"].effort_limit
+
+@configclass
+class AerialManipulator1DOFWristHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
+    # env
+    num_actions = 5
+    num_joints = 1
+    num_observations = 14 
+    # 3(vel) + 3(ang vel) + 3(pos) + 3(ori) + 1(joint pos) + 1(joint vel) = 20
+    
+    # robot
+    robot: ArticulationCfg = AERIAL_MANIPULATOR_1DOF_WRIST_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+
+
+    wrist_torque_scalar = robot.actuators["wrist"].effort_limit
 
 @configclass
 class AerialManipulator0DOFHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):

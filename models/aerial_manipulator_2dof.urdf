@@ -412,7 +412,7 @@ One or more components have overridden mass properties:
   <link name="link2">
     <inertial>
       <mass value="0.07583633"/>
-      <inertia ixx="0.00010771" ixy="-0.00000005" ixz="0.00000000" iyy=" 0.00011016" iyz="0.00000002" izz="0.00000767"/>
+      <inertia ixx="0.00010771" ixy="0.00000000" ixz="0.00000000" iyy=" 0.00011016" iyz="0.00000000" izz="0.00000767"/>
       <origin rpy=" 0 0 0" xyz="0 0 -0.12635585 "/>
       <!-- ignored offsets in other directions -->
     </inertial>
