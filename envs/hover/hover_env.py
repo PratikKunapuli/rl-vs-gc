@@ -104,6 +104,8 @@ class AerialManipulatorHoverEnvBaseCfg(DirectRLEnvCfg):
     goal_pos = None
     goal_ori = None
 
+    init_cfg = "default" # "default" or "rand"
+
     task_body = "root" # "root" or "endeffector" or "vehicle"
     body_name = "vehicle"
     has_end_effector = True
@@ -197,6 +199,18 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
                 "endeffector_pos_error",
                 "endeffector_pos_distance",
                 "endeffector_ori_error",
+                "joint_vel",
+            ]
+        }
+
+        self._episode_error_sums = {
+            key: torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
+            for key in [
+                "pos_error",
+                "pos_distance",
+                "ori_error",
+                "lin_vel",
+                "ang_vel",
                 "joint_vel",
             ]
         }
@@ -372,19 +386,38 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         # joint_vel_error = torch.linalg.norm(self._robot.data.joint_vel, dim=-1)
         joint_vel_error = torch.sum(torch.square(self._robot.data.joint_vel), dim=1)
 
+        # rewards = {
+        #     "endeffector_pos_error": pos_error * self.cfg.pos_error_reward_scale * self.step_dt,
+        #     "endeffector_pos_distance": pos_distance * self.cfg.pos_distance_reward_scale * self.step_dt,
+        #     "endeffector_ori_error": ori_error * self.cfg.ori_error_reward_scale * self.step_dt,
+        #     "endeffector_lin_vel": lin_vel_error * self.cfg.lin_vel_reward_scale * self.step_dt,
+        #     "endeffector_ang_vel": ang_vel_error * self.cfg.ang_vel_reward_scale * self.step_dt,
+        #     "joint_vel": joint_vel_error * self.cfg.joint_vel_reward_scale * self.step_dt,
+        # }
         rewards = {
-            "endeffector_pos_error": pos_error * self.cfg.pos_error_reward_scale * self.step_dt,
-            "endeffector_pos_distance": pos_distance * self.cfg.pos_distance_reward_scale * self.step_dt,
-            "endeffector_ori_error": ori_error * self.cfg.ori_error_reward_scale * self.step_dt,
-            "endeffector_lin_vel": lin_vel_error * self.cfg.lin_vel_reward_scale * self.step_dt,
-            "endeffector_ang_vel": ang_vel_error * self.cfg.ang_vel_reward_scale * self.step_dt,
-            "joint_vel": joint_vel_error * self.cfg.joint_vel_reward_scale * self.step_dt,
+            "endeffector_pos_error": pos_error * self.cfg.pos_error_reward_scale,
+            "endeffector_pos_distance": pos_distance * self.cfg.pos_distance_reward_scale,
+            "endeffector_ori_error": ori_error * self.cfg.ori_error_reward_scale,
+            "endeffector_lin_vel": lin_vel_error * self.cfg.lin_vel_reward_scale,
+            "endeffector_ang_vel": ang_vel_error * self.cfg.ang_vel_reward_scale,
+            "joint_vel": joint_vel_error * self.cfg.joint_vel_reward_scale,
         }
+        errors = {
+            "pos_error": pos_error,
+            "pos_distance": pos_distance,
+            "ori_error": ori_error,
+            "lin_vel": lin_vel_error,
+            "ang_vel": ang_vel_error,
+            "joint_vel": joint_vel_error,
+        }
+
         reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
 
         # Logging
         for key, value in rewards.items():
             self._episode_sums[key] += value
+        for key, value in errors.items():
+            self._episode_error_sums[key] += value
         return reward
 
     
@@ -421,6 +454,10 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
             episodic_sum_avg = self._episode_sums[key][env_ids].mean()
             extras["Episode Reward/" + key] = episodic_sum_avg / self.max_episode_length_s
             self._episode_sums[key][env_ids] = 0.0
+        for key in self._episode_error_sums.keys():
+            episodic_sum_avg = self._episode_error_sums[key][env_ids].mean()
+            extras["Episode Error/" + key] = episodic_sum_avg / self.max_episode_length_s
+            self._episode_error_sums[key][env_ids] = 0.0
         extras["Metrics/Final Distance to Goal"] = final_distance_to_goal
         extras["Metrics/Final Orientation Error to Goal"] = final_ori_error_to_goal
         extras["Episode Termination/died"] = torch.count_nonzero(self.reset_terminated[env_ids]).item()
@@ -441,9 +478,9 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
             self._desired_pos_w[env_ids, 2] = torch.zeros_like(self._desired_pos_w[env_ids, 2]).uniform_(0.5, 1.5)
             self._desired_ori_w[env_ids] = random_orientation(env_ids.size(0), device=self.device)
         elif self.cfg.goal_cfg == "fixed":
-            self._desired_pos_w[env_ids] = torch.tensor(self.cfg.goal_pos, device=self.device)
+            self._desired_pos_w[env_ids] = torch.tensor(self.cfg.goal_pos, device=self.device).tile((env_ids.size(0), 1))
             self._desired_pos_w[env_ids, :2] += self._terrain.env_origins[env_ids, :2]
-            self._desired_ori_w[env_ids] = torch.tensor(self.cfg.goal_ori, device=self.device)
+            self._desired_ori_w[env_ids] = torch.tensor(self.cfg.goal_ori, device=self.device).tile((env_ids.size(0), 1))
         elif self.cfg.goal_cfg == "initial":
             default_root_state = self._robot.data.default_root_state[env_ids]
             self._desired_pos_w[env_ids] = default_root_state[:, :3]
@@ -463,7 +500,13 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
             shoulder_joint_pos = torch.tensor(torch.pi/2, device=self.device, requires_grad=False).float()
             shoulder_joint_vel = torch.tensor(0.0, device=self.device, requires_grad=False).float()
             self._robot.write_joint_state_to_sim(shoulder_joint_pos, shoulder_joint_vel, joint_ids=self._shoulder_joint_idx, env_ids=env_ids)
-        default_root_state = self._robot.data.default_root_state[env_ids]
+
+        if self.cfg.init_cfg == "rand":
+            default_root_state = self._robot.data.default_root_state[env_ids]
+            default_root_state[:, :2] = torch.zeros_like(default_root_state[:, :2]).uniform_(-2.0, 2.0)
+            default_root_state[:, 2] = torch.zeros_like(default_root_state[:, 2]).uniform_(0.5, 1.5)
+        else:
+            default_root_state = self._robot.data.default_root_state[env_ids]
         default_root_state[:, :3] += self._terrain.env_origins[env_ids]
         
         if self.cfg.num_joints > 0:

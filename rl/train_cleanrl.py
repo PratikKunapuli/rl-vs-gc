@@ -43,6 +43,7 @@ from dataclasses import dataclass
 
 import gymnasium as gym
 import envs
+from policies import Agent
 
 from omni.isaac.lab_tasks.utils import parse_env_cfg
 
@@ -173,53 +174,6 @@ class RecordEpisodeStatisticsTorch(gym.Wrapper):
         )
 
 
-def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
-    torch.nn.init.orthogonal_(layer.weight, std)
-    torch.nn.init.constant_(layer.bias, bias_const)
-    return layer
-
-
-class Agent(nn.Module):
-    def __init__(self, envs):
-        super().__init__()
-        num_obs = np.array(envs.single_observation_space.shape[1]).prod()
-        num_acts = np.array(envs.single_action_space.shape[1]).prod()
-
-        self.critic = nn.Sequential(
-            layer_init(nn.Linear(num_obs, 256)),
-            # nn.Tanh(),
-            nn.ELU(),
-            layer_init(nn.Linear(256, 256)),
-            # nn.Tanh(),
-            nn.ELU(),
-            layer_init(nn.Linear(256, 1), std=1.0),
-        )
-        self.actor_mean = nn.Sequential(
-            layer_init(nn.Linear(num_obs, 256)),
-            # nn.Tanh(),
-            nn.ELU(),
-            layer_init(nn.Linear(256, 256)),
-            # nn.Tanh(),
-            nn.ELU(),
-            layer_init(nn.Linear(256, num_acts), std=0.01),
-        )
-        self.actor_logstd = nn.Parameter(torch.zeros(1, num_acts))
-
-    def get_value(self, x):
-        return self.critic(x)
-
-    def get_action_and_value(self, x, action=None):
-        action_mean = self.actor_mean(x)
-        action_logstd = self.actor_logstd.expand_as(action_mean)
-        action_std = torch.exp(action_logstd)
-        assert torch.all(action_std >= 0), f"std: {action_std} \n logstd: {action_logstd}"
-        probs = Normal(action_mean, action_std)
-        if action is None:
-            action = probs.sample()
-
-        return action, probs.log_prob(action).sum(1), probs.entropy().sum(1), self.critic(x)
-
-
 class ExtractObsWrapper(gym.ObservationWrapper):
     def observation(self, obs):
         return obs["policy"]
@@ -262,7 +216,7 @@ def main():
         f.write(str(vars(args)))
     
     with open(f"runs/{run_name}/args_cli.txt", "w") as f:
-        f.write(str(args_cli))
+        f.write(str(vars(args_cli)))
 
     # TRY NOT TO MODIFY: seeding
     random.seed(args.seed)
@@ -281,7 +235,7 @@ def main():
 
     # Any environment specific configuration goes here such as camera placement
     if "Quadcopter" not in args_cli.task:
-        env_cfg.goal_task = args_cli.goal_task
+        env_cfg.goal_cfg = args_cli.goal_task
         env_cfg.task_body = args_cli.frame
         env_cfg.sim_rate_hz = args_cli.sim_rate_hz
         env_cfg.policy_rate_hz = args_cli.policy_rate_hz
@@ -386,6 +340,7 @@ def main():
                         writer.add_scalar("charts/episodic_summed_pos_reward", info["log"]["Episode Reward/distance_to_goal"].item(), global_step)
                         writer.add_scalar("charts/episode_final_distance_to_goal", info["log"]["Metrics/final_distance_to_goal"], global_step)
                     else: 
+                        # Rewards
                         writer.add_scalar("charts/episodic_summed_vel_reward", info["log"]["Episode Reward/endeffector_lin_vel"].item(), global_step)
                         writer.add_scalar("charts/episodic_summed_ang_vel_reward", info["log"]["Episode Reward/endeffector_ang_vel"].item(), global_step)
                         writer.add_scalar("charts/episodic_summed_pos_reward", info["log"]["Episode Reward/endeffector_pos_distance"].item(), global_step)
@@ -393,6 +348,13 @@ def main():
                         writer.add_scalar("charts/episodic_summed_joint_vel_reward", info["log"]["Episode Reward/joint_vel"].item(), global_step)
                         writer.add_scalar("charts/episode_final_distance_to_goal", info["log"]["Metrics/Final Distance to Goal"], global_step)
                         writer.add_scalar("charts/episode_final_orientation_error", info["log"]["Metrics/Final Orientation Error to Goal"], global_step)
+                        # Errors
+                        writer.add_scalar("charts/episode_summed_pos_error", info["log"]["Episode Error/pos_error"].item(), global_step)
+                        writer.add_scalar("charts/episode_summed_pos_distance", info["log"]["Episode Error/pos_distance"].item(), global_step)
+                        writer.add_scalar("charts/episode_summed_vel_error", info["log"]["Episode Error/lin_vel"].item(), global_step)
+                        writer.add_scalar("charts/episode_summed_ang_vel_error", info["log"]["Episode Error/ang_vel"].item(), global_step)
+                        writer.add_scalar("charts/episode_summed_ori_error", info["log"]["Episode Error/ori_error"].item(), global_step)
+                        writer.add_scalar("charts/episode_summed_joint_vel_error", info["log"]["Episode Error/joint_vel"].item(), global_step)
                     
                     # save model on best episodic return
                     if episodic_return > max_episode_return:
