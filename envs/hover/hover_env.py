@@ -278,7 +278,8 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         if self.cfg.num_joints > 0:
             self._joint_torques[:, self._shoulder_joint_idx] = self._actions[:, 4] * self.cfg.shoulder_torque_scalar
         if self.cfg.num_joints > 1:
-            self._joint_torques[:, self._wrist_joint_idx] = self._actions[:, 5] * self.cfg.wrist_torque_scalar
+            # self._joint_torques[:, self._wrist_joint_idx] = self._actions[:, 5] * self.cfg.wrist_torque_scalar
+            self._joint_torques[:, self._wrist_joint_idx] = 0.0 # Turn off wrist joint for now
 
 
     def _apply_action(self):

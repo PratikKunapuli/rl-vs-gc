@@ -72,3 +72,12 @@ Two demonstration files are available to investigate the model/physics.
 # Environments
 
 # Training
+
+# Tools
+<details>
+<summary>Converting URDFs to USD</summary>
+
+```bash
+python ./IsaacLab/source/standalone/tools/convert_urdf.py ./AerialManipulation/models/aerial_manipulator_2dof.urdf ./AerialManipulation/models/aerial_manipulator_2dof.usd --merge-joints --make-instanceable
+```
+</details>

@@ -27,7 +27,8 @@ parser.add_argument("--pos_radius", type=float, default=0.8, help="Position radi
 
 AppLauncher.add_app_launcher_args(parser)
 # parse the arguments
-args_cli = parser.parse_args()
+# args_cli = parser.parse_args()
+args_cli, hydra_args = parser.parse_known_args() # adding hydra config
 
 args_cli.enable_cameras = True
 args_cli.headless = True # make false to see the simulation
@@ -46,6 +47,7 @@ import envs
 from policies import Agent
 
 from omni.isaac.lab_tasks.utils import parse_env_cfg
+from omni.isaac.lab_tasks.utils.hydra import hydra_task_config
 
 
 import numpy as np
@@ -243,6 +245,7 @@ def main():
         env_cfg.decimation = env_cfg.sim_rate_hz // env_cfg.policy_rate_hz
         env_cfg.sim.render_interval = env_cfg.decimation
         env_cfg.pos_radius = args_cli.pos_radius
+        # env_cfg.joint_vel_reward_scale = 0.0
 
     # env_cfg.viewer.eye = (-2.0, 2.0, 2.0)
     # env_cfg.viewer.lookat = (0.0, 0.0, 0.5)

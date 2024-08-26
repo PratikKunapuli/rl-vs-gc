@@ -10,7 +10,7 @@ parser.add_argument("--cpu", action="store_true", default=False, help="Use CPU p
 parser.add_argument(
     "--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations."
 )
-parser.add_argument("--num_envs", type=int, default=None, help="Number of environments to simulate.")
+parser.add_argument("--num_envs", type=int, default=1, help="Number of environments to simulate.")
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
 parser.add_argument("--load_path", type=str, default=None, required=True, help="Policy to evaluate.")
@@ -22,7 +22,7 @@ AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 
 args_cli.enable_cameras = True
-args_cli.headless = True # make false to see the simulation
+args_cli.headless = False # make false to see the simulation
 
 # launch omniverse app
 app_launcher = AppLauncher(args_cli)
@@ -104,11 +104,11 @@ def main():
     env_cfg = update_env_cfg(env_cfg, saved_args_cli)
 
     # Manual override of env cfg
-    env_cfg.goal_cfg = "fixed"
-    env_cfg.goal_pos = [0.0, 0.0, 1.0]
-    env_cfg.goal_ori = [1.0, 0.0, 0.0, 0.0]
-    env_cfg.init_cfg = "rand"
-    env_cfg.scene.env_spacing = 0.0
+    # env_cfg.goal_cfg = "fixed"
+    # env_cfg.goal_pos = [0.0, 0.0, 1.0]
+    # env_cfg.goal_ori = [1.0, 0.0, 0.0, 0.0]
+    # env_cfg.init_cfg = "default"
+    # env_cfg.scene.env_spacing = 0.0
 
     envs = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
 
