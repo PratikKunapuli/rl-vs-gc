@@ -1,37 +1,44 @@
 import argparse
+import sys
 from omni.isaac.lab.app import AppLauncher
+from utils import cli_args
 
 # add argparse arguments
 parser = argparse.ArgumentParser(description="Train an RL agent with CleanRL. ")
 parser.add_argument("--video", action="store_true", default=False, help="Record videos during training.")
 parser.add_argument("--video_length", type=int, default=250, help="Length of the recorded video (in steps).")
 parser.add_argument("--video_interval", type=int, default=2000, help="Interval between video recordings (in steps).")
-parser.add_argument(
-    "--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations."
-)
+# parser.add_argument(
+#     "--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations."
+# )
 parser.add_argument("--num_envs", type=int, default=None, help="Number of environments to simulate.")
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
 parser.add_argument("--max_iterations", type=int, default=None, help="RL Policy training iterations.")
-parser.add_argument("--capture_video", action="store_true", default=False, help="Capture video of the agent performance.")
-parser.add_argument("--exp_name", type=str, default="cleanrl_test", help="Name of the experiment.")
-parser.add_argument("--anneal_lr", action="store_true", default=False, help="Anneal the learning rate.")
-parser.add_argument("--learning_rate", type=float, default=0.0026, help="Learning rate of the optimizer.")
-parser.add_argument("--total_timesteps", type=int, default=15e6, help="Total timesteps of the experiments.")
-parser.add_argument("--goal_task", type=str, default="rand", help="Goal task for the environment.")
-parser.add_argument("--frame", type=str, default="root", help="Frame of the task.")
-parser.add_argument("--sim_rate_hz", type=int, default=500, help="Simulation rate in Hz.")
-parser.add_argument("--policy_rate_hz", type=int, default=100, help="Policy rate in Hz.")
-parser.add_argument("--pos_radius", type=float, default=0.8, help="Position radius for the task.")
+# parser.add_argument("--capture_video", action="store_true", default=False, help="Capture video of the agent performance.")
+# parser.add_argument("--exp_name", type=str, default="cleanrl_test", help="Name of the experiment.")
+# parser.add_argument("--anneal_lr", action="store_true", default=False, help="Anneal the learning rate.")
+# parser.add_argument("--learning_rate", type=float, default=0.0026, help="Learning rate of the optimizer.")
+# parser.add_argument("--total_timesteps", type=int, default=15e6, help="Total timesteps of the experiments.")
+# parser.add_argument("--goal_task", type=str, default="rand", help="Goal task for the environment.")
+# parser.add_argument("--frame", type=str, default="root", help="Frame of the task.")
+# parser.add_argument("--sim_rate_hz", type=int, default=500, help="Simulation rate in Hz.")
+# parser.add_argument("--policy_rate_hz", type=int, default=100, help="Policy rate in Hz.")
+# parser.add_argument("--pos_radius", type=float, default=0.8, help="Position radius for the task.")
 # parser.add_argument("--device", type=int, default="0", help="Device to run the training on.")
+
+cli_args.add_ppo_args(parser)
 
 AppLauncher.add_app_launcher_args(parser)
 # parse the arguments
-args_cli = parser.parse_args()
-# args_cli, hydra_args = parser.parse_known_args() # adding hydra config
+# args_cli = parser.parse_args()
+args_cli, hydra_args = parser.parse_known_args() # adding hydra config
 
 args_cli.enable_cameras = True
 args_cli.headless = True # make false to see the simulation
+
+# clear out the sys.argv for Hydra
+sys.argv = [sys.argv[0]] + hydra_args
 
 # launch omniverse app
 app_launcher = AppLauncher(args_cli)
@@ -46,100 +53,17 @@ import gymnasium as gym
 import envs
 from policies import Agent
 
+from omni.isaac.lab.envs import DirectRLEnvCfg, ManagerBasedRLEnvCfg
 from omni.isaac.lab_tasks.utils import parse_env_cfg
+from omni.isaac.lab_tasks.utils.hydra import hydra_task_config
 
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import tyro
 from torch.distributions.normal import Normal
 from torch.utils.tensorboard import SummaryWriter
-
-@dataclass
-class Args:
-    exp_name: str = os.path.basename(__file__)[: -len(".py")]
-    """the name of this experiment"""
-    seed: int = 1
-    """seed of the experiment"""
-    torch_deterministic: bool = True
-    """if toggled, `torch.backends.cudnn.deterministic=False`"""
-    cuda: bool = True
-    """if toggled, cuda will be enabled by default"""
-    track: bool = False
-    """if toggled, this experiment will be tracked with Weights and Biases"""
-    wandb_project_name: str = "cleanRL"
-    """the wandb's project name"""
-    wandb_entity: str = None
-    """the entity (team) of wandb's project"""
-    capture_video: bool = False
-    """whether to capture videos of the agent performances (check out `videos` folder)"""
-
-    # Algorithm specific arguments
-    env_id: str = "Isaac-AerialManipulator-Hover-v0"
-    """the id of the environment"""
-    total_timesteps: int = 30000000
-    """total timesteps of the experiments"""
-    learning_rate: float = 0.003
-    """the learning rate of the optimizer"""
-    num_envs: int = 1024
-    """the number of parallel game environments"""
-    num_steps: int = 16
-    """the number of steps to run in each environment per policy rollout"""
-    anneal_lr: bool = False
-    """Toggle learning rate annealing for policy and value networks"""
-    gamma: float = 0.99
-    """the discount factor gamma"""
-    gae_lambda: float = 0.95
-    """the lambda for the general advantage estimation"""
-    num_minibatches: int = 2
-    """the number of mini-batches"""
-    update_epochs: int = 4
-    """the K epochs to update the policy"""
-    norm_adv: bool = True
-    """Toggles advantages normalization"""
-    clip_coef: float = 0.2
-    """the surrogate clipping coefficient"""
-    clip_vloss: bool = False
-    """Toggles whether or not to use a clipped loss for the value function, as per the paper."""
-    ent_coef: float = 0.0
-    """coefficient of the entropy"""
-    vf_coef: float = 2
-    """coefficient of the value function"""
-    max_grad_norm: float = 1
-    """the maximum norm for the gradient clipping"""
-    target_kl: float = None
-    """the target KL divergence threshold"""
-    reward_scaler: float = 1
-    """the scale factor applied to the reward during training"""
-    record_video_step_frequency: int = 512*200
-    """the frequency at which to record the videos"""
-
-    # Miscellaneous
-    save_interval: int = 500000
-    video_length: int = 250
-
-    save_model: bool = True
-
-    # to be filled in runtime
-    batch_size: int = 0
-    """the batch size (computed in runtime)"""
-    minibatch_size: int = 0
-    """the mini-batch size (computed in runtime)"""
-    num_iterations: int = 0
-    """the number of iterations (computed in runtime)"""
-
-    task: str = "Isaac-AerialManipulator-Hover-v0"
-    """the name of the task"""
-    video: bool = True
-    disable_fabric: bool = False
-    goal_task: str = "rand"
-    frame: str = "root"
-    sim_rate_hz: int = 500
-    policy_rate_hz: int = 100
-    pos_radius: float = 0.8
-    device: str = "cuda:0"
 
 class RecordEpisodeStatisticsTorch(gym.Wrapper):
     def __init__(self, env, device):
@@ -180,11 +104,17 @@ class ExtractObsWrapper(gym.ObservationWrapper):
     def observation(self, obs):
         return obs["policy"]
     
-def main():
-    args = tyro.cli(Args)
+@hydra_task_config(args_cli.task, "cleanrl_cfg_entry_point")
+def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: dict):
+    agent_cfg = argparse.Namespace(**agent_cfg) # convert to namespace so we can access and modify the attributes like without Hydra
+    args = cli_args.parse_ppo_cfg(args_cli, agent_cfg)
     args.batch_size = int(args.num_envs * args.num_steps)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     args.num_iterations = args.total_timesteps // args.batch_size
+
+    env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
+
+    import code; code.interact(local=locals())
 
     run_name = f"{args.exp_name}_1"
 
@@ -229,13 +159,6 @@ def main():
     # device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
     device = torch.device(args_cli.device)
 
-
-    env_cfg = parse_env_cfg(
-        args_cli.task, device=args_cli.device, num_envs=args.num_envs, use_fabric=True
-    )
-
-
-
     # Any environment specific configuration goes here such as camera placement
     if "Quadcopter" not in args_cli.task:
         env_cfg.goal_cfg = args_cli.goal_task
@@ -245,10 +168,13 @@ def main():
         env_cfg.sim.dt = 1/env_cfg.sim_rate_hz
         env_cfg.decimation = env_cfg.sim_rate_hz // env_cfg.policy_rate_hz
         env_cfg.sim.render_interval = env_cfg.decimation
-        env_cfg.pos_radius = args_cli.pos_radius
+
+        # These are now modifyable in the CLI with hydra 
+        # you simply need to add env.pos_radius=0.8 in the CLI
+        # env_cfg.pos_radius = args_cli.pos_radius
         # env_cfg.joint_vel_reward_scale = 0.0
-        env_cfg.joint_vel_reward_scale = -10.0
-        env_cfg.action_norm_reward_scale = 0.0
+        # env_cfg.joint_vel_reward_scale = -10.0
+        # env_cfg.action_norm_reward_scale = 0.0
         # env_cfg.action_norm_reward_scale = -0.1
         # env_cfg.ori_error_reward_scale = -0.5
 
