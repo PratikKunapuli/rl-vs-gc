@@ -87,8 +87,8 @@ class RecordEpisodeStatisticsTorch(gym.Wrapper):
         self.episode_lengths += 1
         self.returned_episode_returns[:] = self.episode_returns
         self.returned_episode_lengths[:] = self.episode_lengths
-        self.episode_returns *= 1 - dones.long()
-        self.episode_lengths *= 1 - dones.long()
+        self.episode_returns *= 1 - (torch.logical_or(dones, truncateds)).long()
+        self.episode_lengths *= 1 - (torch.logical_or(dones, truncateds)).long()
         infos["r"] = self.returned_episode_returns
         infos["l"] = self.returned_episode_lengths
         return (
@@ -107,6 +107,9 @@ class ExtractObsWrapper(gym.ObservationWrapper):
 @hydra_task_config(args_cli.task, "cleanrl_cfg_entry_point")
 def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: dict):
     agent_cfg = argparse.Namespace(**agent_cfg) # convert to namespace so we can access and modify the attributes like without Hydra
+    
+    print("Default env_cfg:\n", env_cfg)
+    print("Default agent_cfg:\n", agent_cfg)
     args = cli_args.parse_ppo_cfg(args_cli, agent_cfg)
     args.batch_size = int(args.num_envs * args.num_steps)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
@@ -159,6 +162,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: dict):
         env_cfg.sim.dt = 1/env_cfg.sim_rate_hz
         env_cfg.decimation = env_cfg.sim_rate_hz // env_cfg.policy_rate_hz
         env_cfg.sim.render_interval = env_cfg.decimation
+        if env_cfg.use_yaw_representation:
+            env_cfg.num_observations += 4
 
         # These are now modifyable in the CLI with hydra 
         # you simply need to add env.pos_radius=0.8 in the CLI
@@ -175,6 +180,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: dict):
     # env_cfg.viewer.env_index = 0
 
     print(env_cfg)
+    input("Please check env cfg and press Enter to continue...")
 
     # create environment
     envs = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
@@ -273,12 +279,14 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: dict):
                         writer.add_scalar("charts/episodic_summed_joint_vel_reward", info["log"]["Episode Reward/joint_vel"].item(), global_step)
                         writer.add_scalar("charts/episode_final_distance_to_goal", info["log"]["Metrics/Final Distance to Goal"], global_step)
                         writer.add_scalar("charts/episode_final_orientation_error", info["log"]["Metrics/Final Orientation Error to Goal"], global_step)
+                        writer.add_scalar("charts/episode_final_yaw_error", info["log"]["Metrics/Final Yaw Error to Goal"], global_step)
                         # Errors
                         writer.add_scalar("charts/episode_summed_pos_error", info["log"]["Episode Error/pos_error"].item(), global_step)
                         writer.add_scalar("charts/episode_summed_pos_distance", info["log"]["Episode Error/pos_distance"].item(), global_step)
                         writer.add_scalar("charts/episode_summed_vel_error", info["log"]["Episode Error/lin_vel"].item(), global_step)
                         writer.add_scalar("charts/episode_summed_ang_vel_error", info["log"]["Episode Error/ang_vel"].item(), global_step)
                         writer.add_scalar("charts/episode_summed_ori_error", info["log"]["Episode Error/ori_error"].item(), global_step)
+                        writer.add_scalar("charts/episode_summed_yaw_error", info["log"]["Episode Error/yaw_error"].item(), global_step)
                         writer.add_scalar("charts/episode_summed_joint_vel_error", info["log"]["Episode Error/joint_vel"].item(), global_step)
                         writer.add_scalar("charts/episode_summed_action_norm", info["log"]["Episode Error/action_norm"].item(), global_step)
                     

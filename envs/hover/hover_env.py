@@ -96,6 +96,7 @@ class AerialManipulatorHoverEnvBaseCfg(DirectRLEnvCfg):
     ori_error_reward_scale = 0.0 # -0.5
     joint_vel_reward_scale = 0.0 # -0.01
     action_norm_reward_scale = 0.0 # -0.01
+    yaw_error_reward_scale = 0.0 # -0.01
 
     # Task condionionals for the environment - modifies the goal
     goal_cfg = "rand" # "rand", "fixed", or "initial"
@@ -235,6 +236,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
                 "endeffector_pos_error",
                 "endeffector_pos_distance",
                 "endeffector_ori_error",
+                "endeffector_yaw_error",
                 "joint_vel",
                 "action_norm"
             ]
@@ -246,6 +248,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
                 "pos_error",
                 "pos_distance",
                 "ori_error",
+                "yaw_error",
                 "lin_vel",
                 "ang_vel",
                 "joint_vel",
@@ -319,23 +322,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         """
         Returns the observation dictionary. Policy observations are in the key "policy".
         """
-        if self.cfg.task_body == "root":
-            base_pos = self._robot.data.root_pos_w
-            base_ori = self._robot.data.root_quat_w
-            lin_vel_w = self._robot.data.root_lin_vel_w
-            ang_vel_w = self._robot.data.root_ang_vel_w
-        elif self.cfg.task_body == "endeffector":
-            base_pos = self._robot.data.body_pos_w[:, self._ee_id].squeeze(1)
-            base_ori = self._robot.data.body_quat_w[:, self._ee_id].squeeze(1)
-            lin_vel_w = self._robot.data.root_lin_vel_w
-            ang_vel_w = self._robot.data.root_ang_vel_w
-        elif self.cfg.task_body == "vehicle":
-            base_pos = self._robot.data.body_pos_w[:, self._body_id].squeeze(1)
-            base_ori = self._robot.data.body_quat_w[:, self._body_id].squeeze(1)
-            lin_vel_w = self._robot.data.body_lin_vel_w[:, self._body_id].squeeze(1)
-            ang_vel_w = self._robot.data.body_ang_vel_w[:, self._body_id].squeeze(1)
-        else:
-            raise ValueError("Invalid task body: ", self.cfg.task_body)
+        base_pos_w, base_ori_w, lin_vel_w, ang_vel_w = self.get_frame_state_from_task(self.cfg.task_body)
 
 
         # Find the error of the end-effector to the desired position and orientation
@@ -344,13 +331,13 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         # pos_error_b, ori_error_b = subtract_frame_transforms(self._desired_pos_w, self._desired_ori_w, 
         #                                                      base_pos, base_ori)
         pos_error_b, ori_error_b = subtract_frame_transforms(
-            self._robot.data.root_state_w[:, :3], self._robot.data.root_state_w[:, 3:7], 
+            base_pos_w, base_ori_w, 
             self._desired_pos_w, self._desired_ori_w
         )
 
         # Compute the orientation error as a yaw error in the body frame
         goal_yaw_w = yaw_quat(self._desired_ori_w)
-        current_yaw_w = yaw_quat(base_ori)
+        current_yaw_w = yaw_quat(base_ori_w)
         yaw_error_w = quat_mul(quat_inv(current_yaw_w), goal_yaw_w)
 
         if self.cfg.use_yaw_representation:
@@ -362,10 +349,10 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         if self.cfg.use_full_ori_matrix:
             ori_representation_b = matrix_from_quat(ori_error_b).flatten(-2, -1)
         else:
-            ori_representation_b = quat_rotate_inverse(base_ori, self._grav_vector_unit) # projected gravity vector in the cfg frame
+            ori_representation_b = quat_rotate_inverse(base_ori_w, self._grav_vector_unit) # projected gravity vector in the cfg frame
         # Compute the linear and angular velocities of the end-effector in body frame
-        lin_vel_b = quat_rotate_inverse(base_ori, lin_vel_w)
-        ang_vel_b = quat_rotate_inverse(base_ori, ang_vel_w)
+        lin_vel_b = quat_rotate_inverse(base_ori_w, lin_vel_w)
+        ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_w)
 
         # Compute the joint states
         shoulder_joint_pos = torch.zeros(self.num_envs, 0, device=self.device)
@@ -396,52 +383,50 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         
         # We also need the state information for other controllers like the decoupled controller.
         # This is the full state of the robot
+        quad_pos_w, quad_ori_w, quad_lin_vel_w, quad_ang_vel_w = self.get_frame_state_from_task("vehicle")
+        ee_pos_w, ee_ori_w, ee_lin_vel_w, ee_ang_vel_w = self.get_frame_state_from_task("endeffector")
         full_state = torch.cat(
             [
-                base_pos,                                   # (num_envs, 3)
-                base_ori,                                   # (num_envs, 4)
-                lin_vel_w,                                  # (num_envs, 3)
-                ang_vel_w,                                  # (num_envs, 3)
-                shoulder_joint_pos,                         # (num_envs, 1)
-                wrist_joint_pos,                            # (num_envs, 1)
-                shoulder_joint_vel,                         # (num_envs, 1)
-                wrist_joint_vel,                            # (num_envs, 1)
+                quad_pos_w,
+                quad_ori_w,
+                quad_lin_vel_w,
+                quad_ang_vel_w,
+                ee_pos_w,
+                ee_ori_w,
+                ee_lin_vel_w,
+                ee_ang_vel_w,
+                shoulder_joint_pos,
+                wrist_joint_pos,
+                shoulder_joint_vel,
+                wrist_joint_vel,
+                self._desired_pos_w,
+                self._desired_ori_w,
             ],
             dim=-1                                          # (num_envs, 18)
         )
 
-        return {"policy": obs}
+        return {"policy": obs, "full_state": full_state}
     
     def _get_rewards(self) -> torch.Tensor:
         """
         Returns the reward tensor.
         """
-        if self.cfg.task_body == "root":
-            base_pos = self._robot.data.root_pos_w
-            base_ori = self._robot.data.root_quat_w
-            lin_vel_w = self._robot.data.root_lin_vel_w
-            ang_vel_w = self._robot.data.root_ang_vel_w
-        elif self.cfg.task_body == "endeffector":
-            base_pos = self._robot.data.body_pos_w[:, self._ee_id].squeeze(1)
-            base_ori = self._robot.data.body_quat_w[:, self._ee_id].squeeze(1)
-            lin_vel_w = self._robot.data.root_lin_vel_w
-            ang_vel_w = self._robot.data.root_ang_vel_w
-        elif self.cfg.task_body == "vehicle":
-            base_pos = self._robot.data.body_pos_w[:, self._body_id].squeeze(1)
-            base_ori = self._robot.data.body_quat_w[:, self._body_id].squeeze(1)
-            lin_vel_w = self._robot.data.body_lin_vel_w[:, self._body_id].squeeze(1)
-            ang_vel_w = self._robot.data.body_ang_vel_w[:, self._body_id].squeeze(1)
-        else:
-            raise ValueError("Invalid task body: ", self.cfg.task_body)
+        base_pos_w, base_ori_w, lin_vel_w, ang_vel_w = self.get_frame_state_from_task(self.cfg.task_body)
         
         # Computes the error from the desired position and orientation
-        pos_error = torch.linalg.norm(self._desired_pos_w - base_pos, dim=1)
-        ori_error = quat_error_magnitude(self._desired_ori_w, base_ori)
+        pos_error = torch.linalg.norm(self._desired_pos_w - base_pos_w, dim=1)
         pos_distance = 1.0 - torch.tanh(pos_error / self.cfg.pos_radius)
 
+        ori_error = quat_error_magnitude(self._desired_ori_w, base_ori_w)
+        
+        goal_yaw_w = yaw_quat(self._desired_ori_w)
+        current_yaw_w = yaw_quat(base_ori_w)
+        yaw_error_w = quat_mul(quat_inv(current_yaw_w), goal_yaw_w)
+        yaw_error = quat_error_magnitude(yaw_error_w, torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device).tile((self.num_envs, 1)))
+
         # Velocity error components, used for stabliization tuning
-        lin_vel_b = quat_rotate_inverse(base_ori, lin_vel_w)
-        ang_vel_b = quat_rotate_inverse(base_ori, ang_vel_w)
+        lin_vel_b = quat_rotate_inverse(base_ori_w, lin_vel_w)
+        ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_w)
         # lin_vel_error = torch.linalg.norm(lin_vel_b, dim=-1)
         # ang_vel_error = torch.linalg.norm(ang_vel_b, dim=-1)
         lin_vel_error = torch.sum(torch.square(lin_vel_b), dim=1)
@@ -469,6 +454,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
             "endeffector_pos_error": pos_error * self.cfg.pos_error_reward_scale,
             "endeffector_pos_distance": pos_distance * self.cfg.pos_distance_reward_scale,
             "endeffector_ori_error": ori_error * self.cfg.ori_error_reward_scale,
+            "endeffector_yaw_error": yaw_error * self.cfg.yaw_error_reward_scale,
             "endeffector_lin_vel": lin_vel_error * self.cfg.lin_vel_reward_scale,
             "endeffector_ang_vel": ang_vel_error * self.cfg.ang_vel_reward_scale,
             "joint_vel": joint_vel_error * self.cfg.joint_vel_reward_scale,
@@ -478,6 +464,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
             "pos_error": pos_error,
             "pos_distance": pos_distance,
             "ori_error": ori_error,
+            "yaw_error": yaw_error,
             "lin_vel": lin_vel_error,
             "ang_vel": ang_vel_error,
             "joint_vel": joint_vel_error,
@@ -520,9 +507,12 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         if env_ids is None or len(env_ids) == self.num_envs:
             env_ids = self._robot._ALL_INDICES
 
+        base_pos_w, base_ori_w, _, _ = self.get_frame_state_from_task(self.cfg.task_body)
+
         # Logging the episode sums
-        final_distance_to_goal = torch.linalg.norm(self._desired_pos_w[env_ids] - self._robot.data.root_pos_w[env_ids], dim=1).mean()
-        final_ori_error_to_goal = quat_error_magnitude(self._desired_ori_w[env_ids], self._robot.data.root_quat_w[env_ids]).mean()
+        final_distance_to_goal = torch.linalg.norm(self._desired_pos_w[env_ids] - base_pos_w[env_ids], dim=1).mean()
+        final_ori_error_to_goal = quat_error_magnitude(self._desired_ori_w[env_ids], base_ori_w[env_ids]).mean()
+        final_yaw_error_to_goal = quat_error_magnitude(yaw_quat(self._desired_ori_w[env_ids]), yaw_quat(base_ori_w[env_ids])).mean()
         extras = dict()
         for key in self._episode_sums.keys():
             episodic_sum_avg = self._episode_sums[key][env_ids].mean()
@@ -534,6 +524,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
             self._episode_error_sums[key][env_ids] = 0.0
         extras["Metrics/Final Distance to Goal"] = final_distance_to_goal
         extras["Metrics/Final Orientation Error to Goal"] = final_ori_error_to_goal
+        extras["Metrics/Final Yaw Error to Goal"] = final_yaw_error_to_goal
         extras["Episode Termination/died"] = torch.count_nonzero(self.reset_terminated[env_ids]).item()
         extras["Episode Termination/time_out"] = torch.count_nonzero(self.reset_time_outs[env_ids]).item()
         self.extras["log"] = dict()
@@ -588,6 +579,26 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         self._robot.write_root_pose_to_sim(default_root_state[:, :7], env_ids=env_ids)
         self._robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids=env_ids)
     
+    def get_frame_state_from_task(self, task_body:str) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        if self.cfg.task_body == "root":
+            base_pos_w = self._robot.data.root_pos_w
+            base_ori_w = self._robot.data.root_quat_w
+            lin_vel_w = self._robot.data.root_lin_vel_w
+            ang_vel_w = self._robot.data.root_ang_vel_w
+        elif self.cfg.task_body == "endeffector":
+            base_pos_w = self._robot.data.body_pos_w[:, self._ee_id].squeeze(1)
+            base_ori_w = self._robot.data.body_quat_w[:, self._ee_id].squeeze(1)
+            lin_vel_w = self._robot.data.root_lin_vel_w
+            ang_vel_w = self._robot.data.root_ang_vel_w
+        elif self.cfg.task_body == "vehicle":
+            base_pos_w = self._robot.data.body_pos_w[:, self._body_id].squeeze(1)
+            base_ori_w = self._robot.data.body_quat_w[:, self._body_id].squeeze(1)
+            lin_vel_w = self._robot.data.body_lin_vel_w[:, self._body_id].squeeze(1)
+            ang_vel_w = self._robot.data.body_ang_vel_w[:, self._body_id].squeeze(1)
+        else:
+            raise ValueError("Invalid task body: ", self.cfg.task_body)
+
+        return base_pos_w, base_ori_w, lin_vel_w, ang_vel_w
 
     def _setup_scene(self):
         self._robot = Articulation(self.cfg.robot)
