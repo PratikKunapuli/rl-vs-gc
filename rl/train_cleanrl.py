@@ -114,16 +114,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: dict):
 
     env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
 
-    import code; code.interact(local=locals())
-
-    run_name = f"{args.exp_name}_1"
-
-    # If run exists, increment run number
-    run_number = 1
-    while os.path.exists(f"runs/{run_name}"):
-        run_number += 1
-        run_name = f"{args.exp_name}_{run_number}"
-    
+    run_name = args.exp_name
     
     if args.track:
         import wandb
@@ -412,6 +403,14 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: dict):
 
 
 if __name__ == "__main__":
+    run_name = f"{args_cli.exp_name}_1"
+    # If run exists, increment run number
+    run_number = 1
+    while os.path.exists(f"runs/{run_name}"):
+        run_number += 1
+        run_name = f"{args_cli.exp_name}_{run_number}"
+    args_cli.exp_name = run_name
+    sys.argv.append(f"hydra.run.dir=runs/{run_name}")
     # run the main function
     main()
     # close sim app
