@@ -402,8 +402,10 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
                 base_ori,                                   # (num_envs, 4)
                 lin_vel_w,                                  # (num_envs, 3)
                 ang_vel_w,                                  # (num_envs, 3)
-                self._robot.data.joint_pos,                 # (num_envs, num_joints)
-                self._robot.data.joint_vel,                 # (num_envs, num_joints)
+                shoulder_joint_pos,                         # (num_envs, 1)
+                wrist_joint_pos,                            # (num_envs, 1)
+                shoulder_joint_vel,                         # (num_envs, 1)
+                wrist_joint_vel,                            # (num_envs, 1)
             ],
             dim=-1                                          # (num_envs, 18)
         )
