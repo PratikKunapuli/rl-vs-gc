@@ -13,7 +13,7 @@ from omni.isaac.lab.sim import SimulationCfg
 from omni.isaac.lab.terrains import TerrainImporterCfg
 from omni.isaac.lab.utils import configclass
 from omni.isaac.lab.utils.assets import ISAAC_NUCLEUS_DIR
-from omni.isaac.lab.utils.math import subtract_frame_transforms, matrix_from_quat, quat_error_magnitude, random_orientation, quat_inv, quat_rotate_inverse, quat_mul
+from omni.isaac.lab.utils.math import subtract_frame_transforms, matrix_from_quat, quat_error_magnitude, random_orientation, quat_inv, quat_rotate_inverse, quat_mul, yaw_quat
 from omni.isaac.lab_assets import CRAZYFLIE_CFG
 
 # Local imports
@@ -95,6 +95,7 @@ class AerialManipulatorHoverEnvBaseCfg(DirectRLEnvCfg):
     pos_error_reward_scale = 0.0# -1.0
     ori_error_reward_scale = 0.0 # -0.5
     joint_vel_reward_scale = 0.0 # -0.01
+    action_norm_reward_scale = 0.0 # -0.01
 
     # Task condionionals for the environment - modifies the goal
     goal_cfg = "rand" # "rand", "fixed", or "initial"
@@ -109,6 +110,8 @@ class AerialManipulatorHoverEnvBaseCfg(DirectRLEnvCfg):
     task_body = "root" # "root" or "endeffector" or "vehicle"
     body_name = "vehicle"
     has_end_effector = True
+    use_full_ori_matrix = False
+    use_yaw_representation = False
 
     shoulder_joint_active = True
     wrist_joint_active = True
@@ -120,7 +123,7 @@ class AerialManipulator2DOFHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
     num_actions = 6
     num_joints = 2
     num_observations = 16
-    # 3(vel) + 3(ang vel) + 3(pos) + 3(ori) + 2(joint pos) + 2(joint vel) = 22
+    # 3(vel) + 3(ang vel) + 3(pos) + 3(ori) + 2(joint pos) + 2(joint vel) = 16
     
     # robot
     robot: ArticulationCfg = AERIAL_MANIPULATOR_2DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
@@ -130,12 +133,28 @@ class AerialManipulator2DOFHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
     wrist_torque_scalar = robot.actuators["wrist"].effort_limit
 
 @configclass
+class AerialManipulator2DOFHoverPoseEnvCfg(AerialManipulatorHoverEnvBaseCfg):
+    # env
+    num_actions = 6
+    num_joints = 2
+    num_observations = 22
+    # 3(vel) + 3(ang vel) + 3(pos) + 9(ori) + 2(joint pos) + 2(joint vel) = 22
+    
+    # robot
+    robot: ArticulationCfg = AERIAL_MANIPULATOR_2DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+
+    
+    shoulder_torque_scalar = robot.actuators["shoulder"].effort_limit
+    wrist_torque_scalar = robot.actuators["wrist"].effort_limit
+    use_full_ori_matrix = True
+
+@configclass
 class AerialManipulator1DOFHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
     # env
     num_actions = 5
     num_joints = 1
     num_observations = 14 
-    # 3(vel) + 3(ang vel) + 3(pos) + 3(ori) + 1(joint pos) + 1(joint vel) = 20
+    # 3(vel) + 3(ang vel) + 3(pos) + 3(ori) + 1(joint pos) + 1(joint vel) = 14
     
     # robot
     robot: ArticulationCfg = AERIAL_MANIPULATOR_1DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
@@ -149,7 +168,7 @@ class AerialManipulator1DOFWristHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
     num_actions = 5
     num_joints = 1
     num_observations = 14 
-    # 3(vel) + 3(ang vel) + 3(pos) + 3(ori) + 1(joint pos) + 1(joint vel) = 20
+    # 3(vel) + 3(ang vel) + 3(pos) + 3(ori) + 1(joint pos) + 1(joint vel) = 14
     
     # robot
     robot: ArticulationCfg = AERIAL_MANIPULATOR_1DOF_WRIST_CFG.replace(prim_path="/World/envs/env_.*/Robot")
@@ -217,6 +236,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
                 "endeffector_pos_distance",
                 "endeffector_ori_error",
                 "joint_vel",
+                "action_norm"
             ]
         }
 
@@ -229,6 +249,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
                 "lin_vel",
                 "ang_vel",
                 "joint_vel",
+                "action_norm"
             ]
         }
 
@@ -278,8 +299,8 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         if self.cfg.num_joints > 0:
             self._joint_torques[:, self._shoulder_joint_idx] = self._actions[:, 4] * self.cfg.shoulder_torque_scalar
         if self.cfg.num_joints > 1:
-            # self._joint_torques[:, self._wrist_joint_idx] = self._actions[:, 5] * self.cfg.wrist_torque_scalar
-            self._joint_torques[:, self._wrist_joint_idx] = 0.0 # Turn off wrist joint for now
+            self._joint_torques[:, self._wrist_joint_idx] = self._actions[:, 5] * self.cfg.wrist_torque_scalar
+            # self._joint_torques[:, self._wrist_joint_idx] = 0.0 # Turn off wrist joint for now
 
 
     def _apply_action(self):
@@ -327,7 +348,21 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
             self._desired_pos_w, self._desired_ori_w
         )
 
-        projected_grav_b = quat_rotate_inverse(base_ori, self._grav_vector_unit)
+        # Compute the orientation error as a yaw error in the body frame
+        goal_yaw_w = yaw_quat(self._desired_ori_w)
+        current_yaw_w = yaw_quat(base_ori)
+        yaw_error_w = quat_mul(quat_inv(current_yaw_w), goal_yaw_w)
+
+        if self.cfg.use_yaw_representation:
+            yaw_representation = yaw_error_w
+        else:
+            yaw_representation = torch.zeros(self.num_envs, 0, device=self.device)
+        
+
+        if self.cfg.use_full_ori_matrix:
+            ori_representation_b = matrix_from_quat(ori_error_b).flatten(-2, -1)
+        else:
+            ori_representation_b = quat_rotate_inverse(base_ori, self._grav_vector_unit) # projected gravity vector in the cfg frame
         # Compute the linear and angular velocities of the end-effector in body frame
         lin_vel_b = quat_rotate_inverse(base_ori, lin_vel_w)
         ang_vel_b = quat_rotate_inverse(base_ori, ang_vel_w)
@@ -347,9 +382,8 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         obs = torch.cat(
             [
                 pos_error_b,                                # (num_envs, 3)
-                # matrix_from_quat(ori_error_b).flatten(-2),  # (num_envs, 9)
-                # self._robot.data.projected_gravity_b,        # (num_envs, 3) # This works better than full SO3 matrix
-                projected_grav_b,                            # (num_envs, 3)
+                ori_representation_b,                       # (num_envs, 3) if not using full ori matrix, (num_envs, 9) if using full ori matrix
+                yaw_representation,                         # (num_envs, 4) if using yaw representation (quat), 0 otherwise
                 lin_vel_b,                                  # (num_envs, 3)
                 ang_vel_b,                                  # (num_envs, 3)
                 shoulder_joint_pos,                         # (num_envs, 1)
@@ -359,6 +393,21 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
             ],
             dim=-1                                          # (num_envs, 22)
         )
+        
+        # We also need the state information for other controllers like the decoupled controller.
+        # This is the full state of the robot
+        full_state = torch.cat(
+            [
+                base_pos,                                   # (num_envs, 3)
+                base_ori,                                   # (num_envs, 4)
+                lin_vel_w,                                  # (num_envs, 3)
+                ang_vel_w,                                  # (num_envs, 3)
+                self._robot.data.joint_pos,                 # (num_envs, num_joints)
+                self._robot.data.joint_vel,                 # (num_envs, num_joints)
+            ],
+            dim=-1                                          # (num_envs, 18)
+        )
+
         return {"policy": obs}
     
     def _get_rewards(self) -> torch.Tensor:
@@ -404,6 +453,8 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         # joint_vel_error = torch.linalg.norm(self._robot.data.joint_vel, dim=-1)
         joint_vel_error = torch.sum(torch.square(self._robot.data.joint_vel), dim=1)
 
+        action_error = torch.sum(torch.square(self._actions), dim=1) 
+
         # rewards = {
         #     "endeffector_pos_error": pos_error * self.cfg.pos_error_reward_scale * self.step_dt,
         #     "endeffector_pos_distance": pos_distance * self.cfg.pos_distance_reward_scale * self.step_dt,
@@ -419,6 +470,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
             "endeffector_lin_vel": lin_vel_error * self.cfg.lin_vel_reward_scale,
             "endeffector_ang_vel": ang_vel_error * self.cfg.ang_vel_reward_scale,
             "joint_vel": joint_vel_error * self.cfg.joint_vel_reward_scale,
+            "action_norm": action_error * self.cfg.action_norm_reward_scale,
         }
         errors = {
             "pos_error": pos_error,
@@ -427,8 +479,10 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
             "lin_vel": lin_vel_error,
             "ang_vel": ang_vel_error,
             "joint_vel": joint_vel_error,
+            "action_norm": action_error,
         }
 
+        # 7 x 1024 -> 1024
         reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
 
         # Logging
