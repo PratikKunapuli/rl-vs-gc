@@ -13,7 +13,7 @@ parser.add_argument(
     "--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations."
 )
 parser.add_argument("--num_envs", type=int, default=1, help="Number of environments to simulate.")
-parser.add_argument("--task", type=str, default="Isaac-AerialManipulator-Hover-v0", help="Name of the task.")
+parser.add_argument("--task", type=str, default="Isaac-AerialManipulator-0DOF-Debug-Hover-v0", help="Name of the task.")
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
 parser.add_argument("--max_iterations", type=int, default=None, help="RL Policy training iterations.")
 
@@ -34,8 +34,10 @@ import gymnasium as gym
 import torch
 # from envs.hover import hover_env
 import envs
-# import envs.hover
+import envs.hover
 # from AerialManipulation.envs.hover import hover_env
+
+from rl.policies import DecoupledController
 
 def main():
 
@@ -50,48 +52,91 @@ def main():
     # Can also specify the task goal
     # env_cfg.task_goal = "rand" or "fixed" or "initial"
 
-    env_cfg = parse_env_cfg(args_cli.task, use_gpu=not args_cli.cpu, num_envs= args_cli.num_envs, use_fabric=not args_cli.disable_fabric)
-    env_cfg.viewer.eye = (2.0, 1.0, 4.5)
-    env_cfg.viewer.lookat = (0.0, 0.0, 5.0)
+    env_cfg = parse_env_cfg(args_cli.task, num_envs= args_cli.num_envs, use_fabric=not args_cli.disable_fabric)
+    env_cfg.viewer.eye = (2.0, 1.0, 0.2)
+    env_cfg.viewer.lookat = (0.0, 0.0, 0.5)
     env_cfg.viewer.origin_type = "env"
     env_cfg.viewer.env_index = 0
 
-    import code; code.interact(local=locals())
+    # import code; code.interact(local=locals())
 
     print(env_cfg.robot.spawn)
 
+    env_cfg.goal_cfg = "fixed"
+    env_cfg.goal_pos = [0.0, 0.0, 0.5]
+    env_cfg.goal_ori = [1.0, 0.0, 0.0, 0.0]
+    env_cfg.sim_rate_hz = 100
+    env_cfg.policy_rate_hz = 50
+    env_cfg.sim.dt = 1/env_cfg.sim_rate_hz
+    env_cfg.decimation = env_cfg.sim_rate_hz // env_cfg.policy_rate_hz
+    env_cfg.sim.render_interval = env_cfg.decimation
+
+
+    # Turn gravity off
+    env_cfg.robot.spawn.rigid_props.disable_gravity = True
+
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
+
+    # Get mass from env
+    mass = env.total_mass
+    inertia =  env.quad_inertia
+    arm_offset = env.arm_offset
+    pos_offset = env.position_offset
+    ori_offset = env.orientation_offset
+    print("Mass: ", mass)
+    print("Inertia: ", inertia)
+    print("Arm Offset: ", arm_offset)
+    print("Pos Offset: ", pos_offset)
+    print("Ori Offset: ", ori_offset)
+
+    # input("Press Enter to continue...")
+
+    gc = DecoupledController(0, mass, inertia, pos_offset, ori_offset, device=env.device)
+
 
     video_kwargs = {
         "video_folder": "videos",
         # "step_trigger": lambda step: step == 0,
         "episode_trigger": lambda episode: episode == 0,
         # "video_length": args_cli.video_length,
-        "name_prefix": "demo_env"
+        "name_prefix": "GC_Tuning"
     }
     env = gym.wrappers.RecordVideo(env, **video_kwargs)
 
 
     obs_dict, info = env.reset()
     done = False
+    done_count = 0
     # input("Press Enter to continue...")
     
     while simulation_app.is_running():
-        obs_tensor = obs_dict["policy"]
-        # action = env.action_space.sample()
-        # action = torch.zeros_like(torch.from_numpy(env.action_space.sample()))
-        # action[0]= -1.0/3.0 # nominal hover action with gravity enabled 
-        # action = torch.tensor([-1.0/3.0, 0.0, 0.0, 0.0, 0.0, 0.0]) # nominal hover action with gravity enabled.
-        # action = torch.tensor([-1.0, 0.0, 0.0, 0.0, 0.0, 1.0]) # nominal hover action with gravity disabled.
+        while done_count < 2:
+            obs_tensor = obs_dict["policy"]
+            # action = env.action_space.sample()
+            # action = torch.zeros_like(torch.from_numpy(env.action_space.sample()))
+            # action[0]= -1.0/3.0 # nominal hover action with gravity enabled 
+            action = torch.tensor([-1.0/3.0, 0.0, 0.0, 0.0, 0.0, 0.0]) # nominal hover action with gravity enabled.
+            # action = torch.tensor([-1.0, 0.0, 0.0, 0.0, 0.0, 1.0]) # nominal hover action with gravity disabled.
 
-        action = torch.tensor([-1.0/1.9, 0.0, 0.0, 0.0])
+            # action = torch.tensor([-1.0/1.9, 0.0, 0.0, 0.0])
+            action = torch.tile(action, (args_cli.num_envs, 1)).to(obs_tensor.device)
 
 
-        action = torch.tile(action, (args_cli.num_envs, 1)).to(obs_tensor.device)
+            full_state = obs_dict["full_state"]
+            action_gc = gc.get_action(full_state)
+            print("Action GC: ", action_gc)
+            print("Action shape: ", action_gc.shape)
 
-        obs_dict, reward, terminated, truncated, info = env.step(action)
 
-    env.close()
+            action = action_gc.to(obs_tensor.device)
+
+            obs_dict, reward, terminated, truncated, info = env.step(action)
+            done_count += terminated.sum().item()
+            print("Done count: ", done_count)
+            print()
+            # input()
+        env.close()
+        simulation_app.close()
 
 if __name__ == "__main__":
     main()

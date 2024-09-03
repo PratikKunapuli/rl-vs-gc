@@ -13,11 +13,11 @@ from omni.isaac.lab.sim import SimulationCfg
 from omni.isaac.lab.terrains import TerrainImporterCfg
 from omni.isaac.lab.utils import configclass
 from omni.isaac.lab.utils.assets import ISAAC_NUCLEUS_DIR
-from omni.isaac.lab.utils.math import subtract_frame_transforms, matrix_from_quat, quat_error_magnitude, random_orientation, quat_inv, quat_rotate_inverse, quat_mul, yaw_quat
+from omni.isaac.lab.utils.math import subtract_frame_transforms, matrix_from_quat, quat_error_magnitude, random_orientation, quat_inv, quat_rotate_inverse, quat_mul, yaw_quat, quat_conjugate
 from omni.isaac.lab_assets import CRAZYFLIE_CFG
 
 # Local imports
-from configs.aerial_manip_asset import AERIAL_MANIPULATOR_2DOF_CFG, AERIAL_MANIPULATOR_1DOF_CFG, AERIAL_MANIPULATOR_1DOF_WRIST_CFG, AERIAL_MANIPULATOR_0DOF_CFG
+from configs.aerial_manip_asset import AERIAL_MANIPULATOR_2DOF_CFG, AERIAL_MANIPULATOR_1DOF_CFG, AERIAL_MANIPULATOR_1DOF_WRIST_CFG, AERIAL_MANIPULATOR_0DOF_CFG, AERIAL_MANIPULATOR_0DOF_DEBUG_CFG
 
 
 class AerialManipulatorEnvWindow(BaseEnvWindow):
@@ -190,6 +190,19 @@ class AerialManipulator0DOFHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
     robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
 
 @configclass
+class AerialManipulator0DOFDebugHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
+    # env
+    num_actions = 4
+    num_joints = 0
+    num_observations = 12 # TODO: Need to update this..
+    # 3(vel) + 3(ang vel) + 3(pos) + 9(ori) = 18
+    # 3(vel) + 3(ang vel) + 3(pos) + 3(grav vector body frame) = 12
+    
+    # robot
+    robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_DEBUG_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+
+
+@configclass
 class CrazyflieHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
     # env
     num_actions = 4
@@ -272,13 +285,33 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         if self.cfg.num_joints > 1:
             self._wrist_joint_idx = self._robot.find_joints(".*joint2")[0][0]
         self._total_mass = self._robot.root_physx_view.get_masses()[0].sum()
+        self.total_mass = self._total_mass
+        self.quad_inertia = self._robot.root_physx_view.get_inertias()[0, self._body_id, :].view(-1, 3, 3).squeeze()
+        self.arm_offset = self._robot.root_physx_view.get_link_transforms()[0, self._body_id,:3].squeeze() - \
+                            self._robot.root_physx_view.get_link_transforms()[0, self._ee_id,:3].squeeze() 
+        
+        # Compute position and orientation offset between the end effector and the vehicle
+        quad_pos = self._robot.data.body_pos_w[0, self._body_id]
+        quad_ori = self._robot.data.body_quat_w[0, self._body_id]
+
+        print("[Isaac Env: Init] Quad Pos: ", quad_pos)
+        print("[Isaac Env: Init] Quad Ori: ", quad_ori)
+
+        ee_pos = self._robot.data.body_pos_w[0, self._ee_id]
+        ee_ori = self._robot.data.body_quat_w[0, self._ee_id]
+
+        self.position_offset = quad_pos
+        # self.orientation_offset = quat_mul(quad_ori, quat_conjugate(ee_ori))
+        self.orientation_offset = quad_ori
+
+
         self._gravity_magnitude = torch.tensor(self.cfg.sim.gravity, device=self.device).norm()
         self._robot_weight = (self._total_mass * self._gravity_magnitude).item()
         self._grav_vector_unit = torch.tensor([0.0, 0.0, -1.0], device=self.device).tile((self.num_envs, 1))
 
         # Visualization marker data
-        self._frame_positions = torch.zeros(self.num_envs, 2, 3, device=self.device)
-        self._frame_orientations = torch.zeros(self.num_envs, 2, 4, device=self.device)
+        self._frame_positions = torch.zeros(self.num_envs, 3, 3, device=self.device)
+        self._frame_orientations = torch.zeros(self.num_envs, 3, 4, device=self.device)
 
         # add handle for debug visualization (this is set to a valid handle inside set_debug_vis)
         self.set_debug_vis(self.cfg.debug_vis)
@@ -299,6 +332,9 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         self._body_forces[:, 0, 2] = ((self._actions[:, 0] + 1.0) / 2.0) * (self._robot_weight * self.cfg.thrust_to_weight)
         self._body_moment[:, 0, :2] = self._actions[:, 1:3] * self.cfg.moment_scale_xy
         self._body_moment[:, 0, 2] = self._actions[:, 3] * self.cfg.moment_scale_z
+
+        print("Body Forces: ", self._body_forces)
+        print("Body Moments: ", self._body_moment)
         if self.cfg.num_joints > 0:
             self._joint_torques[:, self._shoulder_joint_idx] = self._actions[:, 4] * self.cfg.shoulder_torque_scalar
         if self.cfg.num_joints > 1:
@@ -383,24 +419,27 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         
         # We also need the state information for other controllers like the decoupled controller.
         # This is the full state of the robot
+        print("[Isaac Env: Observations] \"Frame\" Pos: ", base_pos_w)
         quad_pos_w, quad_ori_w, quad_lin_vel_w, quad_ang_vel_w = self.get_frame_state_from_task("vehicle")
-        ee_pos_w, ee_ori_w, ee_lin_vel_w, ee_ang_vel_w = self.get_frame_state_from_task("endeffector")
+        ee_pos_w, ee_ori_w, ee_lin_vel_w, ee_ang_vel_w = self.get_frame_state_from_task("root")
+        print("[Isaac Env: Observations] Quad pos: ", quad_pos_w)
+        print("[Isaac Env: Observations] EE pos: ", ee_pos_w)
         full_state = torch.cat(
             [
-                quad_pos_w,
-                quad_ori_w,
-                quad_lin_vel_w,
-                quad_ang_vel_w,
-                ee_pos_w,
-                ee_ori_w,
-                ee_lin_vel_w,
-                ee_ang_vel_w,
-                shoulder_joint_pos,
-                wrist_joint_pos,
-                shoulder_joint_vel,
-                wrist_joint_vel,
-                self._desired_pos_w,
-                self._desired_ori_w,
+                quad_pos_w,                                 # (num_envs, 3) [0-3]
+                quad_ori_w,                                 # (num_envs, 4) [3-7]
+                quad_lin_vel_w,                             # (num_envs, 3) [7-10]
+                quad_ang_vel_w,                             # (num_envs, 3) [10-13]
+                ee_pos_w,                                   # (num_envs, 3) [13-16]
+                ee_ori_w,                                   # (num_envs, 4) [16-20]
+                ee_lin_vel_w,                               # (num_envs, 3) [20-23]
+                ee_ang_vel_w,                               # (num_envs, 3) [23-26]
+                shoulder_joint_pos,                         # (num_envs, 1) [26] 
+                wrist_joint_pos,                            # (num_envs, 1) [27]
+                shoulder_joint_vel,                         # (num_envs, 1) [28]
+                wrist_joint_vel,                            # (num_envs, 1) [29]
+                self._desired_pos_w,                        # (num_envs, 3) [30-33] [26-29]
+                self._desired_ori_w,                        # (num_envs, 4) [33-37] [29-33]
             ],
             dim=-1                                          # (num_envs, 18)
         )
@@ -580,17 +619,17 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         self._robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids=env_ids)
     
     def get_frame_state_from_task(self, task_body:str) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        if self.cfg.task_body == "root":
+        if task_body == "root":
             base_pos_w = self._robot.data.root_pos_w
             base_ori_w = self._robot.data.root_quat_w
             lin_vel_w = self._robot.data.root_lin_vel_w
             ang_vel_w = self._robot.data.root_ang_vel_w
-        elif self.cfg.task_body == "endeffector":
+        elif task_body == "endeffector":
             base_pos_w = self._robot.data.body_pos_w[:, self._ee_id].squeeze(1)
             base_ori_w = self._robot.data.body_quat_w[:, self._ee_id].squeeze(1)
             lin_vel_w = self._robot.data.root_lin_vel_w
             ang_vel_w = self._robot.data.root_ang_vel_w
-        elif self.cfg.task_body == "vehicle":
+        elif task_body == "vehicle":
             base_pos_w = self._robot.data.body_pos_w[:, self._body_id].squeeze(1)
             base_ori_w = self._robot.data.body_quat_w[:, self._body_id].squeeze(1)
             lin_vel_w = self._robot.data.body_lin_vel_w[:, self._body_id].squeeze(1)
@@ -636,6 +675,8 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         # Update frame positions for debug visualization
         self._frame_positions[:, 0] = self._robot.data.root_pos_w
         self._frame_positions[:, 1] = self._desired_pos_w
+        self._frame_positions[:, 2] = self._robot.data.body_pos_w[:, self._body_id].squeeze(1)
         self._frame_orientations[:, 0] = self._robot.data.root_quat_w
         self._frame_orientations[:, 1] = self._desired_ori_w
+        self._frame_orientations[:, 2] = self._robot.data.body_quat_w[:, self._body_id].squeeze(1)
         self.frame_visualizer.visualize(self._frame_positions.flatten(0, 1), self._frame_orientations.flatten(0,1))
