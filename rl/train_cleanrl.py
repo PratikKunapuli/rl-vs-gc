@@ -180,7 +180,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: dict):
     # env_cfg.viewer.env_index = 0
 
     print(env_cfg)
-    input("Please check env cfg and press Enter to continue...")
+    # input("Please check env cfg and press Enter to continue...")
 
     # create environment
     envs = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
@@ -287,6 +287,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: dict):
                         writer.add_scalar("charts/episode_summed_ang_vel_error", info["log"]["Episode Error/ang_vel"].item(), global_step)
                         writer.add_scalar("charts/episode_summed_ori_error", info["log"]["Episode Error/ori_error"].item(), global_step)
                         writer.add_scalar("charts/episode_summed_yaw_error", info["log"]["Episode Error/yaw_error"].item(), global_step)
+                        writer.add_scalar("charts/episode_summed_manual_yaw_error", info["log"]["Episode Error/manual_yaw_error"].item(), global_step)
                         writer.add_scalar("charts/episode_summed_joint_vel_error", info["log"]["Episode Error/joint_vel"].item(), global_step)
                         writer.add_scalar("charts/episode_summed_action_norm", info["log"]["Episode Error/action_norm"].item(), global_step)
                     

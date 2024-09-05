@@ -6,7 +6,6 @@ parser = argparse.ArgumentParser(description="Train an RL agent with CleanRL. ")
 parser.add_argument("--video", action="store_true", default=False, help="Record videos during training.")
 parser.add_argument("--video_length", type=int, default=1000, help="Length of the recorded video (in steps).")
 parser.add_argument("--video_interval", type=int, default=2000, help="Interval between video recordings (in steps).")
-parser.add_argument("--cpu", action="store_true", default=False, help="Use CPU pipeline.")
 parser.add_argument(
     "--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations."
 )
@@ -22,7 +21,7 @@ AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 
 args_cli.enable_cameras = True
-args_cli.headless = False # make false to see the simulation
+args_cli.headless = True # make false to see the simulation
 
 # launch omniverse app
 app_launcher = AppLauncher(args_cli)
@@ -34,13 +33,13 @@ import time
 from dataclasses import dataclass
 import ast
 import re
+import yaml
 
 import gymnasium as gym
 import envs
 from policies import Agent
 
 from omni.isaac.lab_tasks.utils import parse_env_cfg
-
 
 import numpy as np
 import torch
@@ -68,11 +67,14 @@ def update_env_cfg(env_cfg, args_cli):
     env_cfg.sim.render_interval = env_cfg.decimation
     env_cfg.pos_radius = args_cli['pos_radius']
 
+    # env_cfg.use_yaw_representation = True
     return env_cfg
 
 class ExtractObsWrapper(gym.ObservationWrapper):
     def observation(self, obs):
         return obs["policy"]
+
+
 
 def main():
     # find the policy to load
@@ -96,12 +98,25 @@ def main():
 
 
     env_cfg = parse_env_cfg(
-        args_cli.task, use_gpu=True, num_envs=args_cli.num_envs, use_fabric=True
+        args_cli.task, num_envs=args_cli.num_envs, use_fabric=True
     )
 
     print("\n\nSaved args: ", saved_args_cli)
     print("Keys: ", saved_args_cli.keys())
     env_cfg = update_env_cfg(env_cfg, saved_args_cli)
+    env_cfg.eval_mode = True
+
+    # If ".hydra/config.yaml" is present, load some of the reward scalars from there
+    if os.path.exists(os.path.join(policy_path, ".hydra/config.yaml")):
+        with open(os.path.join(policy_path, ".hydra/config.yaml"), "r") as f:
+            hydra_cfg = yaml.safe_load(f)
+            env_cfg.use_yaw_representation = hydra_cfg["env"]["use_yaw_representation"]
+            env_cfg.yaw_error_reward_scale = hydra_cfg["env"]["yaw_error_reward_scale"]
+    
+    if env_cfg.use_yaw_representation:
+        env_cfg.num_observations += 4
+
+    print("\n\nUpdated env cfg: ", env_cfg)
 
     # Manual override of env cfg
     # env_cfg.goal_cfg = "fixed"
@@ -122,7 +137,6 @@ def main():
         "name_prefix": "eval_video"
     }
     envs = gym.wrappers.RecordVideo(envs, **video_kwargs)
-    envs = ExtractObsWrapper(envs)
     envs.single_action_space = envs.action_space
     envs.single_observation_space = envs.observation_space
 
@@ -135,20 +149,37 @@ def main():
     agent = Agent(envs).to(device)
     agent.load_state_dict(torch.load(model_path))
 
-    import code; code.interact(local=locals())
 
-    obs, info = envs.reset()
+
+    obs_dict, info = envs.reset()
+    full_state_size = obs_dict["full_state"].shape[1]
+    full_states = torch.zeros((envs.num_envs, 500, full_state_size), dtype=torch.float32).to(device)
+    rewards = torch.zeros((envs.num_envs, 500), dtype=torch.float32).to(device)
+
+
     steps = 0
     done = False
+    done_count = 0
     # input("Press Enter to continue...")
-    
-    while steps < 1001:
-        # obs_tensor = obs_dict["policy"]
-        action = agent.predict(obs, deterministic=True)
-        obs, reward, terminated, truncated, info = envs.step(action)
-        steps += 1
+    with torch.no_grad():
+        while simulation_app.is_running():
+            while done_count < 2:
+                obs_tensor = obs_dict["policy"]
+                full_states[:, steps, :] = obs_dict["full_state"]
+                action = agent.predict(obs_tensor, deterministic=True)
 
-    envs.close()
+                obs_dict, reward, terminated, truncated, info = envs.step(action)
+                rewards[:, steps] = reward.detach()
+                done_count += terminated.sum().item() + truncated.sum().item()
+
+                steps += 1
+                print("Step: ", steps)
+            torch.save(full_states, os.path.join(policy_path, "eval_full_states.pt"))
+            torch.save(rewards, os.path.join(policy_path, "eval_rewards.pt"))
+            envs.close()
+            simulation_app.close()
+
+    
 
 
 if __name__ == "__main__":

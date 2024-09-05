@@ -53,7 +53,7 @@ def main():
     # env_cfg.task_goal = "rand" or "fixed" or "initial"
 
     env_cfg = parse_env_cfg(args_cli.task, num_envs= args_cli.num_envs, use_fabric=not args_cli.disable_fabric)
-    env_cfg.viewer.eye = (2.0, 1.0, 0.2)
+    env_cfg.viewer.eye = (3.0, 3.0, 0.2)
     env_cfg.viewer.lookat = (0.0, 0.0, 0.5)
     env_cfg.viewer.origin_type = "env"
     env_cfg.viewer.env_index = 0
@@ -62,28 +62,33 @@ def main():
 
     print(env_cfg.robot.spawn)
 
-    env_cfg.goal_cfg = "fixed"
-    env_cfg.goal_pos = [0.0, 0.0, 0.5]
+    env_cfg.goal_cfg = "fixed" # "rand" or "fixed"
+    env_cfg.goal_pos = [1.0, 0.0, 0.5]
     env_cfg.goal_ori = [1.0, 0.0, 0.0, 0.0]
     env_cfg.sim_rate_hz = 100
     env_cfg.policy_rate_hz = 50
     env_cfg.sim.dt = 1/env_cfg.sim_rate_hz
     env_cfg.decimation = env_cfg.sim_rate_hz // env_cfg.policy_rate_hz
     env_cfg.sim.render_interval = env_cfg.decimation
+    env_cfg.eval_mode = True
+    # env_cfg.init_cfg = "fixed"
 
 
     # Turn gravity off
-    env_cfg.robot.spawn.rigid_props.disable_gravity = True
+    env_cfg.robot.spawn.rigid_props.disable_gravity = False
 
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
 
     # Get mass from env
-    mass = env.total_mass
+    vehicle_mass = env.vehicle_mass
+    arm_mass = env.arm_mass
     inertia =  env.quad_inertia
     arm_offset = env.arm_offset
     pos_offset = env.position_offset
     ori_offset = env.orientation_offset
-    print("Mass: ", mass)
+    print("Vehicle Mass: ", vehicle_mass)
+    print("Arm Mass: ", arm_mass)
+    print("Mass: ", vehicle_mass + arm_mass)
     print("Inertia: ", inertia)
     print("Arm Offset: ", arm_offset)
     print("Pos Offset: ", pos_offset)
@@ -91,7 +96,9 @@ def main():
 
     # input("Press Enter to continue...")
 
-    gc = DecoupledController(0, mass, inertia, pos_offset, ori_offset, device=env.device)
+    gc = DecoupledController(0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, com_pos_w=env.com_pos_w, device=env.device)
+    print("Quad in EE Frame: ", gc.quad_pos_ee_frame)
+    print("COM in EE Frame: ", gc.com_pos_ee_frame)
 
 
     video_kwargs = {
@@ -107,7 +114,8 @@ def main():
     obs_dict, info = env.reset()
     done = False
     done_count = 0
-    # input("Press Enter to continue...")
+    
+    import code; code.interact(local=locals())
     
     while simulation_app.is_running():
         while done_count < 2:
@@ -115,7 +123,7 @@ def main():
             # action = env.action_space.sample()
             # action = torch.zeros_like(torch.from_numpy(env.action_space.sample()))
             # action[0]= -1.0/3.0 # nominal hover action with gravity enabled 
-            action = torch.tensor([-1.0/3.0, 0.0, 0.0, 0.0, 0.0, 0.0]) # nominal hover action with gravity enabled.
+            action = torch.tensor([1.0/3.0, 0.0, 0.0, 0.0, 0.0, 0.0]) # nominal hover action with gravity enabled.
             # action = torch.tensor([-1.0, 0.0, 0.0, 0.0, 0.0, 1.0]) # nominal hover action with gravity disabled.
 
             # action = torch.tensor([-1.0/1.9, 0.0, 0.0, 0.0])
@@ -125,16 +133,16 @@ def main():
             full_state = obs_dict["full_state"]
             action_gc = gc.get_action(full_state)
             print("Action GC: ", action_gc)
-            print("Action shape: ", action_gc.shape)
+            # print("Action shape: ", action_gc.shape)
 
 
             action = action_gc.to(obs_tensor.device)
 
             obs_dict, reward, terminated, truncated, info = env.step(action)
-            done_count += terminated.sum().item()
+            done_count += terminated.sum().item() + truncated.sum().item()
             print("Done count: ", done_count)
             print()
-            # input()
+            input()
         env.close()
         simulation_app.close()
 
