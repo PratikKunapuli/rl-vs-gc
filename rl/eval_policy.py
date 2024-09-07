@@ -11,10 +11,12 @@ parser.add_argument(
 )
 parser.add_argument("--num_envs", type=int, default=1, help="Number of environments to simulate.")
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
-parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
+parser.add_argument("--seed", type=int, default=0, help="Seed used for the environment")
 parser.add_argument("--load_path", type=str, default=None, required=True, help="Policy to evaluate.")
 parser.add_argument("--goal_task", type=str, default="rand", help="Goal task for the environment.")
 parser.add_argument("--frame", type=str, default="root", help="Frame of the task.")
+parser.add_argument("--baseline", type=bool, default=False, help="Use baseline policy.")
+parser.add_argument("--case_study", type=bool, default=False, help="Use case study policy.")
 
 AppLauncher.add_app_launcher_args(parser)
 # parse the arguments
@@ -37,7 +39,7 @@ import yaml
 
 import gymnasium as gym
 import envs
-from policies import Agent
+from policies import Agent, DecoupledController
 
 from omni.isaac.lab_tasks.utils import parse_env_cfg
 
@@ -75,35 +77,47 @@ class ExtractObsWrapper(gym.ObservationWrapper):
         return obs["policy"]
 
 
-
 def main():
-    # find the policy to load
-    policy_path = args_cli.load_path
-    if not os.path.exists(policy_path):
-        raise FileNotFoundError(f"Policy {policy_path} not found.")
+    torch.manual_seed(args_cli.seed)
+    if not args_cli.baseline:
+        # find the policy to load
+        policy_path = args_cli.load_path
+        if not os.path.exists(policy_path):
+            raise FileNotFoundError(f"Policy {policy_path} not found.")
 
-    if "model" in policy_path:
-        model_path = policy_path
-        policy_path = os.path.dirname(policy_path)
-    else:
-        model_path = os.path.join(policy_path, "best_cleanrl_model.pt")
-
-
-    with open(os.path.join(policy_path, "args_cli.txt"), "r") as f:
-        raw_string = f.read()
-        if "Namespace" in raw_string:
-            saved_args_cli = process_args(raw_string)
+        if "model" in policy_path:
+            model_path = policy_path
+            policy_path = os.path.dirname(policy_path)
         else:
-            saved_args_cli = ast.literal_eval(raw_string)
+            model_path = os.path.join(policy_path, "best_cleanrl_model.pt")
+
+
+        with open(os.path.join(policy_path, "args_cli.txt"), "r") as f:
+            raw_string = f.read()
+            if "Namespace" in raw_string:
+                saved_args_cli = process_args(raw_string)
+            else:
+                saved_args_cli = ast.literal_eval(raw_string)
+    else:
+        policy_path = "./baseline_0dof/"
 
 
     env_cfg = parse_env_cfg(
         args_cli.task, num_envs=args_cli.num_envs, use_fabric=True
     )
 
-    print("\n\nSaved args: ", saved_args_cli)
-    print("Keys: ", saved_args_cli.keys())
-    env_cfg = update_env_cfg(env_cfg, saved_args_cli)
+
+    if args_cli.baseline:
+        env_cfg.sim_rate_hz = 100
+        env_cfg.policy_rate_hz = 50
+        env_cfg.sim.dt = 1/env_cfg.sim_rate_hz
+        env_cfg.decimation = env_cfg.sim_rate_hz // env_cfg.policy_rate_hz
+        env_cfg.sim.render_interval = env_cfg.decimation
+    else:
+        print("\n\nSaved args: ", saved_args_cli)
+        print("Keys: ", saved_args_cli.keys())
+        env_cfg = update_env_cfg(env_cfg, saved_args_cli)
+
     env_cfg.eval_mode = True
 
     # If ".hydra/config.yaml" is present, load some of the reward scalars from there
@@ -118,12 +132,12 @@ def main():
 
     print("\n\nUpdated env cfg: ", env_cfg)
 
-    # Manual override of env cfg
-    # env_cfg.goal_cfg = "fixed"
-    # env_cfg.goal_pos = [0.0, 0.0, 1.0]
-    # env_cfg.goal_ori = [1.0, 0.0, 0.0, 0.0]
-    # env_cfg.init_cfg = "default"
-    # env_cfg.scene.env_spacing = 0.0
+    if args_cli.case_study:
+        # Manual override of env cfg
+        env_cfg.goal_cfg = "fixed"
+        env_cfg.goal_pos = [0.0, 0.0, 0.5]
+        env_cfg.goal_ori = [0.7071068, 0.0, 0.0, 0.7071068]
+        env_cfg.init_cfg = "default"
 
     envs = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
 
@@ -134,7 +148,7 @@ def main():
         "step_trigger": lambda step: step == 0,
         # "episode_trigger": lambda episode: (episode % args.save_interval) == 0,
         "video_length": args_cli.video_length,
-        "name_prefix": "eval_video"
+        "name_prefix": "case_study_eval_video" if args_cli.case_study else "eval_video"
     }
     envs = gym.wrappers.RecordVideo(envs, **video_kwargs)
     envs.single_action_space = envs.action_space
@@ -146,8 +160,17 @@ def main():
 
     # import code; code.interact(local=locals())
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    agent = Agent(envs).to(device)
-    agent.load_state_dict(torch.load(model_path))
+    if args_cli.baseline:
+        vehicle_mass = envs.vehicle_mass
+        arm_mass = envs.arm_mass
+        inertia =  envs.quad_inertia
+        arm_offset = envs.arm_offset
+        pos_offset = envs.position_offset
+        ori_offset = envs.orientation_offset
+        agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=envs.device)
+    else:
+        agent = Agent(envs).to(device)
+        agent.load_state_dict(torch.load(model_path))
 
 
 
@@ -166,7 +189,11 @@ def main():
             while done_count < 2:
                 obs_tensor = obs_dict["policy"]
                 full_states[:, steps, :] = obs_dict["full_state"]
-                action = agent.predict(obs_tensor, deterministic=True)
+
+                if args_cli.baseline:
+                    action = agent.get_action(obs_dict["full_state"])
+                else:
+                    action = agent.predict(obs_tensor, deterministic=True)
 
                 obs_dict, reward, terminated, truncated, info = envs.step(action)
                 rewards[:, steps] = reward.detach()
@@ -174,8 +201,13 @@ def main():
 
                 steps += 1
                 print("Step: ", steps)
-            torch.save(full_states, os.path.join(policy_path, "eval_full_states.pt"))
-            torch.save(rewards, os.path.join(policy_path, "eval_rewards.pt"))
+
+            if args_cli.case_study:
+                save_prefix = "case_study_"
+            else:
+                save_prefix = ""
+            torch.save(full_states, os.path.join(policy_path, save_prefix + "eval_full_states.pt"))
+            torch.save(rewards, os.path.join(policy_path, save_prefix + "eval_rewards.pt"))
             envs.close()
             simulation_app.close()
 
