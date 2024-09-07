@@ -108,8 +108,9 @@ class ExtractObsWrapper(gym.ObservationWrapper):
 def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: dict):
     agent_cfg = argparse.Namespace(**agent_cfg) # convert to namespace so we can access and modify the attributes like without Hydra
     
-    print("Default env_cfg:\n", env_cfg)
-    print("Default agent_cfg:\n", agent_cfg)
+    # print("Default env_cfg:\n", env_cfg)
+    # print("Default agent_cfg:\n", agent_cfg)
+    # input("Check these...")
     args = cli_args.parse_ppo_cfg(args_cli, agent_cfg)
     args.batch_size = int(args.num_envs * args.num_steps)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)

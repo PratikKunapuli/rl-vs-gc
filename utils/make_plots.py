@@ -43,6 +43,7 @@ def plot_data(rl_eval_path, dc_eval_path=None):
     dc_pos_w = dc_full_states[:, :-1, 13:16]
 
     pos_error = torch.norm(goal_pos_w - ee_pos_w, dim=-1).cpu()
+    print("Individual converged error for RL: ", pos_error[:, -1])
 
     pos_error_df = pd.DataFrame(pos_error.numpy().T, columns=[f"env_{i}" for i in range(pos_error.shape[0])])
     pos_error_df = pos_error_df.reset_index().melt(id_vars='index', var_name='Environment', value_name='Position Error')
@@ -54,6 +55,10 @@ def plot_data(rl_eval_path, dc_eval_path=None):
     mean_pos_error = pos_error.mean(dim=0).numpy()
     std_pos_error = pos_error.std(dim=0).numpy()
     time_axis = torch.arange(mean_pos_error.shape[0]) * 0.02
+
+
+    print("Mean converged error for RL: ", mean_pos_error[-1])
+    print("Std converged error for RL: ", std_pos_error[-1])
 
     dc_pos_error = torch.norm(goal_pos_w - dc_pos_w, dim=-1).cpu()
     dc_mean_pos_error = 0.5 * np.ones_like(mean_pos_error)

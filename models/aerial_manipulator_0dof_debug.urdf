@@ -51,11 +51,10 @@
   	Antigravity5008@ShoulderJoint -->
 
 
-  <link name="vehicle">
+  <link name="virtualvehicle">
     <inertial>
-      <mass value="0.706028"/>
-      <inertia ixx="0.003063" ixy="0.000004" ixz="0.000000" iyy="0.001720" iyz="0.000028" izz="0.004585"/>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <mass value="0.0000000000001"/>
+      <inertia ixx="0.0000000000001" ixy="0.0" ixz="0.0" iyy="0.0000000000001" iyz="0.0" izz="0.0000000000001"/>
     </inertial>
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -468,13 +467,26 @@ One or more components have overridden mass properties:
     </visual>
   </link>
 
+  <link name="vehicle">
+    <inertial>
+      <mass value="0.83527633"/> <!-- 0.706028-->
+      <inertia ixx="0.003063" ixy="0.000004" ixz="0.000000" iyy="0.001720" iyz="0.000028" izz="0.004585"/>
+      <origin rpy="0 0 0" xyz="-2.2484e-02 -1.8626e-09  6.7184e-09"/>
+    </inertial>
+  </link>
 
   <!-- Physical Joints -->
 
   <!-- <joint name="joint1" type="continuous"> -->
+  <joint name="yawfix" type="fixed" dont_collapse="true">
+    <parent link="virtualvehicle"/>
+    <child link="vehicle"/>
+    <origin rpy="0 0 1.57079632679" xyz="0 0 0"/>
+  </joint>
+
   <joint name="joint1" type="fixed" dont_collapse="true">
     <parent link="link1"/>
-    <child link="vehicle"/>
+    <child link="virtualvehicle"/>
     <axis rpy="0 0 0" xyz="0 1 0"/>
     <origin rpy="0 1.57079632679 0" xyz="0 0 -.1607"/>
     <limit velocity="1e9" effort=".9" lower="-3.0" upper="3.0" />

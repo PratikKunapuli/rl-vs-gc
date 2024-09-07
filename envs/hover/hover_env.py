@@ -18,7 +18,7 @@ from omni.isaac.lab_assets import CRAZYFLIE_CFG
 
 # Local imports
 from configs.aerial_manip_asset import AERIAL_MANIPULATOR_2DOF_CFG, AERIAL_MANIPULATOR_1DOF_CFG, AERIAL_MANIPULATOR_1DOF_WRIST_CFG, AERIAL_MANIPULATOR_0DOF_CFG, AERIAL_MANIPULATOR_0DOF_DEBUG_CFG
-from utils.math_utilities import yaw_from_quat
+from utils.math_utilities import yaw_from_quat, yaw_error_from_quats
 
 class AerialManipulatorEnvWindow(BaseEnvWindow):
     """Window manager for the Quadcopter environment."""
@@ -330,6 +330,8 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         self._frame_positions = torch.zeros(self.num_envs, 3, 3, device=self.device)
         self._frame_orientations = torch.zeros(self.num_envs, 3, 4, device=self.device)
 
+        self.local_num_envs = self.num_envs
+
         # add handle for debug visualization (this is set to a valid handle inside set_debug_vis)
         self.set_debug_vis(self.cfg.debug_vis)
 
@@ -481,16 +483,20 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         yaw_error_w = quat_mul(quat_inv(current_yaw_w), goal_yaw_w)
         yaw_error = quat_error_magnitude(yaw_error_w, torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device).tile((self.num_envs, 1)))
 
-        other_yaw_error = (yaw_from_quat(goal_yaw_w) - yaw_from_quat(current_yaw_w)).unsqueeze(1)
-        other_yaw_error = torch.sum(torch.square(other_yaw_error), dim=1)
+        # other_yaw_error = yaw_error_from_quats(goal_yaw_w, current_yaw_w, self.cfg.num_joints).unsqueeze(1)
+        other_yaw_error = yaw_error_from_quats(self._desired_ori_w, base_ori_w, self.cfg.num_joints).unsqueeze(1)
+        # other_yaw_error = torch.sum(torch.square(other_yaw_error), dim=1)
+        other_yaw_error = torch.linalg.norm(other_yaw_error, dim=1)
 
         # Velocity error components, used for stabliization tuning
         lin_vel_b = quat_rotate_inverse(base_ori_w, lin_vel_w)
         ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_w)
         # lin_vel_error = torch.linalg.norm(lin_vel_b, dim=-1)
         # ang_vel_error = torch.linalg.norm(ang_vel_b, dim=-1)
-        lin_vel_error = torch.sum(torch.square(lin_vel_b), dim=1)
-        ang_vel_error = torch.sum(torch.square(ang_vel_b), dim=1)
+        # lin_vel_error = torch.sum(torch.square(lin_vel_b), dim=1)
+        lin_vel_error = torch.norm(lin_vel_b, dim=1)
+        # ang_vel_error = torch.sum(torch.square(ang_vel_b), dim=1)
+        ang_vel_error = torch.norm(ang_vel_b, dim=1)
         # if self.cfg.num_joints == 0:
         #     joint_vel_error = torch.zeros(1, device=self.device)
         # elif self.cfg.num_joints > 1:
@@ -498,9 +504,11 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         # elif self.cfg.num_joints > 0:
         #     joint_vel_error = torch.linalg.norm(self._robot.data.joint_vel[self._shoulder_joint_idx], dim=-1)
         # joint_vel_error = torch.linalg.norm(self._robot.data.joint_vel, dim=-1)
-        joint_vel_error = torch.sum(torch.square(self._robot.data.joint_vel), dim=1)
+        # joint_vel_error = torch.sum(torch.square(self._robot.data.joint_vel), dim=1)
+        joint_vel_error = torch.norm(self._robot.data.joint_vel, dim=1)
 
-        action_error = torch.sum(torch.square(self._actions), dim=1) 
+        # action_error = torch.sum(torch.square(self._actions), dim=1) 
+        action_error = torch.norm(self._actions, dim=1)
 
         # rewards = {
         #     "endeffector_pos_error": pos_error * self.cfg.pos_error_reward_scale * self.step_dt,
@@ -603,6 +611,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         # Sample new goal position and orientation
         if self.cfg.goal_cfg == "rand":
             self._desired_pos_w[env_ids, :2] = torch.zeros_like(self._desired_pos_w[env_ids, :2]).uniform_(-2.0, 2.0)
+            # self._desired_pos_w[env_ids, :2] = torch.zeros_like(self._desired_pos_w[env_ids, :2])
             self._desired_pos_w[env_ids, :2] += self._terrain.env_origins[env_ids, :2]
             self._desired_pos_w[env_ids, 2] = torch.zeros_like(self._desired_pos_w[env_ids, 2]).uniform_(0.5, 1.5)
             self._desired_ori_w[env_ids] = random_orientation(env_ids.size(0), device=self.device)
@@ -700,16 +709,16 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
                 self.frame_visualizer.set_visibility(False)
 
     def _debug_vis_callback(self, event):
-        com_pos_w, com_ori_w = combine_frame_transforms(self._robot.data.root_pos_w, self._robot.data.root_quat_w, self.com_pos_e, self.com_ori_e)
+        com_pos_w, com_ori_w = combine_frame_transforms(self._robot.data.root_pos_w, self._robot.data.root_quat_w, self.com_pos_e.tile(self.local_num_envs, 1), self.com_ori_e.tile(self.local_num_envs, 1))
 
         # update the markers
         # Update frame positions for debug visualization
         self._frame_positions[:, 0] = self._robot.data.root_pos_w
         self._frame_positions[:, 1] = self._desired_pos_w
-        # self._frame_positions[:, 2] = self._robot.data.body_pos_w[:, self._body_id].squeeze(1)
-        self._frame_positions[:, 2] = com_pos_w
+        self._frame_positions[:, 2] = self._robot.data.body_pos_w[:, self._body_id].squeeze(1)
+        # self._frame_positions[:, 2] = com_pos_w
         self._frame_orientations[:, 0] = self._robot.data.root_quat_w
         self._frame_orientations[:, 1] = self._desired_ori_w
-        # self._frame_orientations[:, 2] = self._robot.data.body_quat_w[:, self._body_id].squeeze(1)
-        self._frame_orientations[:, 2] = com_ori_w
+        self._frame_orientations[:, 2] = self._robot.data.body_quat_w[:, self._body_id].squeeze(1)
+        # self._frame_orientations[:, 2] = com_ori_w
         self.frame_visualizer.visualize(self._frame_positions.flatten(0, 1), self._frame_orientations.flatten(0,1))

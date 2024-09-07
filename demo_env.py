@@ -22,8 +22,8 @@ args_cli = parser.parse_args()
 
 # simulation_app = SimulationApp(vars(args_cli))
 
-args_cli.headless=False
-# args_cli.headless=True
+# args_cli.headless=False
+args_cli.headless=True
 args_cli.enable_cameras=True
 # Launch app
 app_launcher = AppLauncher(args_cli)
@@ -54,6 +54,7 @@ def main():
 
     env_cfg = parse_env_cfg(args_cli.task, num_envs= args_cli.num_envs, use_fabric=not args_cli.disable_fabric)
     env_cfg.viewer.eye = (3.0, 3.0, 0.2)
+    env_cfg.viewer.resolution = (1920, 1080)
     env_cfg.viewer.lookat = (0.0, 0.0, 0.5)
     env_cfg.viewer.origin_type = "env"
     env_cfg.viewer.env_index = 0
@@ -62,9 +63,10 @@ def main():
 
     print(env_cfg.robot.spawn)
 
-    env_cfg.goal_cfg = "fixed" # "rand" or "fixed"
-    env_cfg.goal_pos = [1.0, 0.0, 0.5]
-    env_cfg.goal_ori = [1.0, 0.0, 0.0, 0.0]
+    env_cfg.goal_cfg = "rand" # "rand" or "fixed"
+    env_cfg.goal_pos = [1.0, 1.0, 0.5]
+    env_cfg.goal_ori = [0.7071068, 0.0, 0.0, 0.7071068]
+    # env_cfg.goal_ori = [0.7071068, 0.0, 0.0, 0.7071068]
     env_cfg.sim_rate_hz = 100
     env_cfg.policy_rate_hz = 50
     env_cfg.sim.dt = 1/env_cfg.sim_rate_hz
@@ -96,7 +98,8 @@ def main():
 
     # input("Press Enter to continue...")
 
-    gc = DecoupledController(0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, com_pos_w=env.com_pos_w, device=env.device)
+    # gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, com_pos_w=env.com_pos_w, device=env.device)
+    gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, com_pos_w=None, device=env.device)
     print("Quad in EE Frame: ", gc.quad_pos_ee_frame)
     print("COM in EE Frame: ", gc.com_pos_ee_frame)
 
@@ -142,7 +145,7 @@ def main():
             done_count += terminated.sum().item() + truncated.sum().item()
             print("Done count: ", done_count)
             print()
-            input()
+            # input()
         env.close()
         simulation_app.close()
 

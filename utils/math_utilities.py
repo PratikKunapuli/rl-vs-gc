@@ -1,4 +1,5 @@
 import torch
+import omni.isaac.lab.utils.math as isaac_math_utils
 
 @torch.jit.script
 def vee_map(S):
@@ -18,11 +19,43 @@ def yaw_from_quat(q: torch.Tensor) -> torch.Tensor:
 
     Args:
         q: The quaternion. Shape is (..., 4).
+        q = [w, x, y, z]
 
     Returns:
         The yaw angle. Shape is (...,).
     """
     shape = q.shape
     q = q.view(-1, 4)
-    yaw = torch.atan2(2 * (q[:, 0] * q[:, 3] + q[:, 1] * q[:, 2]), 1 - 2 * (q[:, 2] ** 2 + q[:, 3] ** 2))
+    yaw = torch.atan2(2.0 * (q[:, 3] * q[:, 0] + q[:, 1] * q[:, 2]), -1.0 + 2.0*(q[:,0]**2 + q[:,1]**2))
+    # yaw = torch.atan2(2.0 * (q[:, 2] * q[:, 3] + q[:, 0] * q[:, 1]), q[:, 0]**2 - q[:, 1]**2 - q[:, 2]**2 + q[:, 3]**2)
+    # yaw3 = torch.atan2(2.0 * (q[:, 1] * q[:, 0] + q[:, 2] * q[:, 3]), 1.0 - 2.0*(q[:,0]**2 + q[:,1]**2))
     return yaw.view(shape[:-1])
+
+@torch.jit.script
+def yaw_error_from_quats(q1: torch.Tensor, q2: torch.Tensor, dof:int) -> torch.Tensor:
+    """Get yaw error between two quaternions.
+
+    Args:
+        q1: The first quaternion. Shape is (..., 4).
+        q2: The second quaternion. Shape is (..., 4).
+
+    Returns:
+        The yaw error. Shape is (...,).
+    """
+    shape1 = q1.shape
+    shape2 = q2.shape
+    
+    #Find vector "b1" that is the x-axis of the rotated frame
+    b1 = isaac_math_utils.quat_rotate(q1, torch.tensor([[1.0, 0.0, 0.0]], device=q1.device).tile(shape1[:-1] + (1,)))
+    b2 = isaac_math_utils.quat_rotate(q2, torch.tensor([[1.0, 0.0, 0.0]], device=q1.device).tile(shape2[:-1] + (1,)))
+
+    if dof == 0:
+        b1[:,2] = 0.0
+        b2[:,2] = 0.0
+
+    b1_norm = torch.norm(b1, dim=-1)
+    b2_norm = torch.norm(b2, dim=-1)
+    operand = (b1*b2).sum(dim=1) / (b1_norm * b2_norm)
+    return torch.arccos(torch.clamp(operand, -1+1e-8, 1-1e-8)).view(shape1[:-1])
+
+    
