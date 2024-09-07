@@ -31,7 +31,6 @@ def yaw_from_quat(q: torch.Tensor) -> torch.Tensor:
     # yaw3 = torch.atan2(2.0 * (q[:, 1] * q[:, 0] + q[:, 2] * q[:, 3]), 1.0 - 2.0*(q[:,0]**2 + q[:,1]**2))
     return yaw.view(shape[:-1])
 
-@torch.jit.script
 def yaw_error_from_quats(q1: torch.Tensor, q2: torch.Tensor, dof:int) -> torch.Tensor:
     """Get yaw error between two quaternions.
 
@@ -44,10 +43,14 @@ def yaw_error_from_quats(q1: torch.Tensor, q2: torch.Tensor, dof:int) -> torch.T
     """
     shape1 = q1.shape
     shape2 = q2.shape
+
+    q1 = q1.reshape(-1, 4)
+    q2 = q2.reshape(-1, 4)
+
     
-    #Find vector "b1" that is the x-axis of the rotated frame
-    b1 = isaac_math_utils.quat_rotate(q1, torch.tensor([[1.0, 0.0, 0.0]], device=q1.device).tile(shape1[:-1] + (1,)))
-    b2 = isaac_math_utils.quat_rotate(q2, torch.tensor([[1.0, 0.0, 0.0]], device=q1.device).tile(shape2[:-1] + (1,)))
+    #Find vector "b2" that is the y-axis of the rotated frame
+    b1 = isaac_math_utils.quat_rotate(q1, torch.tensor([[0.0, 1.0, 0.0]], device=q1.device).tile((q1.shape[0], 1)))
+    b2 = isaac_math_utils.quat_rotate(q2, torch.tensor([[0.0, 1.0, 0.0]], device=q1.device).tile((q2.shape[0], 1)))
 
     if dof == 0:
         b1[:,2] = 0.0
