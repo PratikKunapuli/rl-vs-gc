@@ -4,7 +4,7 @@ import torch
 
 # Isaac SDK imports
 import omni.isaac.lab.sim as sim_utils
-from omni.isaac.lab.assets import Articulation, ArticulationCfg
+from omni.isaac.lab.assets import Articulation, ArticulationCfg, RigidObject, RigidObjectCfg
 from omni.isaac.lab.envs import DirectRLEnv, DirectRLEnvCfg
 from omni.isaac.lab.envs.ui import BaseEnvWindow
 from omni.isaac.lab.markers import VisualizationMarkers, VisualizationMarkersCfg
@@ -15,15 +15,18 @@ from omni.isaac.lab.utils import configclass
 from omni.isaac.lab.utils.assets import ISAAC_NUCLEUS_DIR
 from omni.isaac.lab.utils.math import subtract_frame_transforms, combine_frame_transforms, matrix_from_quat, quat_error_magnitude, random_orientation, quat_inv, quat_rotate_inverse, quat_mul, yaw_quat, quat_conjugate
 from omni.isaac.lab_assets import CRAZYFLIE_CFG
+from omni.isaac.lab.sim.spawners.shapes import SphereCfg, spawn_sphere
+from omni.isaac.lab.sim.spawners.materials import VisualMaterialCfg, PreviewSurfaceCfg
+
 
 # Local imports
-from configs.aerial_manip_asset import AERIAL_MANIPULATOR_2DOF_CFG, AERIAL_MANIPULATOR_1DOF_CFG, AERIAL_MANIPULATOR_1DOF_WRIST_CFG, AERIAL_MANIPULATOR_0DOF_CFG, AERIAL_MANIPULATOR_0DOF_DEBUG_CFG
+from configs.aerial_manip_asset import AERIAL_MANIPULATOR_2DOF_CFG, AERIAL_MANIPULATOR_1DOF_CFG, AERIAL_MANIPULATOR_1DOF_WRIST_CFG, AERIAL_MANIPULATOR_0DOF_CFG, AERIAL_MANIPULATOR_0DOF_DEBUG_CFG, BALL_CFG
 from utils.math_utilities import yaw_from_quat, yaw_error_from_quats
 
-class AerialManipulatorEnvWindow(BaseEnvWindow):
+class AerialManipulatorBallCatchEnvWindow(BaseEnvWindow):
     """Window manager for the Quadcopter environment."""
 
-    def __init__(self, env: AerialManipulatorHoverEnv, window_name: str = "Aerial Manipulator - IsaacLab"):
+    def __init__(self, env: AerialManipulatorBallCatchingEnv, window_name: str = "Aerial Manipulator Ball Catching- IsaacLab"):
         """Initialize the window.
 
         Args:
@@ -40,12 +43,21 @@ class AerialManipulatorEnvWindow(BaseEnvWindow):
                     self._create_debug_vis_ui_element("targets", self.env)
 
 @configclass
-class AerialManipulatorHoverEnvBaseCfg(DirectRLEnvCfg):
+class AerialManipulatorBallCatchingSceneCfg(InteractiveSceneCfg):
+    num_envs: int = 4096
+    env_spacing: float = 2.5
+    replicate_physics: bool = True
+
+    robot : ArtuculationCfg = AERIAL_MANIPULATOR_0DOF_CFG
+    ball : RigidObjectCfg = BALL_CFG
+
+@configclass
+class AerialManipulatorBallCatchingEnvBaseCfg(DirectRLEnvCfg):
     episode_length_s = 10.0
-    sim_rate_hz = 500
-    policy_rate_hz = 100
+    sim_rate_hz = 100
+    policy_rate_hz = 50
     decimation = sim_rate_hz // policy_rate_hz
-    ui_window_class_type = AerialManipulatorEnvWindow
+    ui_window_class_type = AerialManipulatorBallCatchEnvWindow
     num_states = 0
     debug_vis = True
 
@@ -76,8 +88,47 @@ class AerialManipulatorHoverEnvBaseCfg(DirectRLEnvCfg):
         debug_vis=False,
     )
 
+    ball: RigidObjectCfg = BALL_CFG.replace(prim_path="/World/envs/env_.*/Ball")
+
+
     # scene
     scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=2.5, replicate_physics=True)
+
+    # sphere_cfg = SphereCfg(
+    #     radius=0.02,
+    #     visible=True,
+    #     physics_material=sim_utils.RigidBodyMaterialCfg(
+    #         friction_combine_mode="multiply",
+    #         restitution_combine_mode="multiply",
+    #         static_friction=1.0,
+    #         dynamic_friction=1.0,
+    #         restitution=0.0,
+    #     ),
+    #     visual_material=PreviewSurfaceCfg(
+    #         diffuse_color=(1.0, 0.0, 0.0)
+    #     ),
+    # )
+
+    # sphere_marker_cfg = VisualizationMarkersCfg(
+    #     markers={
+    #         "sphere": SphereCfg(
+    #             radius=0.02,
+    #             visible=True,
+    #             visual_material=PreviewSurfaceCfg(diffuse_color=(1.0, 0.0, 0.0)),
+    #         ),
+    #     }
+    # )
+    # sphere_spawner = spawn_sphere(prim_path = "/World/sphere", cfg=sphere_cfg)
+
+    # ball_cfg = RigidObjectCfg(
+    #     prim_path="/World/envs/env_.*/Ball",
+    #     spawn=sphere_spawner,
+    #     debug_vis=True,
+    # )
+
+    # ball = RigidObject(
+    #     cfg=ball_cfg,
+    # )
 
     # action scaling
     # moment_scale_xy = 1.0
@@ -107,7 +158,11 @@ class AerialManipulatorHoverEnvBaseCfg(DirectRLEnvCfg):
     # "fixed" - Fixed goal position and orientation set apriori
     # "initial" - Goal position and orientation is the initial position and orientation of the robot
     goal_pos = None
-    goal_ori = None
+    goal_vel = None
+    use_catch_pos = True
+
+    ball_radius = 0.04
+    ball_error_threshold = ball_radius
 
     init_cfg = "default" # "default" or "rand"
 
@@ -122,68 +177,10 @@ class AerialManipulatorHoverEnvBaseCfg(DirectRLEnvCfg):
 
     eval_mode = False
 
+    # ball_obj : RigidObjectCfg = BALL_CFG.replace(prim_path="/World/envs/env_.*/Ball")
 
 @configclass
-class AerialManipulator2DOFHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
-    # env
-    num_actions = 6
-    num_joints = 2
-    num_observations = 16
-    # 3(vel) + 3(ang vel) + 3(pos) + 3(ori) + 2(joint pos) + 2(joint vel) = 16
-    
-    # robot
-    robot: ArticulationCfg = AERIAL_MANIPULATOR_2DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
-
-    
-    shoulder_torque_scalar = robot.actuators["shoulder"].effort_limit
-    wrist_torque_scalar = robot.actuators["wrist"].effort_limit
-
-@configclass
-class AerialManipulator2DOFHoverPoseEnvCfg(AerialManipulatorHoverEnvBaseCfg):
-    # env
-    num_actions = 6
-    num_joints = 2
-    num_observations = 22
-    # 3(vel) + 3(ang vel) + 3(pos) + 9(ori) + 2(joint pos) + 2(joint vel) = 22
-    
-    # robot
-    robot: ArticulationCfg = AERIAL_MANIPULATOR_2DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
-
-    
-    shoulder_torque_scalar = robot.actuators["shoulder"].effort_limit
-    wrist_torque_scalar = robot.actuators["wrist"].effort_limit
-    use_full_ori_matrix = True
-
-@configclass
-class AerialManipulator1DOFHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
-    # env
-    num_actions = 5
-    num_joints = 1
-    num_observations = 14 
-    # 3(vel) + 3(ang vel) + 3(pos) + 3(ori) + 1(joint pos) + 1(joint vel) = 14
-    
-    # robot
-    robot: ArticulationCfg = AERIAL_MANIPULATOR_1DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
-
-
-    shoulder_torque_scalar = robot.actuators["shoulder"].effort_limit
-
-@configclass
-class AerialManipulator1DOFWristHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
-    # env
-    num_actions = 5
-    num_joints = 1
-    num_observations = 14 
-    # 3(vel) + 3(ang vel) + 3(pos) + 3(ori) + 1(joint pos) + 1(joint vel) = 14
-    
-    # robot
-    robot: ArticulationCfg = AERIAL_MANIPULATOR_1DOF_WRIST_CFG.replace(prim_path="/World/envs/env_.*/Robot")
-
-
-    wrist_torque_scalar = robot.actuators["wrist"].effort_limit
-
-@configclass
-class AerialManipulator0DOFHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
+class AerialManipulator0DOFBallCatchingEnvCfg(AerialManipulatorBallCatchingEnvBaseCfg):
     # env
     num_actions = 4
     num_joints = 0
@@ -193,9 +190,13 @@ class AerialManipulator0DOFHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
     
     # robot
     robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+    robot.collision_group = 0
+    # ball: RigidObjectCfg = BALL_CFG.replace(prim_path="/World/envs/env_.*/Ball")
+    # scene = AerialManipulatorBallCatchingSceneCfg()
+    # scene.robot = AERIAL_MANIPULATOR_0DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
 
 @configclass
-class AerialManipulator0DOFDebugHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
+class AerialManipulator0DOFDebugBallCatchingEnvCfg(AerialManipulatorBallCatchingEnvBaseCfg):
     # env
     num_actions = 4
     num_joints = 0
@@ -205,59 +206,37 @@ class AerialManipulator0DOFDebugHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
     
     # robot
     robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_DEBUG_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+    robot.collision_group = 0
+    # scene = AerialManipulatorBallCatchingSceneCfg()
+    # scene.robot = AERIAL_MANIPULATOR_0DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
 
 
-@configclass
-class CrazyflieHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
-    # env
-    num_actions = 4
-    num_joints = 0
-    # num_observations = 18
-    num_observations = 12
+class AerialManipulatorBallCatchingEnv(DirectRLEnv):
+    cfg: AerialManipulatorBallCatchingEnvBaseCfg
 
-    moment_scale_xy = 0.01
-    moment_scale_z = 0.01
-    thrust_to_weight = 1.9
-
-    # robot
-    robot: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
-
-    task_body = "vehicle"
-    body_name = "body"
-    has_end_effector = False
-    
-
-
-class AerialManipulatorHoverEnv(DirectRLEnv):
-    cfg: AerialManipulatorHoverEnvBaseCfg
-
-    def __init__(self, cfg: AerialManipulatorHoverEnvBaseCfg, render_mode: str | None = None, **kwargs):
+    def __init__(self, cfg: AerialManipulatorBallCatchingEnvBaseCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
-        
+
         # Actions / Actuation interfaces
         self._actions = torch.zeros(self.num_envs, self.cfg.num_actions, device=self.device)
         self._joint_torques = torch.zeros(self.num_envs, self._robot.num_joints, device=self.device)
         self._body_forces = torch.zeros(self.num_envs, 1, 3, device=self.device)
         self._body_moment = torch.zeros(self.num_envs, 1, 3, device=self.device)
 
-        # Goal State
+        # Goal State    
+        self._ball_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
+        self._ball_vel_w = torch.zeros(self.num_envs, 3, device=self.device)
+        self._ball_ori_w = torch.zeros(self.num_envs, 4, device=self.device)
         self._desired_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
         self._desired_ori_w = torch.zeros(self.num_envs, 4, device=self.device)
+        self._catch_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
 
         
         # Logging
         self._episode_sums = {
             key: torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
             for key in [
-                "endeffector_lin_vel",
-                "endeffector_ang_vel",
-                "endeffector_pos_error",
-                "endeffector_pos_distance",
-                "endeffector_ori_error",
-                "endeffector_yaw_error",
-                "endeffector_yaw_distance",
-                "joint_vel",
-                "action_norm"
+                "catch",
             ]
         }
 
@@ -277,7 +256,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         }
 
         if self.cfg.goal_cfg == "fixed":
-            assert self.cfg.goal_pos is not None and self.cfg.goal_ori is not None, "Goal position and orientation must be set for fixed goal task"
+            assert self.cfg.goal_pos is not None and self.cfg.goal_vel is not None, "Goal position and orientation must be set for fixed goal task"
 
         # Robot specific data
         self._body_id = self._robot.find_bodies(self.cfg.body_name)[0]
@@ -327,16 +306,18 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         self._gravity_magnitude = torch.tensor(self.cfg.sim.gravity, device=self.device).norm()
         self._robot_weight = (self._total_mass * self._gravity_magnitude).item()
         self._grav_vector_unit = torch.tensor([0.0, 0.0, -1.0], device=self.device).tile((self.num_envs, 1))
+        self._grav_vector = torch.tensor(self.cfg.sim.gravity, device=self.device).tile((self.num_envs, 1))
 
         # Visualization marker data
-        self._frame_positions = torch.zeros(self.num_envs, 3, 3, device=self.device)
-        self._frame_orientations = torch.zeros(self.num_envs, 3, 4, device=self.device)
+        self._frame_positions = torch.zeros(self.num_envs, 1, 3, device=self.device)
+        self._frame_orientations = torch.zeros(self.num_envs, 1, 4, device=self.device)
 
         self.local_num_envs = self.num_envs
 
         # add handle for debug visualization (this is set to a valid handle inside set_debug_vis)
         self.set_debug_vis(self.cfg.debug_vis)
 
+        import code; code.interact(local=locals())
 
     def _pre_physics_step(self, actions: torch.Tensor):
         self._actions = actions.clone().clamp(-1.0, 1.0) # clamp the actions to [-1, 1]
@@ -375,12 +356,28 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
             self._robot.set_joint_effort_target(self._joint_torques[:,self._wrist_joint_idx], joint_ids=self._wrist_joint_idx)
 
         self._robot.set_external_force_and_torque(self._body_forces, self._body_moment, body_ids=self._body_id)
+        # self._ball_vel_w += self._grav_vector * (1.0 / self.cfg.sim_rate_hz)
+        # self._ball_pos_w += self._ball_vel_w * (1.0 / self.cfg.sim_rate_hz)
+        # print("Ball Vel: ", self._ball_vel_w)
+        # print("Ball Pos: ", self._desired_pos_w)
 
     def _get_observations(self) -> torch.Dict[str, torch.Tensor | torch.Dict[str, torch.Tensor]]:
         """
         Returns the observation dictionary. Policy observations are in the key "policy".
         """
+
+        if self.cfg.use_catch_pos:
+            self._desired_pos_w = self._catch_pos_w
+            self._desired_ori_w = torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device).unsqueeze(0).repeat(self.num_envs, 1)
+        else:
+            self._desired_pos_w = self._ball_pos_w
+            self._desired_ori_w = self._ball_ori_w
+
+        # print("[Isaac Env: Observations] Desired Pos: ", self._desired_pos_w)
+
         base_pos_w, base_ori_w, lin_vel_w, ang_vel_w = self.get_frame_state_from_task(self.cfg.task_body)
+
+        # print("[Isaac Env: Observations] Base Pos: ", base_pos_w)
 
 
         # Find the error of the end-effector to the desired position and orientation
@@ -388,10 +385,9 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         # Batched over number of environments, returns (num_envs, 3) and (num_envs, 4) tensors
         # pos_error_b, ori_error_b = subtract_frame_transforms(self._desired_pos_w, self._desired_ori_w, 
         #                                                      base_pos, base_ori)
-        pos_error_b, ori_error_b = subtract_frame_transforms(
+        pos_error_b, _ = subtract_frame_transforms(
             base_pos_w, base_ori_w, 
-            self._desired_pos_w, self._desired_ori_w
-        )
+            self._desired_pos_w)
 
         # Compute the orientation error as a yaw error in the body frame
         goal_yaw_w = yaw_quat(self._desired_ori_w)
@@ -405,7 +401,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         
 
         if self.cfg.use_full_ori_matrix:
-            ori_representation_b = matrix_from_quat(ori_error_b).flatten(-2, -1)
+            ori_representation_b = matrix_from_quat(base_ori_w).flatten(-2, -1)
         else:
             ori_representation_b = quat_rotate_inverse(base_ori_w, self._grav_vector_unit) # projected gravity vector in the cfg frame
         # Compute the linear and angular velocities of the end-effector in body frame
@@ -467,7 +463,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         )
 
         return {"policy": obs, "full_state": full_state}
-    
+
     def _get_rewards(self) -> torch.Tensor:
         """
         Returns the reward tensor.
@@ -475,18 +471,18 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         base_pos_w, base_ori_w, lin_vel_w, ang_vel_w = self.get_frame_state_from_task(self.cfg.task_body)
         
         # Computes the error from the desired position and orientation
-        pos_error = torch.linalg.norm(self._desired_pos_w - base_pos_w, dim=1)
+        pos_error = torch.linalg.norm(self._ball_pos_w - base_pos_w, dim=1)
         pos_distance = 1.0 - torch.tanh(pos_error / self.cfg.pos_radius)
 
-        ori_error = quat_error_magnitude(self._desired_ori_w, base_ori_w)
+        ori_error = quat_error_magnitude(self._ball_ori_w, base_ori_w)
         
-        goal_yaw_w = yaw_quat(self._desired_ori_w)
+        goal_yaw_w = yaw_quat(self._ball_ori_w)
         current_yaw_w = yaw_quat(base_ori_w)
         # yaw_error_w = quat_mul(quat_inv(current_yaw_w), goal_yaw_w)
         # yaw_error = quat_error_magnitude(yaw_error_w, torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device).tile((self.num_envs, 1)))
 
         # other_yaw_error = yaw_error_from_quats(goal_yaw_w, current_yaw_w, self.cfg.num_joints).unsqueeze(1)
-        yaw_error = yaw_error_from_quats(self._desired_ori_w, base_ori_w, self.cfg.num_joints).unsqueeze(1)
+        yaw_error = yaw_error_from_quats(self._ball_ori_w, base_ori_w, self.cfg.num_joints).unsqueeze(1)
         # other_yaw_error = torch.sum(torch.square(other_yaw_error), dim=1)
         yaw_error = torch.linalg.norm(yaw_error, dim=1)
 
@@ -523,17 +519,32 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         #     "endeffector_ang_vel": ang_vel_error * self.cfg.ang_vel_reward_scale * self.step_dt,
         #     "joint_vel": joint_vel_error * self.cfg.joint_vel_reward_scale * self.step_dt,
         # }
+        # rewards = {
+        #     "endeffector_pos_error": pos_error * self.cfg.pos_error_reward_scale,
+        #     "endeffector_pos_distance": pos_distance * self.cfg.pos_distance_reward_scale,
+        #     "endeffector_ori_error": ori_error * self.cfg.ori_error_reward_scale,
+        #     "endeffector_yaw_error": yaw_error * self.cfg.yaw_error_reward_scale,
+        #     "endeffector_yaw_distance": yaw_distance * self.cfg.yaw_distance_reward_scale,
+        #     "endeffector_lin_vel": lin_vel_error * self.cfg.lin_vel_reward_scale,
+        #     "endeffector_ang_vel": ang_vel_error * self.cfg.ang_vel_reward_scale,
+        #     "joint_vel": joint_vel_error * self.cfg.joint_vel_reward_scale,
+        #     "action_norm": action_error * self.cfg.action_norm_reward_scale,
+        # }
+
+        # print("[Isaac Env: Rewards] Pos Error: ", torch.linalg.norm(self._ball_pos_w[:,:2] - base_pos_w[:,:2], dim=1))
+        # print("[Isaac Env: Rewards] Episode Length Buf: ", self.episode_length_buf)
+        ball_pos_w = self._ball.data.root_pos_w
+        ball_catch_pos_error = torch.linalg.norm(ball_pos_w[:,:2] - base_pos_w[:,:2], dim=1)
+        time_to_catch = (self.episode_length_buf + 1)% int(2 * self.cfg.policy_rate_hz) == 0
+
+        # print("[Isaac Env: Rewards] Ball Catch Pos Error: ", ball_catch_pos_error)
+        # print("[Isaac Env: Rewards] Time to Catch: ", time_to_catch)
+
+
         rewards = {
-            "endeffector_pos_error": pos_error * self.cfg.pos_error_reward_scale,
-            "endeffector_pos_distance": pos_distance * self.cfg.pos_distance_reward_scale,
-            "endeffector_ori_error": ori_error * self.cfg.ori_error_reward_scale,
-            "endeffector_yaw_error": yaw_error * self.cfg.yaw_error_reward_scale,
-            "endeffector_yaw_distance": yaw_distance * self.cfg.yaw_distance_reward_scale,
-            "endeffector_lin_vel": lin_vel_error * self.cfg.lin_vel_reward_scale,
-            "endeffector_ang_vel": ang_vel_error * self.cfg.ang_vel_reward_scale,
-            "joint_vel": joint_vel_error * self.cfg.joint_vel_reward_scale,
-            "action_norm": action_error * self.cfg.action_norm_reward_scale,
+            "catch": torch.logical_and((ball_catch_pos_error < self.cfg.ball_error_threshold), time_to_catch).float(),
         }
+
         errors = {
             "pos_error": pos_error,
             "pos_distance": pos_distance,
@@ -572,7 +583,57 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         # died = torch.logical_or(died, self._robot.data.root_pos_w[:, 2] > 10.0)
 
         time_out = self.episode_length_buf >= self.max_episode_length - 1
+
+        rethrow_boolean = torch.logical_and((self.episode_length_buf % int(2 * self.cfg.policy_rate_hz) == 0), (self.episode_length_buf > 0))
+        env_id_to_rethrow_ball = rethrow_boolean.nonzero(as_tuple=False).squeeze(-1)
+        # print("Env ID to rethrow ball: ", env_id_to_rethrow_ball)
+        self.rethrow_ball(env_id_to_rethrow_ball)
+
+
         return died, time_out
+
+    def rethrow_ball(self, env_ids: torch.Tensor | None = None):
+        """
+        Resets the ball position and velocity to the initial state.
+        """
+        if env_ids is None or len(env_ids) == 0 or env_ids.shape[0] == 0:
+            return
+
+        if len(env_ids) == self.num_envs:
+            env_ids = self._robot._ALL_INDICES
+
+        # print("Re-Throwing ball for envs: ", env_ids)
+
+        # self._ball_vel_w[env_ids] = torch.zeros_like(self._ball_vel_w[env_ids]).uniform_(-1.0, 1.0)
+        # self._ball_vel_w[env_ids, 2] = 9.06 * torch.ones_like(self._ball_vel_w[env_ids, 2])
+        # self._ball_pos_w[env_ids, :2] = torch.zeros_like(self._ball_pos_w[env_ids, :2])
+        # self._ball_pos_w[env_ids, 2] = 2.0 * torch.ones_like(self._ball_pos_w[env_ids, 2])
+        # self._ball_ori_w[env_ids] = random_orientation(env_ids.size(0), device=self.device)
+
+        default_ball_state = self._ball.data.default_root_state[env_ids, :7]
+        default_ball_state[:, :3] = torch.zeros_like(default_ball_state[:, :3])
+        default_ball_state[:, :2] += self._terrain.env_origins[env_ids, :2]
+        default_ball_state[:, 2] = 2.0 * torch.ones_like(default_ball_state[:, 2])
+        self._ball.write_root_pose_to_sim(default_ball_state[:, :7], env_ids=env_ids)
+        default_ball_vel = self._ball.data.default_root_state[env_ids, 7:]
+        default_ball_vel[:, :3] = torch.zeros_like(default_ball_vel[:, :3]).uniform_(-1.0, 1.0)
+        default_ball_vel[:, 2] = 6.0 * torch.ones_like(default_ball_vel[:, 2])
+        self._ball.write_root_velocity_to_sim(default_ball_vel, env_ids=env_ids)
+
+
+        self._catch_pos_w[env_ids] = self.get_catch_point(default_ball_state[:, :3], default_ball_vel[:, :3])
+
+    def get_catch_point(self, pos_init, vel_init, z_crossing=0.5):
+        z_crossing = torch.tensor(z_crossing, device=self.device).tile((pos_init.shape[0], 1)).squeeze()
+        g = self._gravity_magnitude
+        t = (vel_init[:,2] + torch.sqrt(vel_init[:,2]**2 + 2*g*(pos_init[:,2] - z_crossing))) / g
+        # print("Time to cross: ", t)
+
+        # x_crossing = pos_init_x + vel_init_x*t
+        # y_crossing = pos_init_y + vel_init_y*t
+        x_crossing = pos_init[:,0] + vel_init[:,0]*t
+        y_crossing = pos_init[:,1] + vel_init[:,1]*t
+        return torch.stack((x_crossing.view(-1, 1), y_crossing.view(-1,1), z_crossing.view(-1, 1)), dim=1).squeeze(-1)
 
     def _reset_idx(self, env_ids: torch.Tensor | None):
         """
@@ -590,8 +651,8 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         final_yaw_error_to_goal = quat_error_magnitude(yaw_quat(self._desired_ori_w[env_ids]), yaw_quat(base_ori_w[env_ids])).mean()
         extras = dict()
         for key in self._episode_sums.keys():
-            episodic_sum_avg = self._episode_sums[key][env_ids].mean()
-            extras["Episode Reward/" + key] = episodic_sum_avg / self.max_episode_length_s
+            episodic_sum = self._episode_sums[key][env_ids].sum()
+            extras["Episode Reward/" + key] = episodic_sum
             self._episode_sums[key][env_ids] = 0.0
         for key in self._episode_error_sums.keys():
             episodic_sum_avg = self._episode_error_sums[key][env_ids].mean()
@@ -615,11 +676,37 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         
         # Sample new goal position and orientation
         if self.cfg.goal_cfg == "rand":
-            self._desired_pos_w[env_ids, :2] = torch.zeros_like(self._desired_pos_w[env_ids, :2]).uniform_(-2.0, 2.0)
-            # self._desired_pos_w[env_ids, :2] = torch.zeros_like(self._desired_pos_w[env_ids, :2])
-            self._desired_pos_w[env_ids, :2] += self._terrain.env_origins[env_ids, :2]
-            self._desired_pos_w[env_ids, 2] = torch.zeros_like(self._desired_pos_w[env_ids, 2]).uniform_(0.5, 1.5)
-            self._desired_ori_w[env_ids] = random_orientation(env_ids.size(0), device=self.device)
+            # self._ball_pos_w[env_ids, :2] = torch.zeros_like(self._ball_pos_w[env_ids, :2])
+            # # self._ball_pos_w[env_ids, :2] = torch.zeros_like(self._ball_pos_w[env_ids, :2])
+            # self._ball_pos_w[env_ids, :2] += self._terrain.env_origins[env_ids, :2]
+            # self._ball_pos_w[env_ids, 2] = 2.0 * torch.ones_like(self._ball_pos_w[env_ids, 2])
+            # # self._ball_vel_w[env_ids, :2] = torch.zeros_like(self._ball_vel_w[env_ids, :2]).uniform_(-1.0, 1.0)
+            # self._ball_vel_w[env_ids, :2] = torch.zeros_like(self._ball_vel_w[env_ids, :2])
+            # self._ball_vel_w[env_ids, 2] = 9.06 * torch.ones_like(self._ball_vel_w[env_ids, 2])
+            # self._ball_ori_w[env_ids] = random_orientation(env_ids.size(0), device=self.device)
+
+            # self._catch_pos_w[env_ids] = self.get_catch_point(self._ball_pos_w[env_ids], self._ball_vel_w[env_ids])
+
+            default_ball_state = self._ball.data.default_root_state[env_ids, :7]
+            default_ball_state[:, :3] = torch.zeros_like(default_ball_state[:, :3])
+            default_ball_state[:, :2] += self._terrain.env_origins[env_ids, :2]
+            default_ball_state[:, 2] = 2.0 * torch.ones_like(default_ball_state[:, 2])
+            self._ball.write_root_pose_to_sim(default_ball_state[:, :7], env_ids=env_ids)
+            default_ball_vel = self._ball.data.default_root_state[env_ids, 7:]
+            default_ball_vel[:, :3] = torch.zeros_like(default_ball_vel[:, :3])
+            default_ball_vel[:, 2] = 6.0 * torch.ones_like(default_ball_vel[:, 2])
+            self._ball.write_root_velocity_to_sim(default_ball_vel, env_ids=env_ids)
+
+            self._catch_pos_w[env_ids] = self.get_catch_point(default_ball_state[:, :3], default_ball_vel[:, :3])
+
+            # ball_default_pose = self.ball.data.default_root_state[env_ids, :7]
+            # ball_default_pose[:, :3] = self._desired_pos_w[env_ids]
+            # ball_default_pose[:, 3:7] = self._desired_ori_w[env_ids]
+            # self.ball.write_root_pose_to_sim(ball_default_pose, env_ids=env_ids)
+            # ball_default_vel = self.ball.data.default_root_state[env_ids, 7:]
+            # ball_default_vel[:, :3] = self._ball_vel_w[env_ids]
+            # self.ball.write_root_velocity_to_sim(ball_default_vel, env_ids=env_ids)
+
         elif self.cfg.goal_cfg == "fixed":
             self._desired_pos_w[env_ids] = torch.tensor(self.cfg.goal_pos, device=self.device).tile((env_ids.size(0), 1))
             self._desired_pos_w[env_ids, :2] += self._terrain.env_origins[env_ids, :2]
@@ -684,7 +771,9 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
 
     def _setup_scene(self):
         self._robot = Articulation(self.cfg.robot)
+        self._ball = RigidObject(self.cfg.ball)
         self.scene.articulations["robot"] = self._robot
+        self.scene.rigid_objects["ball"] = self._ball
 
         self.cfg.terrain.num_envs = self.scene.cfg.num_envs
         self.cfg.terrain.env_spacing = self.scene.cfg.env_spacing
@@ -700,30 +789,44 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         # create markers if necessary for the first tome
         if debug_vis:
             if not hasattr(self, "frame_visualizer"):
-                marker_cfg = VisualizationMarkersCfg(prim_path="/Visuals/Markers",
+                frame_marker_cfg = VisualizationMarkersCfg(prim_path="/Visuals/Markers",
                                         markers={
                                         "frame": sim_utils.UsdFileCfg(
                                             usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/UIElements/frame_prim.usd",
                                             scale=(0.1, 0.1, 0.1),
                                         ),})
-                self.frame_visualizer = VisualizationMarkers(marker_cfg)
-            # set their visibility to true
-            self.frame_visualizer.set_visibility(True)
+    
+                self.frame_visualizer = VisualizationMarkers(frame_marker_cfg)
+                # set their visibility to true
+                self.frame_visualizer.set_visibility(True)
+            if not hasattr(self, "ball_visualizer"):
+                ball_marker_cfg = VisualizationMarkersCfg(prim_path="/Visuals/Objects",
+                                        markers={
+                                        "ball": SphereCfg(
+                                            radius=self.cfg.ball_radius,
+                                            visual_material=PreviewSurfaceCfg(diffuse_color=(1.0, 0.0, 0.0)),
+                                        ),
+                                        })  
+                # ball_marker_cfg.radius = 0.02
+                # ball_marker_cfg.visual_material = PreviewSurfaceCfg(diffuse_color=(1.0, 0.0, 0.0, 1.0))
+                self.ball_visualizer = VisualizationMarkers(ball_marker_cfg)
+                self.ball_visualizer.set_visibility(False)
         else:
             if hasattr(self, "frame_visualizer"):
                 self.frame_visualizer.set_visibility(False)
+            if hasattr(self, "ball_visualizer"):
+                self.ball_visualizer.set_visibility(False)
 
     def _debug_vis_callback(self, event):
-        com_pos_w, com_ori_w = combine_frame_transforms(self._robot.data.root_pos_w, self._robot.data.root_quat_w, self.com_pos_e.tile(self.local_num_envs, 1), self.com_ori_e.tile(self.local_num_envs, 1))
-
         # update the markers
         # Update frame positions for debug visualization
         self._frame_positions[:, 0] = self._robot.data.root_pos_w
-        self._frame_positions[:, 1] = self._desired_pos_w
-        self._frame_positions[:, 2] = self._robot.data.body_pos_w[:, self._body_id].squeeze(1)
+        # self._frame_positions[:, 1] = self._desired_pos_w
+        # self._frame_positions[:, 2] = self._robot.data.body_pos_w[:, self._body_id].squeeze(1)
         # self._frame_positions[:, 2] = com_pos_w
         self._frame_orientations[:, 0] = self._robot.data.root_quat_w
-        self._frame_orientations[:, 1] = self._desired_ori_w
-        self._frame_orientations[:, 2] = self._robot.data.body_quat_w[:, self._body_id].squeeze(1)
+        # self._frame_orientations[:, 1] = self._desired_ori_w
+        # self._frame_orientations[:, 2] = self._robot.data.body_quat_w[:, self._body_id].squeeze(1)
         # self._frame_orientations[:, 2] = com_ori_w
         self.frame_visualizer.visualize(self._frame_positions.flatten(0, 1), self._frame_orientations.flatten(0,1))
+        self.ball_visualizer.visualize(self._ball_pos_w)

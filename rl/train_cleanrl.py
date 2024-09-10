@@ -277,6 +277,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: dict):
                         writer.add_scalar("charts/episodic_summed_ang_vel_reward", info["log"]["Episode Reward/endeffector_ang_vel"].item(), global_step)
                         writer.add_scalar("charts/episodic_summed_pos_reward", info["log"]["Episode Reward/endeffector_pos_distance"].item(), global_step)
                         writer.add_scalar("charts/episodic_summed_ori_reward", info["log"]["Episode Reward/endeffector_ori_error"].item(), global_step)
+                        writer.add_scalar("charts/episodic_summed_yaw_error_reward", info["log"]["Episode Reward/endeffector_yaw_error"].item(), global_step)
+                        writer.add_scalar("charts/episodic_summed_yaw_distance_reward", info["log"]["Episode Reward/endeffector_yaw_distance"].item(), global_step)
                         writer.add_scalar("charts/episodic_summed_joint_vel_reward", info["log"]["Episode Reward/joint_vel"].item(), global_step)
                         writer.add_scalar("charts/episode_final_distance_to_goal", info["log"]["Metrics/Final Distance to Goal"], global_step)
                         writer.add_scalar("charts/episode_final_orientation_error", info["log"]["Metrics/Final Orientation Error to Goal"], global_step)
@@ -288,7 +290,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: dict):
                         writer.add_scalar("charts/episode_summed_ang_vel_error", info["log"]["Episode Error/ang_vel"].item(), global_step)
                         writer.add_scalar("charts/episode_summed_ori_error", info["log"]["Episode Error/ori_error"].item(), global_step)
                         writer.add_scalar("charts/episode_summed_yaw_error", info["log"]["Episode Error/yaw_error"].item(), global_step)
-                        writer.add_scalar("charts/episode_summed_manual_yaw_error", info["log"]["Episode Error/manual_yaw_error"].item(), global_step)
+                        writer.add_scalar("charts/episode_summed_yaw_distance", info["log"]["Episode Error/yaw_distance"].item(), global_step)
                         writer.add_scalar("charts/episode_summed_joint_vel_error", info["log"]["Episode Error/joint_vel"].item(), global_step)
                         writer.add_scalar("charts/episode_summed_action_norm", info["log"]["Episode Error/action_norm"].item(), global_step)
                     

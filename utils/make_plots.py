@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import os
+import yaml
 
 import omni.isaac.lab.utils.math as isaac_math_utils
 
@@ -81,6 +82,9 @@ def plot_data(rl_eval_path, dc_eval_path=None, save_prefix=""):
     print("Std converged error for Decoupled: ", dc_std_pos_error[-1])
 
     sns.set_theme()
+    sns.set_context("paper")
+
+
     plt.figure(figsize=(3.25, 2.5), dpi=300)
     sns.lineplot(x=time_axis, y=mean_pos_error, label="RL Controller", ci='sd')
     plt.fill_between(time_axis, mean_pos_error - std_pos_error, mean_pos_error + std_pos_error, alpha=0.2)
@@ -170,7 +174,19 @@ def plot_data(rl_eval_path, dc_eval_path=None, save_prefix=""):
     rewards = rl_rewards[:, :-1].cpu()
     dc_rewards = dc_rewards[:, :-1].cpu()
 
-    max_reward = 15.0
+    # Look at hydra config for the reward scales
+    if os.path.exists(os.path.join(rl_eval_path, ".hydra/config.yaml")):
+        with open(os.path.join(rl_eval_path, ".hydra/config.yaml"), "r") as f:
+            hydra_cfg = yaml.safe_load(f)
+            max_reward = 0.0
+            for key in hydra_cfg["env"]:
+                if "distance_reward_scale" in key:
+                    max_reward += hydra_cfg["env"][key]
+    else:
+        max_reward = 15.0
+
+    # # max_reward = 15.0
+    # max_reward = 20.0
     min_reward = 0.0
     # normalize the rewards
     rewards = (rewards - min_reward) / (max_reward - min_reward)
@@ -230,7 +246,10 @@ def plot_data(rl_eval_path, dc_eval_path=None, save_prefix=""):
     axs[0].set_title("End Effector Position Error")
     axs[0].set_xlabel("Time (s)")
     axs[0].set_ylabel("Error (m)")
-    axs[0].set_ylim(-0.1, 2.0)
+    if "case_study" in save_prefix:
+        axs[0].set_ylim(-0.1, 0.5)
+    else:
+        axs[0].set_ylim(-0.1, 2.0)
     
     sns.lineplot(x=time_axis, y=mean_yaw_error, label="RL Controller", ci='sd', ax=axs[1], legend=False)
     axs[1].fill_between(time_axis, mean_yaw_error - std_yaw_error, mean_yaw_error + std_yaw_error, alpha=0.2)
@@ -260,7 +279,8 @@ def plot_data(rl_eval_path, dc_eval_path=None, save_prefix=""):
 
 if __name__ == "__main__":
     # rl_eval_path = "../rl/runs/AM_0DOF_hover_pos_and_yaw_yaw_error_scale_-0.1_custom_yaw_error_1/"
-    rl_eval_path = "../rl/runs/AM_0DOF_hover_pos_and_yaw_yaw_error_scale_-0.1_custom_yaw_func_anneal_lr_1/"
+    # rl_eval_path = "../rl/runs/AM_0DOF_hover_pos_and_yaw_yaw_error_scale_-0.1_custom_yaw_func_anneal_lr_1/"
+    rl_eval_path = "../rl/runs/AM_0DOF_hover_pos_and_yaw_yaw_distance_scale_5_pos_distance_15_smooth_transition_1"
     dc_eval_path = "../rl/baseline_0dof/"
     plot_data(rl_eval_path, dc_eval_path)
     plot_data(rl_eval_path, dc_eval_path, "case_study_")

@@ -54,7 +54,7 @@ def main():
 
     env_cfg = parse_env_cfg(args_cli.task, num_envs= args_cli.num_envs, use_fabric=not args_cli.disable_fabric)
     env_cfg.viewer.eye = (3.0, 3.0, 0.2)
-    env_cfg.viewer.resolution = (1920, 1080)
+    env_cfg.viewer.resolution = (1280, 720)
     env_cfg.viewer.lookat = (0.0, 0.0, 0.5)
     env_cfg.viewer.origin_type = "env"
     env_cfg.viewer.env_index = 0
@@ -64,8 +64,8 @@ def main():
     print(env_cfg.robot.spawn)
 
     env_cfg.goal_cfg = "rand" # "rand" or "fixed"
-    env_cfg.goal_pos = [1.0, 1.0, 0.5]
-    env_cfg.goal_ori = [0.7071068, 0.0, 0.0, 0.7071068]
+    env_cfg.goal_pos = [0.0, 0.0, 0.5]
+    env_cfg.goal_ori = [1.0, 0.0, 0.0, 0.0]
     # env_cfg.goal_ori = [0.7071068, 0.0, 0.0, 0.7071068]
     env_cfg.sim_rate_hz = 100
     env_cfg.policy_rate_hz = 50
@@ -82,8 +82,10 @@ def main():
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
 
     # Get mass from env
-    vehicle_mass = env.vehicle_mass
-    arm_mass = env.arm_mass
+    vehicle_mass = env.vehicle_mass # this is pulled from the body "vehicle" in the USD file
+    # vehicle_mass = torch.tensor([0.706028], device=env.device)
+    arm_mass = env.arm_mass 
+    # arm_mass = env.arm_mass - vehicle_mass
     inertia =  env.quad_inertia
     arm_offset = env.arm_offset
     pos_offset = env.position_offset
@@ -99,17 +101,18 @@ def main():
     # input("Press Enter to continue...")
 
     # gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, com_pos_w=env.com_pos_w, device=env.device)
+    
     gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, com_pos_w=None, device=env.device)
-    print("Quad in EE Frame: ", gc.quad_pos_ee_frame)
-    print("COM in EE Frame: ", gc.com_pos_ee_frame)
+    # print("Quad in EE Frame: ", gc.quad_pos_ee_frame)
+    # print("COM in EE Frame: ", gc.com_pos_ee_frame)
 
 
     video_kwargs = {
         "video_folder": "videos",
-        # "step_trigger": lambda step: step == 0,
-        "episode_trigger": lambda episode: episode == 0,
-        # "video_length": args_cli.video_length,
-        "name_prefix": "GC_Tuning"
+        "step_trigger": lambda step: step == 0,
+        # "episode_trigger": lambda episode: episode == 0,
+        "video_length": 501,
+        "name_prefix": "Ball_Throw_Devel"
     }
     env = gym.wrappers.RecordVideo(env, **video_kwargs)
 
@@ -126,11 +129,11 @@ def main():
             # action = env.action_space.sample()
             # action = torch.zeros_like(torch.from_numpy(env.action_space.sample()))
             # action[0]= -1.0/3.0 # nominal hover action with gravity enabled 
-            action = torch.tensor([1.0/3.0, 0.0, 0.0, 0.0, 0.0, 0.0]) # nominal hover action with gravity enabled.
+            # action = torch.tensor([-1.0/3.0, 0.0, 0.0, 0.0, 0.0, 0.0]) # nominal hover action with gravity enabled.
             # action = torch.tensor([-1.0, 0.0, 0.0, 0.0, 0.0, 1.0]) # nominal hover action with gravity disabled.
 
             # action = torch.tensor([-1.0/1.9, 0.0, 0.0, 0.0])
-            action = torch.tile(action, (args_cli.num_envs, 1)).to(obs_tensor.device)
+            # action = torch.tile(action, (args_cli.num_envs, 1)).to(obs_tensor.device)
 
 
             full_state = obs_dict["full_state"]
@@ -144,8 +147,13 @@ def main():
             obs_dict, reward, terminated, truncated, info = env.step(action)
             done_count += terminated.sum().item() + truncated.sum().item()
             print("Done count: ", done_count)
+            print("Reward: ", reward)
             print()
             # input()
+        print("Final info: ", info)
+        # print("Catch count: ", info['log']['Episode Reward/catch'].item())
+        # print("Max possible catches: ", args_cli.num_envs * 5.0)
+        # print("Catch percentage: ", info['log']['Episode Reward/catch'].item() / (args_cli.num_envs * 5.0))
         env.close()
         simulation_app.close()
 

@@ -113,19 +113,33 @@ def main():
         env_cfg.sim.dt = 1/env_cfg.sim_rate_hz
         env_cfg.decimation = env_cfg.sim_rate_hz // env_cfg.policy_rate_hz
         env_cfg.sim.render_interval = env_cfg.decimation
+
+        env_cfg.yaw_distance_reward_scale = 5.0
     else:
         print("\n\nSaved args: ", saved_args_cli)
         print("Keys: ", saved_args_cli.keys())
         env_cfg = update_env_cfg(env_cfg, saved_args_cli)
 
     env_cfg.eval_mode = True
+    env_cfg.viewer.resolution = (1920, 1080)
+    
 
     # If ".hydra/config.yaml" is present, load some of the reward scalars from there
     if os.path.exists(os.path.join(policy_path, ".hydra/config.yaml")):
         with open(os.path.join(policy_path, ".hydra/config.yaml"), "r") as f:
             hydra_cfg = yaml.safe_load(f)
-            env_cfg.use_yaw_representation = hydra_cfg["env"]["use_yaw_representation"]
-            env_cfg.yaw_error_reward_scale = hydra_cfg["env"]["yaw_error_reward_scale"]
+            if "use_yaw_representation" in hydra_cfg["env"]:
+                env_cfg.use_yaw_representation = hydra_cfg["env"]["use_yaw_representation"]
+            if "yaw_error_reward_scale" in hydra_cfg["env"]:
+                env_cfg.yaw_error_reward_scale = hydra_cfg["env"]["yaw_error_reward_scale"]
+            if "yaw_distance_reward_scale" in hydra_cfg["env"]:
+                env_cfg.yaw_distance_reward_scale = hydra_cfg["env"]["yaw_distance_reward_scale"]
+            if "yaw_smooth_transition_scale" in hydra_cfg["env"]:
+                env_cfg.yaw_smooth_transition_scale = hydra_cfg["env"]["yaw_smooth_transition_scale"]
+            if "yaw_radius" in hydra_cfg["env"]:
+                env_cfg.yaw_radius = hydra_cfg["env"]["yaw_radius"]
+
+    env_cfg.yaw_radius = 0.5
     
     if env_cfg.use_yaw_representation:
         env_cfg.num_observations += 4
@@ -138,6 +152,12 @@ def main():
         env_cfg.goal_pos = [0.0, 0.0, 0.5]
         env_cfg.goal_ori = [0.7071068, 0.0, 0.0, 0.7071068]
         env_cfg.init_cfg = "default"
+
+        # Camera settings
+        env_cfg.viewer.eye = (0.75, 0.75, 1.25)
+        env_cfg.viewer.lookat = (0.0, 0.0, 0.5)
+        env_cfg.viewer.origin_type = "env"
+        env_cfg.viewer.env_index = 0
 
     envs = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
 

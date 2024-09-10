@@ -99,6 +99,21 @@ def compute_desired_pose_0dof(goal_pos_w, goal_ori_w, pos_transform, ori_transfo
 
     return pos_desired, yaw_desired, b2
 
+def compute_desired_pose_1dof(goal_pos_w, goal_ori_w, pos_transform):
+    b2 = isaac_math_utils.quat_rotate(goal_ori_w, torch.tensor([[0.0, 1.0, 0.0]], device=goal_ori_w.device).tile(goal_ori_w.shape[0], 1))
+    b2 = isaac_math_utils.normalize(b2)
+     
+    # Yaw is the angle between b2 and the y-axis
+    yaw_desired = torch.atan2(b2[:, 1], b2[:, 0]) - torch.pi/2
+    yaw_desired = isaac_math_utils.wrap_to_pi(yaw_desired)
+
+    # Position desired is the pos_transform norm along -b2 direction
+    pos_desired = goal_pos_w + torch.bmm(torch.linalg.norm(pos_transform, dim=1).view(-1, 1, 1), -1*b2.unsqueeze(1)).squeeze(1)
+
+    theta_des = torch.arcsin(b2[:, 2])
+
+    return pos_desired, yaw_desired, theta_des
+
 @torch.jit.script
 def get_point_state_from_ee_transform_w(ee_pos_w, ee_ori_quat_w, ee_vel_w, ee_omega_w, point_pos_ee_frame):
     point_pos_w, _ = isaac_math_utils.combine_frame_transforms(ee_pos_w, ee_ori_quat_w, point_pos_ee_frame)
@@ -261,7 +276,7 @@ class DecoupledController():
         # pos_error = quad_pos_computed - desired_pos_quad
         # vel_error = quad_vel_computed - torch.zeros_like(quad_vel_computed)
 
-        # print("Pos Error norm: ", torch.linalg.norm(pos_error,dim=1))
+        print("[SE3] Pos Error norm: ", torch.linalg.norm(pos_error,dim=1))
         # print("Vel Error: ", vel_error)
 
         # Compute desired Force (batch_size, 3)
