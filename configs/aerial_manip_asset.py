@@ -329,8 +329,13 @@ BALL_CFG = RigidObjectCfg(
             collision_enabled=True,
             contact_offset=0.05,
         ),
-        mass_properties=sim_utils.MassPropertiesCfg(
+        mass_props=sim_utils.MassPropertiesCfg(
             mass=0.001,
+        ),
+        physics_material=sim_utils.RigidBodyMaterialCfg(
+            restitution=0.9,
+            static_friction=0.5,
+            dynamic_friction=0.5,
         ),
     ),
     collision_group=0,

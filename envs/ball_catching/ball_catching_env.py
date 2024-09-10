@@ -42,14 +42,6 @@ class AerialManipulatorBallCatchEnvWindow(BaseEnvWindow):
                     # add command manager visualization
                     self._create_debug_vis_ui_element("targets", self.env)
 
-@configclass
-class AerialManipulatorBallCatchingSceneCfg(InteractiveSceneCfg):
-    num_envs: int = 4096
-    env_spacing: float = 2.5
-    replicate_physics: bool = True
-
-    robot : ArtuculationCfg = AERIAL_MANIPULATOR_0DOF_CFG
-    ball : RigidObjectCfg = BALL_CFG
 
 @configclass
 class AerialManipulatorBallCatchingEnvBaseCfg(DirectRLEnvCfg):
@@ -64,7 +56,7 @@ class AerialManipulatorBallCatchingEnvBaseCfg(DirectRLEnvCfg):
     # simulation
     sim: SimulationCfg = SimulationCfg(
         dt=1 / sim_rate_hz,
-        render_interval=decimation,
+        render_interval=1,
         disable_contact_processing=True,
         physics_material=sim_utils.RigidBodyMaterialCfg(
             friction_combine_mode="multiply",
@@ -83,7 +75,7 @@ class AerialManipulatorBallCatchingEnvBaseCfg(DirectRLEnvCfg):
             restitution_combine_mode="multiply",
             static_friction=1.0,
             dynamic_friction=1.0,
-            restitution=0.0,
+            restitution=0.2,
         ),
         debug_vis=False,
     )
@@ -191,6 +183,19 @@ class AerialManipulator0DOFBallCatchingEnvCfg(AerialManipulatorBallCatchingEnvBa
     # robot
     robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
     robot.collision_group = 0
+    robot.spawn.physics_material = sim_utils.RigidBodyMaterialCfg(
+        friction_combine_mode="multiply",
+        restitution_combine_mode="multiply",
+        static_friction=1.0,
+        dynamic_friction=1.0,
+        restitution=0.9,
+    )
+    robot.spawn.collision_props=sim_utils.CollisionPropertiesCfg(
+        collision_enabled=True,
+        contact_offset=0.02,
+    ),
+
+
     # ball: RigidObjectCfg = BALL_CFG.replace(prim_path="/World/envs/env_.*/Ball")
     # scene = AerialManipulatorBallCatchingSceneCfg()
     # scene.robot = AERIAL_MANIPULATOR_0DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
@@ -207,6 +212,17 @@ class AerialManipulator0DOFDebugBallCatchingEnvCfg(AerialManipulatorBallCatching
     # robot
     robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_DEBUG_CFG.replace(prim_path="/World/envs/env_.*/Robot")
     robot.collision_group = 0
+    robot.spawn.physics_material = sim_utils.RigidBodyMaterialCfg(
+        friction_combine_mode="multiply",
+        restitution_combine_mode="multiply",
+        static_friction=1.0,
+        dynamic_friction=1.0,
+        restitution=0.9,
+    )
+    robot.spawn.collision_props=sim_utils.CollisionPropertiesCfg(
+        collision_enabled=True,
+        contact_offset=0.02,
+    ),
     # scene = AerialManipulatorBallCatchingSceneCfg()
     # scene.robot = AERIAL_MANIPULATOR_0DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
 
@@ -317,7 +333,6 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
         # add handle for debug visualization (this is set to a valid handle inside set_debug_vis)
         self.set_debug_vis(self.cfg.debug_vis)
 
-        import code; code.interact(local=locals())
 
     def _pre_physics_step(self, actions: torch.Tensor):
         self._actions = actions.clone().clamp(-1.0, 1.0) # clamp the actions to [-1, 1]

@@ -52,7 +52,7 @@ class AerialManipulatorHoverEnvBaseCfg(DirectRLEnvCfg):
     # simulation
     sim: SimulationCfg = SimulationCfg(
         dt=1 / sim_rate_hz,
-        render_interval=decimation,
+        render_interval=1,
         disable_contact_processing=True,
         physics_material=sim_utils.RigidBodyMaterialCfg(
             friction_combine_mode="multiply",
