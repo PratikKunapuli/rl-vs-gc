@@ -161,6 +161,14 @@ def main():
 
     envs = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
 
+    save_prefix = ""
+    if args_cli.case_study:
+        save_prefix = "case_study_"
+    
+    if "Ball" in args_cli.task:
+        save_prefix += "ball_catch_"
+        save_prefix += "seed_" + str(args_cli.seed) + "_"
+
    
 
     video_kwargs = {
@@ -168,7 +176,7 @@ def main():
         "step_trigger": lambda step: step == 0,
         # "episode_trigger": lambda episode: (episode % args.save_interval) == 0,
         "video_length": args_cli.video_length,
-        "name_prefix": "case_study_eval_video" if args_cli.case_study else "eval_video"
+        "name_prefix": save_prefix + "eval_video"
     }
     envs = gym.wrappers.RecordVideo(envs, **video_kwargs)
     envs.single_action_space = envs.action_space
@@ -222,12 +230,10 @@ def main():
                 steps += 1
                 print("Step: ", steps)
 
-            if args_cli.case_study:
-                save_prefix = "case_study_"
-            else:
-                save_prefix = ""
             torch.save(full_states, os.path.join(policy_path, save_prefix + "eval_full_states.pt"))
             torch.save(rewards, os.path.join(policy_path, save_prefix + "eval_rewards.pt"))
+
+            print("Final Info: \n\n", info, "\n")
             envs.close()
             simulation_app.close()
 

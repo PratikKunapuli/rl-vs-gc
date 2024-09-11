@@ -485,13 +485,15 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         # yaw_error_w = quat_mul(quat_inv(current_yaw_w), goal_yaw_w)
         # yaw_error = quat_error_magnitude(yaw_error_w, torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device).tile((self.num_envs, 1)))
 
+        smooth_transition_func = 1.0 - torch.exp(-1.0 / torch.max(self.cfg.yaw_smooth_transition_scale*pos_error - 10.0, torch.zeros_like(pos_error)))
+
         # other_yaw_error = yaw_error_from_quats(goal_yaw_w, current_yaw_w, self.cfg.num_joints).unsqueeze(1)
         yaw_error = yaw_error_from_quats(self._desired_ori_w, base_ori_w, self.cfg.num_joints).unsqueeze(1)
         # other_yaw_error = torch.sum(torch.square(other_yaw_error), dim=1)
         yaw_error = torch.linalg.norm(yaw_error, dim=1)
 
-        yaw_distance = (1.0 - torch.tanh(yaw_error / self.cfg.yaw_radius)) * (1.0 - torch.exp(-1.0/(self.cfg.yaw_smooth_transition_scale*pos_error)))
-        yaw_error = yaw_error * (1.0 - torch.exp(-1.0/(self.cfg.yaw_smooth_transition_scale*pos_error)))
+        yaw_distance = (1.0 - torch.tanh(yaw_error / self.cfg.yaw_radius)) * smooth_transition_func
+        yaw_error = yaw_error * smooth_transition_func
 
         # Velocity error components, used for stabliization tuning
         lin_vel_b = quat_rotate_inverse(base_ori_w, lin_vel_w)

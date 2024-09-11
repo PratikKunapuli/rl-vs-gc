@@ -247,7 +247,7 @@ def plot_data(rl_eval_path, dc_eval_path=None, save_prefix=""):
     axs[0].set_xlabel("Time (s)")
     axs[0].set_ylabel("Error (m)")
     if "case_study" in save_prefix:
-        axs[0].set_ylim(-0.1, 0.5)
+        axs[0].set_ylim(-0.02, 0.3)
     else:
         axs[0].set_ylim(-0.1, 2.0)
     

@@ -16,11 +16,12 @@ from omni.isaac.lab.utils.assets import ISAAC_NUCLEUS_DIR
 from omni.isaac.lab.utils.math import subtract_frame_transforms, combine_frame_transforms, matrix_from_quat, quat_error_magnitude, random_orientation, quat_inv, quat_rotate_inverse, quat_mul, yaw_quat, quat_conjugate
 from omni.isaac.lab_assets import CRAZYFLIE_CFG
 from omni.isaac.lab.sim.spawners.shapes import SphereCfg, spawn_sphere
-from omni.isaac.lab.sim.spawners.materials import VisualMaterialCfg, PreviewSurfaceCfg
+from omni.isaac.lab.sim.spawners.materials import VisualMaterialCfg, PreviewSurfaceCfg, spawn_preview_surface
 
-
+from omni.isaac.core.utils.prims import get_prim_at_path
+from pxr import Usd, UsdShade, Gf
 # Local imports
-from configs.aerial_manip_asset import AERIAL_MANIPULATOR_2DOF_CFG, AERIAL_MANIPULATOR_1DOF_CFG, AERIAL_MANIPULATOR_1DOF_WRIST_CFG, AERIAL_MANIPULATOR_0DOF_CFG, AERIAL_MANIPULATOR_0DOF_DEBUG_CFG, BALL_CFG
+from configs.aerial_manip_asset import AERIAL_MANIPULATOR_0DOF_DEBUG_BALL_CATCHING_CFG, AERIAL_MANIPULATOR_0DOF_BALL_CATCHING_CFG, BALL_CFG
 from utils.math_utilities import yaw_from_quat, yaw_error_from_quats
 
 class AerialManipulatorBallCatchEnvWindow(BaseEnvWindow):
@@ -73,14 +74,16 @@ class AerialManipulatorBallCatchingEnvBaseCfg(DirectRLEnvCfg):
         physics_material=sim_utils.RigidBodyMaterialCfg(
             friction_combine_mode="multiply",
             restitution_combine_mode="multiply",
-            static_friction=1.0,
-            dynamic_friction=1.0,
+            static_friction=0.0,
+            dynamic_friction=0.0,
             restitution=0.2,
         ),
         debug_vis=False,
     )
 
     ball: RigidObjectCfg = BALL_CFG.replace(prim_path="/World/envs/env_.*/Ball")
+    # ball_caught = BALL_CFG.replace(prim_path="/World/envs/env_.*/Ball")
+    # ball_caught.spawn.visual_material = PreviewSurfaceCfg(diffuse_color=(0.0, 1.0, 0.0))
 
 
     # scene
@@ -181,18 +184,20 @@ class AerialManipulator0DOFBallCatchingEnvCfg(AerialManipulatorBallCatchingEnvBa
     # 3(vel) + 3(ang vel) + 3(pos) + 3(grav vector body frame) = 12
     
     # robot
-    robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+    robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_BALL_CATCHING_CFG.replace(prim_path="/World/envs/env_.*/Robot")
     robot.collision_group = 0
     robot.spawn.physics_material = sim_utils.RigidBodyMaterialCfg(
         friction_combine_mode="multiply",
         restitution_combine_mode="multiply",
-        static_friction=1.0,
-        dynamic_friction=1.0,
-        restitution=0.9,
+        static_friction=20.0,
+        dynamic_friction=20.0,
+        restitution=0.0,
     )
     robot.spawn.collision_props=sim_utils.CollisionPropertiesCfg(
         collision_enabled=True,
         contact_offset=0.02,
+        torsional_patch_radius=0.04,
+        min_torsional_patch_radius=0.0001,
     ),
 
 
@@ -210,18 +215,20 @@ class AerialManipulator0DOFDebugBallCatchingEnvCfg(AerialManipulatorBallCatching
     # 3(vel) + 3(ang vel) + 3(pos) + 3(grav vector body frame) = 12
     
     # robot
-    robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_DEBUG_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+    robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_DEBUG_BALL_CATCHING_CFG.replace(prim_path="/World/envs/env_.*/Robot")
     robot.collision_group = 0
     robot.spawn.physics_material = sim_utils.RigidBodyMaterialCfg(
         friction_combine_mode="multiply",
         restitution_combine_mode="multiply",
-        static_friction=1.0,
-        dynamic_friction=1.0,
-        restitution=0.9,
+        static_friction=20.0,
+        dynamic_friction=20.0,
+        restitution=0.0,
     )
     robot.spawn.collision_props=sim_utils.CollisionPropertiesCfg(
         collision_enabled=True,
         contact_offset=0.02,
+        torsional_patch_radius=0.04,
+        min_torsional_patch_radius=0.0001,
     ),
     # scene = AerialManipulatorBallCatchingSceneCfg()
     # scene.robot = AERIAL_MANIPULATOR_0DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
@@ -246,6 +253,7 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
         self._desired_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
         self._desired_ori_w = torch.zeros(self.num_envs, 4, device=self.device)
         self._catch_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
+        self._catch_time = torch.zeros_like(self.episode_length_buf, device=self.device)
 
         
         # Logging
@@ -332,6 +340,8 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
 
         # add handle for debug visualization (this is set to a valid handle inside set_debug_vis)
         self.set_debug_vis(self.cfg.debug_vis)
+
+        # import code; code.interact(local=locals())
 
 
     def _pre_physics_step(self, actions: torch.Tensor):
@@ -550,10 +560,17 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
         # print("[Isaac Env: Rewards] Episode Length Buf: ", self.episode_length_buf)
         ball_pos_w = self._ball.data.root_pos_w
         ball_catch_pos_error = torch.linalg.norm(ball_pos_w[:,:2] - base_pos_w[:,:2], dim=1)
-        time_to_catch = (self.episode_length_buf + 1)% int(2 * self.cfg.policy_rate_hz) == 0
+        # time_to_catch = (self.episode_length_buf + 1)% int(2 * self.cfg.policy_rate_hz) == 0
+        time_to_catch = (self.episode_length_buf-self._catch_time) == 0
 
         # print("[Isaac Env: Rewards] Ball Catch Pos Error: ", ball_catch_pos_error)
+        # print("[Isaac Env: Rewards] Episode Length Buf: ", self.episode_length_buf)
+        # print("[Isaac Env: Rewards] Catch Time: ", self._catch_time)
         # print("[Isaac Env: Rewards] Time to Catch: ", time_to_catch)
+
+        catch_ids = torch.logical_and((ball_catch_pos_error < self.cfg.ball_error_threshold), time_to_catch).nonzero(as_tuple=False).squeeze(-1)
+        # print("[Isaac Env: Rewards] Catch IDs: ", catch_ids)
+        self.mark_catch(catch_ids)
 
 
         rewards = {
@@ -631,9 +648,11 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
         default_ball_state[:, 2] = 2.0 * torch.ones_like(default_ball_state[:, 2])
         self._ball.write_root_pose_to_sim(default_ball_state[:, :7], env_ids=env_ids)
         default_ball_vel = self._ball.data.default_root_state[env_ids, 7:]
-        default_ball_vel[:, :3] = torch.zeros_like(default_ball_vel[:, :3]).uniform_(-1.0, 1.0)
-        default_ball_vel[:, 2] = 6.0 * torch.ones_like(default_ball_vel[:, 2])
+        default_ball_vel[:, :3] = torch.zeros_like(default_ball_vel[:, :3]).uniform_(-0.5, 0.5)
+        default_ball_vel[:, 2] = 6.5 * torch.ones_like(default_ball_vel[:, 2])
         self._ball.write_root_velocity_to_sim(default_ball_vel, env_ids=env_ids)
+
+        self.set_ball_color(env_ids, (1.0, 0.0, 0.0))
 
 
         self._catch_pos_w[env_ids] = self.get_catch_point(default_ball_state[:, :3], default_ball_vel[:, :3])
@@ -642,13 +661,46 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
         z_crossing = torch.tensor(z_crossing, device=self.device).tile((pos_init.shape[0], 1)).squeeze()
         g = self._gravity_magnitude
         t = (vel_init[:,2] + torch.sqrt(vel_init[:,2]**2 + 2*g*(pos_init[:,2] - z_crossing))) / g
-        # print("Time to cross: ", t)
+        self._catch_time = (t * self.cfg.policy_rate_hz).int() + self.episode_length_buf
+        # print("Catch Time: ", self._catch_time)
 
         # x_crossing = pos_init_x + vel_init_x*t
         # y_crossing = pos_init_y + vel_init_y*t
         x_crossing = pos_init[:,0] + vel_init[:,0]*t
         y_crossing = pos_init[:,1] + vel_init[:,1]*t
         return torch.stack((x_crossing.view(-1, 1), y_crossing.view(-1,1), z_crossing.view(-1, 1)), dim=1).squeeze(-1)
+    
+    def mark_catch(self, env_ids: torch.Tensor):
+        if len(env_ids) == 0 or env_ids.shape[0] == 0:
+            return
+        
+        ball_vel = torch.zeros_like(self._ball.data.root_vel_w[env_ids], device=self.device)
+        ball_pos = self._ball.data.root_pos_w[env_ids]
+        self._ball.write_root_velocity_to_sim(ball_vel, env_ids=env_ids)
+        
+        self.set_ball_color(env_ids, (0.0, 1.0, 0.0))
+    
+    def set_ball_color(self, env_ids: torch.Tensor, color: tuple[float, float, float]):
+        if len(env_ids) == 0 or env_ids.shape[0] == 0:
+            return
+
+        for i in range(env_ids.shape[0]):
+            env_id = env_ids[i]
+            prim_path = "/World/envs/env_{}/Ball/geometry/material/Shader".format(env_id.item())
+            prim = get_prim_at_path(prim_path)
+            if prim:
+                # Retrieve the shader from the material
+                shader = UsdShade.Shader(prim)
+                
+                if shader:
+                    # Set the diffuse color of the material
+                    shader.GetInput("diffuseColor").Set(Gf.Vec3f(color))
+                    # print(f"Changed color of object at {prim_path} to {color}")
+                else:
+                    print(f"PreviewSurface shader not found for material at {prim}")
+            else:
+                print(f"Object at {prim_path} does not exist.")
+
 
     def _reset_idx(self, env_ids: torch.Tensor | None):
         """
@@ -702,17 +754,19 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
 
             # self._catch_pos_w[env_ids] = self.get_catch_point(self._ball_pos_w[env_ids], self._ball_vel_w[env_ids])
 
-            default_ball_state = self._ball.data.default_root_state[env_ids, :7]
-            default_ball_state[:, :3] = torch.zeros_like(default_ball_state[:, :3])
-            default_ball_state[:, :2] += self._terrain.env_origins[env_ids, :2]
-            default_ball_state[:, 2] = 2.0 * torch.ones_like(default_ball_state[:, 2])
-            self._ball.write_root_pose_to_sim(default_ball_state[:, :7], env_ids=env_ids)
-            default_ball_vel = self._ball.data.default_root_state[env_ids, 7:]
-            default_ball_vel[:, :3] = torch.zeros_like(default_ball_vel[:, :3])
-            default_ball_vel[:, 2] = 6.0 * torch.ones_like(default_ball_vel[:, 2])
-            self._ball.write_root_velocity_to_sim(default_ball_vel, env_ids=env_ids)
+            # default_ball_state = self._ball.data.default_root_state[env_ids, :7]
+            # default_ball_state[:, :3] = torch.zeros_like(default_ball_state[:, :3])
+            # default_ball_state[:, :2] += self._terrain.env_origins[env_ids, :2]
+            # default_ball_state[:, 2] = 2.0 * torch.ones_like(default_ball_state[:, 2])
+            # self._ball.write_root_pose_to_sim(default_ball_state[:, :7], env_ids=env_ids)
+            # default_ball_vel = self._ball.data.default_root_state[env_ids, 7:]
+            # default_ball_vel[:, :3] = torch.zeros_like(default_ball_vel[:, :3])
+            # default_ball_vel[:, 2] = 6.0 * torch.ones_like(default_ball_vel[:, 2])
+            # self._ball.write_root_velocity_to_sim(default_ball_vel, env_ids=env_ids)
 
-            self._catch_pos_w[env_ids] = self.get_catch_point(default_ball_state[:, :3], default_ball_vel[:, :3])
+            # self._catch_pos_w[env_ids] = self.get_catch_point(default_ball_state[:, :3], default_ball_vel[:, :3])
+
+            self.rethrow_ball(env_ids)
 
             # ball_default_pose = self.ball.data.default_root_state[env_ids, :7]
             # ball_default_pose[:, :3] = self._desired_pos_w[env_ids]
@@ -794,7 +848,7 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
         self.cfg.terrain.env_spacing = self.scene.cfg.env_spacing
         self._terrain = self.cfg.terrain.class_type(self.cfg.terrain)
         # clone, filter, and replicate
-        self.scene.clone_environments(copy_from_source=False)
+        self.scene.clone_environments(copy_from_source=True)
         self.scene.filter_collisions(global_prim_paths=[self.cfg.terrain.prim_path])
         # add lights
         light_cfg = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
