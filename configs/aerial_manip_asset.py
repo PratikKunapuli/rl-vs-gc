@@ -275,6 +275,7 @@ AERIAL_MANIPULATOR_0DOF_DEBUG_CFG = ArticulationCfg(
     prim_path="{ENV_REGEX_NS}/Robot",
     spawn=sim_utils.UsdFileCfg(
         usd_path=f"{MODELS_PATH}/aerial_manipulator_0dof_debug.usd",
+        # usd_path=f"{MODELS_PATH}/aerial_manipulator_0dof.usd",
         # usd_path=f"{MODELS_PATH}/aerial_manipulator_debug.usd",
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,

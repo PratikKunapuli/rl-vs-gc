@@ -61,4 +61,31 @@ def yaw_error_from_quats(q1: torch.Tensor, q2: torch.Tensor, dof:int) -> torch.T
     operand = (b1*b2).sum(dim=1) / (b1_norm * b2_norm)
     return torch.arccos(torch.clamp(operand, -1+1e-8, 1-1e-8)).view(shape1[:-1])
 
+def quat_from_yaw(yaw: torch.Tensor) -> torch.Tensor:
+    """Get quaternion from yaw angle.
+
+    Args:
+        yaw: The yaw angle. Shape is (...,).
+
+    Returns:
+        The quaternion. Shape is (..., 4).
+    """
+    shape = yaw.shape
+    yaw = yaw.view(-1)
+    q = torch.zeros(yaw.shape[0], 4, device=yaw.device)
+    q[:, 0] = torch.cos(yaw / 2.0)
+    q[:, 1] = 0.0
+    q[:, 2] = 0.0
+    q[:, 3] = torch.sin(yaw / 2.0)
+    return q.view(shape + (4,))
+
+@torch.jit.script
+def eval_sinusoid(t: torch.Tensor, amp:float, freq:float, phase:float, offset:float):
+    return (amp * torch.sin(freq * t + phase) + offset)
+
+@torch.jit.script
+def eval_sinusoid(t: torch.Tensor, amp:torch.Tensor, freq:torch.Tensor, phase:torch.Tensor, offset:torch.Tensor):
+    return (amp * torch.sin(freq * t + phase) + offset)
+
+
     

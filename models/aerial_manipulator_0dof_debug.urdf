@@ -2,7 +2,11 @@
 <robot name="AerialManipulator">
 
   <!-- To create a coordinate system for gripper -->
- <link name="endeffector"></link>
+ <link name="endeffector">
+ <!-- <inertial>
+    <mass value="0.12924833"/>
+  </inertial> -->
+ </link>
   <!-- Physical Bodies -->
 
   <!-- Mass properties of TwoBatteryAerialManipulator
@@ -52,10 +56,10 @@
 
 
   <link name="virtualvehicle">
-    <inertial>
+    <!-- <inertial>
       <mass value="0.0000000000001"/>
       <inertia ixx="0.0000000000001" ixy="0.0" ixz="0.0" iyy="0.0000000000001" iyz="0.0" izz="0.0000000000001"/>
-    </inertial>
+    </inertial> -->
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
@@ -322,12 +326,12 @@ One or more components have overridden mass properties:
 	WristSlipRing<1><Default>
  -->
 
-  <link name="link1">
-    <inertial>
-      <mass value="0.0000000000001"/> <!-- ".053412" --> <!-- 0.0000000000001 -->
+  <link name="link1"><!-- ".053412" --> <!-- 0.0000000000001 -->
+    <!-- <inertial>
+      <mass value="0.0000000000001"/> 
       <inertia ixx="0.000021" ixy="0.000000" ixz="0.000000" iyy="0.000021" iyz="0.000001" izz="0.000005"/>
       <origin rpy=" 0 0 0" xyz="0 0 0.053412"/>
-    </inertial>
+    </inertial> -->
     <visual>
       <origin rpy=" 0 0 0" xyz="0 0 0.053412"/>
       <geometry>
@@ -408,14 +412,14 @@ One or more components have overridden mass properties:
 
 
 
-  <link name="link2">
-    <inertial>
-      <mass value="0.0000000000001"/> <!-- 0.07583633 --> <!-- 0.0000000000001 -->
+  <link name="link2"><!-- 0.07583633 --> <!-- 0.0000000000001  0.12924833-->
+    <!-- <inertial>
+      <mass value="1e-9"/> 
       <inertia ixx="0.00010771" ixy="-0.00000005" ixz="0.00000000" iyy=" 0.00011016" iyz="0.00000002" izz="0.00000767"/>
       <origin rpy=" 0 0 0" xyz="0 0 -0.12635585 "/>
-      <!-- ignored offsets in other directions -->
-    </inertial>
-    <visual>
+     
+    </inertial> -->
+    <visual> <!-- ignored offsets in other directions -->
       <origin rpy=" 0 0 0" xyz="0 0 -0.12635585"/>
       <geometry>
         <sphere radius="0.03"/>
@@ -469,9 +473,9 @@ One or more components have overridden mass properties:
 
   <link name="vehicle">
     <inertial>
-      <mass value="0.83527633"/> <!-- 0.706028-->
+      <mass value="0.83527633"/> <!-- 0.706028   83527633 -->
       <inertia ixx="0.003063" ixy="0.000004" ixz="0.000000" iyy="0.001720" iyz="0.000028" izz="0.004585"/>
-      <origin rpy="0 0 0" xyz="-2.2484e-02 -1.8626e-09  6.7184e-09"/>
+      <origin rpy="0 0 0" xyz="-1.8626e-09  2.2484e-02 6.7184e-09"/>
     </inertial>
   </link>
 
@@ -527,7 +531,7 @@ One or more components have overridden mass properties:
   <joint name="jointend" type="fixed">
     <parent link="endeffector"/>
     <child link="link2"/>
-    <origin rpy="-1.57 0 0" xyz="0 0 0"/>
+    <origin rpy="-1.57079632679 0 0" xyz="0 0 0"/>
     <!-- <origin rpy="-1.57079632679 0 -1.57079632679" xyz="0 0 -.1607"/> -->
     <!-- <origin rpy="-1.57079632679 0 -1.57079632679" xyz="0 0 -.1607"/> -->
   </joint>
