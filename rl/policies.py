@@ -4,7 +4,7 @@ from torch.distributions.normal import Normal
 import numpy as np
 
 import omni.isaac.lab.utils.math as isaac_math_utils
-from utils.math_utilities import vee_map, yaw_from_quat
+from utils.math_utilities import vee_map, yaw_from_quat, quat_from_yaw
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
@@ -86,8 +86,15 @@ def compute_desired_pose_0dof(goal_pos_w, goal_ori_w, pos_transform, ori_transfo
     yaw_desired = torch.atan2(b2[:, 1], b2[:, 0]) - torch.pi/2
     yaw_desired = isaac_math_utils.wrap_to_pi(yaw_desired)
 
-    # Position desired is the pos_transform norm along -b2 direction
+    # Position desired is the pos_transform along -b2 direction
     pos_desired = goal_pos_w + torch.bmm(torch.linalg.norm(pos_transform, dim=1).view(-1, 1, 1), -1*b2.unsqueeze(1)).squeeze(1)
+
+    # We want to find the position desired where we go in the -b2 direction by the pos_transform. 
+    # pos_transform is (N,3), -b2 is (N,3), we want to find the position desired (N,3)
+    # pos_desired = goal_pos_w + isaac_math_utils.quat_rotate(quat_from_yaw(yaw_desired), pos_transform)
+
+
+    # r_z_theta = compute_2d_rotation_matrix(yaw_desired)
     # pos_desired = goal_pos_w + pos_transform * b2
 
     # r_z_theta = compute_2d_rotation_matrix(yaw_desired)
@@ -117,7 +124,7 @@ def compute_desired_pose_1dof(goal_pos_w, goal_ori_w, pos_transform):
 @torch.jit.script
 def get_point_state_from_ee_transform_w(ee_pos_w, ee_ori_quat_w, ee_vel_w, ee_omega_w, point_pos_ee_frame):
     point_pos_w, _ = isaac_math_utils.combine_frame_transforms(ee_pos_w, ee_ori_quat_w, point_pos_ee_frame)
-    point_vel_w = ee_vel_w + torch.cross(ee_omega_w, point_pos_ee_frame, dim=1)
+    point_vel_w = ee_vel_w + torch.cross(ee_omega_w, isaac_math_utils.quat_rotate(ee_ori_quat_w, point_pos_ee_frame), dim=1)
     
     return point_pos_w, point_vel_w
         
@@ -145,8 +152,8 @@ class DecoupledController():
         self.gravity = torch.tensor([0.0, 0.0, 9.81], device=self.device)
         # self.gravity = torch.tensor([0.0, 0.0, 0.0], device=self.device)
 
-        self.kp_pos = torch.tensor([15.0, 15.0, 20.0], device=self.device)
-        self.kd_pos = torch.tensor([10.0, 10.0, 9.0], device=self.device)
+        self.kp_pos = torch.tensor([10.0, 10.0, 20.0], device=self.device)
+        self.kd_pos = torch.tensor([7.0, 7.0, 9.0], device=self.device)
         self.kp_att = torch.tensor([400.0, 400.0, 2.0], device=self.device) 
         self.kd_att = torch.tensor([70.0, 70.0, 2.0], device=self.device)
 
@@ -186,7 +193,10 @@ class DecoupledController():
 
         else:
             self.com_pos_ee_frame = torch.tensor([0.00000000e+00, -2.00715814e-01, -1.59835415e-04], device=self.device).reshape(1, 3) # pulled from Pinocchio
+            # self.com_pos_ee_frame = torch.tensor([0.0, -0.2+0.05, 0], device=self.device).reshape(1, 3) # pulled from Pinocchio
+            # print("[Debug] Quad ori ee_frame = ", self.quad_ori_ee_frame)
             self.com_ori_ee_frame = self.quad_ori_ee_frame
+            # self.com_ori_ee_frame = torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device).reshape(1, 4)
             # self.com_pos_w = self.com_pos_ee_frame + ee_pos_w
             self.com_pos_v_frame = torch.zeros(1, 3, device=self.device)
             self.com_pos_w, _ = isaac_math_utils.combine_frame_transforms(ee_pos_w, ee_ori_quat_w, self.com_pos_ee_frame)
@@ -198,7 +208,18 @@ class DecoupledController():
             # print("COM Pos in EE Frame from V Frame: ", com_pos_ee_frame_from_v)
 
         # print("quad_pos_w: ", quad_pos_w)
-        # print("COM Pos in World Frame: ", self.com_pos_w)
+        print("COM Pos in World Frame: ", self.com_pos_w)
+        print("COM Ori in World Frame: ", self.com_ori_ee_frame)
+
+        des_com_ori_w = torch.tensor([0.7071068, 0.0, 0.0, 0.7071068], device=self.device).reshape(1, 4)
+        ee_pos_com_frame = -1.0 * self.com_pos_ee_frame
+        ee_ori_com_frame = torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device).reshape(1, 4)
+        print("Desired COM pos in World Frame: ", self.com_pos_w)
+        print("Desired COM ori in World Frame: ", des_com_ori_w)
+
+        des_ee_pos_w, des_ee_ori_w = isaac_math_utils.combine_frame_transforms(self.com_pos_w, des_com_ori_w, ee_pos_com_frame, ee_ori_com_frame)
+        print("Desired EE pos in World Frame: ", des_ee_pos_w)
+        # print("Desired EE ori in World Frame: ", des_ee_ori_w)
         # print("COM Pos in EE Frame: ", self.com_pos_ee_frame)
 
         # self.com_pos_ee_frame = self.quad_pos_ee_frame + torch.tensor([0.0, 0.0, 0.0], device=self.device).reshape(1, 3) # pulled from Pinocchio
@@ -238,6 +259,7 @@ class DecoupledController():
         quad_vel = obs[:, 7:10]
         quad_omega = obs[:, 10:13].to(self.device)
 
+
         # desired_yaw = 2 * torch.arctan2(desired_ori[:, 3], desired_ori[:, 0])
         # desired_yaw = yaw_from_quat(desired_yaw)
         # print("Desired Yaw: ", desired_yaw)
@@ -253,7 +275,7 @@ class DecoupledController():
 
         # com_pos, com_ori = isaac_math_utils.combine_frame_transforms(ee_pos, ee_ori_quat, self.com_pos_ee_frame, self.com_ori_ee_frame)
         com_pos, com_vel = get_point_state_from_ee_transform_w(ee_pos, ee_ori_quat, ee_vel, ee_omega, self.com_pos_ee_frame)
-        # quad_pos_computed, quad_vel_computed = get_point_state_from_ee_transform_w(ee_pos, ee_ori_quat, ee_vel, ee_omega, self.quad_pos_ee_frame)
+        quad_pos_computed, quad_vel_computed = get_point_state_from_ee_transform_w(ee_pos, ee_ori_quat, ee_vel, ee_omega, self.quad_pos_ee_frame)
         # print("COM pos: ", com_pos)
         # print("EE pos: ", ee_pos)
         # print("Quad Pos (isaac) : ", quad_pos)
@@ -273,7 +295,7 @@ class DecoupledController():
         # pos_error = quad_pos - desired_pos
         # vel_error = quad_vel - torch.zeros_like(quad_vel)
 
-        # pos_error = quad_pos_computed - desired_pos_quad
+        # pos_error = quad_pos_computed - desired_pos
         # vel_error = quad_vel_computed - torch.zeros_like(quad_vel_computed)
 
         print("[SE3] Pos Error norm: ", torch.linalg.norm(pos_error,dim=1))
@@ -352,6 +374,9 @@ class DecoupledController():
         quad_omega = obs[:, 10:13].to(self.device)
         batch_size = obs.shape[0]
 
+        # print("[Debug] Quad Omega: ", quad_omega)
+        # print("[Debug] EE Omega: ", ee_omega)
+
         ee_pos_error = goal_pos_w - ee_pos
         # print("EE pos error: ", torch.linalg.norm(ee_pos_error, dim=1))
 
@@ -371,8 +396,15 @@ class DecoupledController():
             # desired_pos, desired_yaw, _ = compute_desired_pose_0dof(goal_pos_w, goal_ori_w, torch.zeros_like(self.com_pos_ee_frame, device=self.device), self.com_ori_ee_frame)
             # desired_pos, desired_yaw = compute_desired_pose_0dof(goal_pos_w, goal_ori_w, self.quad_pos_ee_frame, self.quad_ori_ee_frame)
             # desired_yaw = isaac_math_utils.wrap_to_pi(desired_yaw + self.yaw_offset)
-        # print("COM Desired Pos: ", desired_pos)
-        # print("COM Desired Yaw: ", desired_yaw)
+            # desired_pos, desired_yaw, _ = compute_desired_pose_0dof(goal_pos_w, goal_ori_w, self.quad_pos_ee_frame, self.quad_ori_ee_frame)
+        # print("Desired Pos: ", desired_pos)
+        # print("Desired Yaw: ", desired_yaw)
+
+        # com_pos_w, _ = isaac_math_utils.combine_frame_transforms(ee_pos, ee_ori_quat, self.com_pos_ee_frame)
+        # goal_com_pos_w, goal_com_ori_w = isaac_math_utils.combine_frame_transforms(goal_pos_w, goal_ori_w, self.com_pos_ee_frame, self.com_ori_ee_frame)
+        # print("[Debug] COM Pos in World Frame: ", com_pos_w)
+        # print("[Debug] Goal COM Pos in World Frame: ", goal_com_pos_w)
+        # print("[Debug] Goal COM Ori in World Frame: ", goal_com_ori_w)
 
         offset = goal_pos_w - desired_pos
         # print("Offset norm: ", torch.linalg.norm(offset, dim=1))
@@ -386,6 +418,9 @@ class DecoupledController():
 
         
         collective_thrust, M_des = self.SE3_Control(desired_pos, desired_yaw, obs)
+        # print("M_des pre transform: ", M_des)
+        # M_des[:,0] = 0.0
+        # M_des[:,1] = 0.0
 
         # Shift CTBM to rigid body frame
         # collective_thrust, M_des = self.shift_CTBM_to_rigid_frame(collective_thrust, M_des, self.com_pos_v_frame)

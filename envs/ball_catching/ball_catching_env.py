@@ -158,6 +158,9 @@ class AerialManipulatorBallCatchingEnvBaseCfg(DirectRLEnvCfg):
 
     ball_radius = 0.04
     ball_error_threshold = ball_radius
+    ball_throw_height = 2.0
+    ball_vel_vertical = 6.5 # 9.0
+    ball_vel_horizontal = 0.5 # 1.0
 
     init_cfg = "default" # "default" or "rand"
 
@@ -645,11 +648,14 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
         default_ball_state = self._ball.data.default_root_state[env_ids, :7]
         default_ball_state[:, :3] = torch.zeros_like(default_ball_state[:, :3])
         default_ball_state[:, :2] += self._terrain.env_origins[env_ids, :2]
-        default_ball_state[:, 2] = 2.0 * torch.ones_like(default_ball_state[:, 2])
+        default_ball_state[:, 2] = self.cfg.ball_throw_height * torch.ones_like(default_ball_state[:, 2])
         self._ball.write_root_pose_to_sim(default_ball_state[:, :7], env_ids=env_ids)
         default_ball_vel = self._ball.data.default_root_state[env_ids, 7:]
-        default_ball_vel[:, :3] = torch.zeros_like(default_ball_vel[:, :3]).uniform_(-0.5, 0.5)
-        default_ball_vel[:, 2] = 6.5 * torch.ones_like(default_ball_vel[:, 2])
+        default_ball_vel[:, :3] = torch.zeros_like(default_ball_vel[:, :3]).uniform_(-self.cfg.ball_vel_horizontal, self.cfg.ball_vel_horizontal)
+        default_ball_vel[:, 2] = self.cfg.ball_vel_vertical * torch.ones_like(default_ball_vel[:, 2])
+        # default_ball_vel[:, 0] = torch.zeros_like(default_ball_vel[:, 0])
+        # default_ball_vel[:, 1] = 1.0 * torch.ones_like(default_ball_vel[:, 1])
+        # default_ball_vel[:, 2] = 7.5 * torch.ones_like(default_ball_vel[:, 2])
         self._ball.write_root_velocity_to_sim(default_ball_vel, env_ids=env_ids)
 
         self.set_ball_color(env_ids, (1.0, 0.0, 0.0))
@@ -742,7 +748,7 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
             self.episode_length_buf[env_ids] = 0
         
         # Sample new goal position and orientation
-        if self.cfg.goal_cfg == "rand":
+        # if self.cfg.goal_cfg == "rand":
             # self._ball_pos_w[env_ids, :2] = torch.zeros_like(self._ball_pos_w[env_ids, :2])
             # # self._ball_pos_w[env_ids, :2] = torch.zeros_like(self._ball_pos_w[env_ids, :2])
             # self._ball_pos_w[env_ids, :2] += self._terrain.env_origins[env_ids, :2]
@@ -766,7 +772,7 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
 
             # self._catch_pos_w[env_ids] = self.get_catch_point(default_ball_state[:, :3], default_ball_vel[:, :3])
 
-            self.rethrow_ball(env_ids)
+        self.rethrow_ball(env_ids)
 
             # ball_default_pose = self.ball.data.default_root_state[env_ids, :7]
             # ball_default_pose[:, :3] = self._desired_pos_w[env_ids]
@@ -776,17 +782,17 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
             # ball_default_vel[:, :3] = self._ball_vel_w[env_ids]
             # self.ball.write_root_velocity_to_sim(ball_default_vel, env_ids=env_ids)
 
-        elif self.cfg.goal_cfg == "fixed":
-            self._desired_pos_w[env_ids] = torch.tensor(self.cfg.goal_pos, device=self.device).tile((env_ids.size(0), 1))
-            self._desired_pos_w[env_ids, :2] += self._terrain.env_origins[env_ids, :2]
-            self._desired_ori_w[env_ids] = torch.tensor(self.cfg.goal_ori, device=self.device).tile((env_ids.size(0), 1))
-        elif self.cfg.goal_cfg == "initial":
-            default_root_state = self._robot.data.default_root_state[env_ids]
-            self._desired_pos_w[env_ids] = default_root_state[:, :3]
-            self._desired_pos_w[env_ids, :2] += self._terrain.env_origins[env_ids, :2]
-            self._desired_ori_w[env_ids] = default_root_state[:, 3:7]
-        else:
-            raise ValueError("Invalid goal task: ", self.cfg.goal_cfg)
+        # elif self.cfg.goal_cfg == "fixed":
+        #     self._desired_pos_w[env_ids] = torch.tensor(self.cfg.goal_pos, device=self.device).tile((env_ids.size(0), 1))
+        #     self._desired_pos_w[env_ids, :2] += self._terrain.env_origins[env_ids, :2]
+        #     self._desired_ori_w[env_ids] = torch.tensor(self.cfg.goal_ori, device=self.device).tile((env_ids.size(0), 1))
+        # elif self.cfg.goal_cfg == "initial":
+        #     default_root_state = self._robot.data.default_root_state[env_ids]
+        #     self._desired_pos_w[env_ids] = default_root_state[:, :3]
+        #     self._desired_pos_w[env_ids, :2] += self._terrain.env_origins[env_ids, :2]
+        #     self._desired_ori_w[env_ids] = default_root_state[:, 3:7]
+        # else:
+        #     raise ValueError("Invalid goal task: ", self.cfg.goal_cfg)
 
         # Reset Robot state
         self._robot.reset()

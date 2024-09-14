@@ -164,7 +164,11 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: dict):
         env_cfg.decimation = env_cfg.sim_rate_hz // env_cfg.policy_rate_hz
         env_cfg.sim.render_interval = env_cfg.decimation
         if env_cfg.use_yaw_representation:
-            env_cfg.num_observations += 4
+            # env_cfg.num_observations += 4
+            env_cfg.num_observations += 1
+        
+        if env_cfg.use_full_ori_matrix:
+            env_cfg.num_observations += 6
 
         # These are now modifyable in the CLI with hydra 
         # you simply need to add env.pos_radius=0.8 in the CLI

@@ -142,7 +142,19 @@ def main():
     env_cfg.yaw_radius = 0.5
     
     if env_cfg.use_yaw_representation:
-        env_cfg.num_observations += 4
+        env_cfg.num_observations += 1
+
+    if "Traj" in args_cli.task:
+        env_cfg.goal_cfg = "fixed"
+        env_cfg.trajectory_params["x_amp"] = 1.0
+        env_cfg.trajectory_params["x_freq"] = 0.5
+        env_cfg.trajectory_params["y_amp"] = 2.0
+        env_cfg.trajectory_params["y_freq"] = 1.0
+        env_cfg.trajectory_params["z_amp"] = 0.0
+        env_cfg.trajectory_params["z_offset"] = 0.5
+        env_cfg.trajectory_params["yaw_amp"] = 1.0
+        env_cfg.trajectory_params["yaw_freq"] = 1.0
+        env_cfg.traj_update_dt = 1.0
 
     print("\n\nUpdated env cfg: ", env_cfg)
 
@@ -159,6 +171,13 @@ def main():
         env_cfg.viewer.origin_type = "env"
         env_cfg.viewer.env_index = 0
 
+    
+    # env_cfg.viewer.eye = (3.0, 1.5, 2.0)
+    # env_cfg.viewer.resolution = (1920, 1080)
+    # env_cfg.viewer.lookat = (0.0, 1.5, 0.5)
+    # env_cfg.viewer.origin_type = "env"
+    # env_cfg.viewer.env_index = 0
+
     envs = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
 
     save_prefix = ""
@@ -168,6 +187,13 @@ def main():
     if "Ball" in args_cli.task:
         save_prefix += "ball_catch_"
         save_prefix += "seed_" + str(args_cli.seed) + "_"
+
+    if "Traj" in args_cli.task:
+        save_prefix += "eval_traj_track_" + str(int(1/env_cfg.traj_update_dt)) + "Hz_"
+        save_prefix += "seed_" + str(args_cli.seed) + "_"
+
+    
+    # save_prefix = "ball_catch_side_view_"
 
    
 
@@ -214,7 +240,7 @@ def main():
     # input("Press Enter to continue...")
     with torch.no_grad():
         while simulation_app.is_running():
-            while done_count < 2:
+            while done_count < 1:
                 obs_tensor = obs_dict["policy"]
                 full_states[:, steps, :] = obs_dict["full_state"]
 
