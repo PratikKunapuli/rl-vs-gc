@@ -22,7 +22,7 @@ from omni.isaac.core.utils.prims import get_prim_at_path
 from pxr import Usd, UsdShade, Gf
 # Local imports
 from configs.aerial_manip_asset import AERIAL_MANIPULATOR_0DOF_DEBUG_BALL_CATCHING_CFG, AERIAL_MANIPULATOR_0DOF_BALL_CATCHING_CFG, BALL_CFG
-from utils.math_utilities import yaw_from_quat, yaw_error_from_quats
+from utils.math_utilities import yaw_from_quat, yaw_error_from_quats, quat_from_yaw
 
 class AerialManipulatorBallCatchEnvWindow(BaseEnvWindow):
     """Window manager for the Quadcopter environment."""
@@ -130,7 +130,7 @@ class AerialManipulatorBallCatchingEnvBaseCfg(DirectRLEnvCfg):
     # moment_scale_z = 0.05
     # thrust_to_weight = 3.0
     moment_scale_xy = 0.5
-    moment_scale_z = 0.025
+    moment_scale_z = 0.1
     thrust_to_weight = 3.0
 
     # reward scales
@@ -146,6 +146,7 @@ class AerialManipulatorBallCatchingEnvBaseCfg(DirectRLEnvCfg):
     yaw_distance_reward_scale = 0.0 # -0.01
     yaw_radius = 0.2 
     yaw_smooth_transition_scale = 25.0
+    scale_reward_with_time = False
 
     # Task condionionals for the environment - modifies the goal
     goal_cfg = "rand" # "rand", "fixed", or "initial"
@@ -155,12 +156,15 @@ class AerialManipulatorBallCatchingEnvBaseCfg(DirectRLEnvCfg):
     goal_pos = None
     goal_vel = None
     use_catch_pos = True
+    use_grav_vector = True
+    use_full_ori_matrix = False
+    use_yaw_representation = True
 
     ball_radius = 0.04
     ball_error_threshold = ball_radius
     ball_throw_height = 2.0
     ball_vel_vertical = 6.5 # 9.0
-    ball_vel_horizontal = 0.5 # 1.0
+    ball_vel_horizontal = 1.0 # 1.0
 
     init_cfg = "default" # "default" or "rand"
 
@@ -396,7 +400,11 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
 
         if self.cfg.use_catch_pos:
             self._desired_pos_w = self._catch_pos_w
-            self._desired_ori_w = torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device).unsqueeze(0).repeat(self.num_envs, 1)
+            yaw_angle_w = torch.atan2(self._ball_vel_w[:, 1], self._ball_vel_w[:, 0])
+            self._desired_ori_w = quat_from_yaw(yaw_angle_w)
+            # self._desired_ori_w = torch.stack([torch.cos(yaw_angle_w / 2), 0.0, 0.0, torch.sin(yaw_angle_w / 2)], dim=-1)
+            
+            # self._desired_ori_w = torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device).unsqueeze(0).repeat(self.num_envs, 1)
         else:
             self._desired_pos_w = self._ball_pos_w
             self._desired_ori_w = self._ball_ori_w
@@ -405,22 +413,22 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
 
         base_pos_w, base_ori_w, lin_vel_w, ang_vel_w = self.get_frame_state_from_task(self.cfg.task_body)
 
-        # print("[Isaac Env: Observations] Base Pos: ", base_pos_w)
-
 
         # Find the error of the end-effector to the desired position and orientation
         # The root state of the robot is the end-effector frame in this case
         # Batched over number of environments, returns (num_envs, 3) and (num_envs, 4) tensors
         # pos_error_b, ori_error_b = subtract_frame_transforms(self._desired_pos_w, self._desired_ori_w, 
         #                                                      base_pos, base_ori)
-        pos_error_b, _ = subtract_frame_transforms(
+        pos_error_b, ori_error_b = subtract_frame_transforms(
             base_pos_w, base_ori_w, 
-            self._desired_pos_w)
+            self._desired_pos_w, self._desired_ori_w
+        )
 
         # Compute the orientation error as a yaw error in the body frame
         goal_yaw_w = yaw_quat(self._desired_ori_w)
         current_yaw_w = yaw_quat(base_ori_w)
-        yaw_error_w = quat_mul(quat_inv(current_yaw_w), goal_yaw_w)
+        # yaw_error_w = quat_mul(quat_inv(current_yaw_w), goal_yaw_w)
+        yaw_error_w = yaw_error_from_quats(current_yaw_w, goal_yaw_w, dof=0).view(self.num_envs, 1)
         
         if self.cfg.use_yaw_representation:
             yaw_representation = yaw_error_w
@@ -429,9 +437,15 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
         
 
         if self.cfg.use_full_ori_matrix:
-            ori_representation_b = matrix_from_quat(base_ori_w).flatten(-2, -1)
+            ori_representation_b = matrix_from_quat(ori_error_b).flatten(-2, -1)
         else:
-            ori_representation_b = quat_rotate_inverse(base_ori_w, self._grav_vector_unit) # projected gravity vector in the cfg frame
+            ori_representation_b = torch.zeros(self.num_envs, 0, device=self.device)
+
+        if self.cfg.use_grav_vector:
+            grav_vector_b = quat_rotate_inverse(base_ori_w, self._grav_vector_unit) # projected gravity vector in the cfg frame
+        else:
+            grav_vector_b = torch.zeros(self.num_envs, 0, device=self.device)
+        
         # Compute the linear and angular velocities of the end-effector in body frame
         lin_vel_b = quat_rotate_inverse(base_ori_w, lin_vel_w)
         ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_w)
@@ -451,8 +465,9 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
         obs = torch.cat(
             [
                 pos_error_b,                                # (num_envs, 3)
-                ori_representation_b,                       # (num_envs, 3) if not using full ori matrix, (num_envs, 9) if using full ori matrix
+                ori_representation_b,                       # (num_envs, 0) if not using full ori matrix, (num_envs, 9) if using full ori matrix
                 yaw_representation,                         # (num_envs, 4) if using yaw representation (quat), 0 otherwise
+                grav_vector_b,                              # (num_envs, 3) if using gravity vector, 0 otherwise
                 lin_vel_b,                                  # (num_envs, 3)
                 ang_vel_b,                                  # (num_envs, 3)
                 shoulder_joint_pos,                         # (num_envs, 1)
@@ -619,7 +634,7 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
 
         time_out = self.episode_length_buf >= self.max_episode_length - 1
 
-        rethrow_boolean = torch.logical_and((self.episode_length_buf % int(2 * self.cfg.policy_rate_hz) == 0), (self.episode_length_buf > 0))
+        rethrow_boolean = torch.logical_and((self.episode_length_buf % int(2.0 * self.cfg.policy_rate_hz) == 0), (self.episode_length_buf > 0))
         env_id_to_rethrow_ball = rethrow_boolean.nonzero(as_tuple=False).squeeze(-1)
         # print("Env ID to rethrow ball: ", env_id_to_rethrow_ball)
         self.rethrow_ball(env_id_to_rethrow_ball)
@@ -661,13 +676,13 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
         self.set_ball_color(env_ids, (1.0, 0.0, 0.0))
 
 
-        self._catch_pos_w[env_ids] = self.get_catch_point(default_ball_state[:, :3], default_ball_vel[:, :3])
+        self._catch_pos_w[env_ids] = self.get_catch_point(default_ball_state[:, :3], default_ball_vel[:, :3], env_ids)
 
-    def get_catch_point(self, pos_init, vel_init, z_crossing=0.5):
+    def get_catch_point(self, pos_init, vel_init, env_ids, z_crossing=0.5):
         z_crossing = torch.tensor(z_crossing, device=self.device).tile((pos_init.shape[0], 1)).squeeze()
         g = self._gravity_magnitude
         t = (vel_init[:,2] + torch.sqrt(vel_init[:,2]**2 + 2*g*(pos_init[:,2] - z_crossing))) / g
-        self._catch_time = (t * self.cfg.policy_rate_hz).int() + self.episode_length_buf
+        self._catch_time[env_ids] = (t * self.cfg.policy_rate_hz).int() + self.episode_length_buf[env_ids]
         # print("Catch Time: ", self._catch_time)
 
         # x_crossing = pos_init_x + vel_init_x*t

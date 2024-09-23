@@ -143,6 +143,9 @@ def main():
     
     if env_cfg.use_yaw_representation:
         env_cfg.num_observations += 1
+    
+    if env_cfg.use_full_ori_matrix:
+        env_cfg.num_observations += 6
 
     if "Traj" in args_cli.task:
         env_cfg.goal_cfg = "fixed"

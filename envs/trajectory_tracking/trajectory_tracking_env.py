@@ -113,7 +113,7 @@ class AerialManipulatorTrajectoryTrackingEnvBaseCfg(DirectRLEnvCfg):
     # moment_scale_z = 0.05
     # thrust_to_weight = 3.0
     moment_scale_xy = 0.5
-    moment_scale_z = 0.025
+    moment_scale_z = 0.1
     thrust_to_weight = 3.0
 
     # reward scales
@@ -129,6 +129,7 @@ class AerialManipulatorTrajectoryTrackingEnvBaseCfg(DirectRLEnvCfg):
     yaw_distance_reward_scale = 0.0 # -0.01
     yaw_radius = 0.2 
     yaw_smooth_transition_scale = 25.0
+    scale_reward_with_time = False
 
     # Task condionionals for the environment - modifies the goal
     goal_cfg = "rand" # "rand", "fixed", or "initial"
@@ -145,6 +146,9 @@ class AerialManipulatorTrajectoryTrackingEnvBaseCfg(DirectRLEnvCfg):
     has_end_effector = True
     use_full_ori_matrix = False
     use_yaw_representation = False
+    use_grav_vector = True
+    use_full_ori_matrix = False
+    use_yaw_representation = True
 
     shoulder_joint_active = True
     wrist_joint_active = True
@@ -398,8 +402,6 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         Returns the observation dictionary. Policy observations are in the key "policy".
         """
         self.update_goal_state()
-
-
         base_pos_w, base_ori_w, lin_vel_w, ang_vel_w = self.get_frame_state_from_task(self.cfg.task_body)
 
 
@@ -428,7 +430,13 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         if self.cfg.use_full_ori_matrix:
             ori_representation_b = matrix_from_quat(ori_error_b).flatten(-2, -1)
         else:
-            ori_representation_b = quat_rotate_inverse(base_ori_w, self._grav_vector_unit) # projected gravity vector in the cfg frame
+            ori_representation_b = torch.zeros(self.num_envs, 0, device=self.device)
+
+        if self.cfg.use_grav_vector:
+            grav_vector_b = quat_rotate_inverse(base_ori_w, self._grav_vector_unit) # projected gravity vector in the cfg frame
+        else:
+            grav_vector_b = torch.zeros(self.num_envs, 0, device=self.device)
+        
         # Compute the linear and angular velocities of the end-effector in body frame
         lin_vel_b = quat_rotate_inverse(base_ori_w, lin_vel_w)
         ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_w)
@@ -448,8 +456,9 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         obs = torch.cat(
             [
                 pos_error_b,                                # (num_envs, 3)
-                ori_representation_b,                       # (num_envs, 3) if not using full ori matrix, (num_envs, 9) if using full ori matrix
+                ori_representation_b,                       # (num_envs, 0) if not using full ori matrix, (num_envs, 9) if using full ori matrix
                 yaw_representation,                         # (num_envs, 4) if using yaw representation (quat), 0 otherwise
+                grav_vector_b,                              # (num_envs, 3) if using gravity vector, 0 otherwise
                 lin_vel_b,                                  # (num_envs, 3)
                 ang_vel_b,                                  # (num_envs, 3)
                 shoulder_joint_pos,                         # (num_envs, 1)
@@ -497,7 +506,8 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         
         # Computes the error from the desired position and orientation
         pos_error = torch.linalg.norm(self._desired_pos_w - base_pos_w, dim=1)
-        pos_distance = 1.0 - torch.tanh(pos_error / self.cfg.pos_radius)
+        # pos_distance = 1.0 - torch.tanh(pos_error / self.cfg.pos_radius)
+        pos_distance = torch.exp(- (pos_error **2) / self.cfg.pos_radius)
 
         ori_error = quat_error_magnitude(self._desired_ori_w, base_ori_w)
         
@@ -513,8 +523,11 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         # other_yaw_error = torch.sum(torch.square(other_yaw_error), dim=1)
         yaw_error = torch.linalg.norm(yaw_error, dim=1)
 
-        yaw_distance = (1.0 - torch.tanh(yaw_error / self.cfg.yaw_radius)) * smooth_transition_func
+        # yaw_distance = (1.0 - torch.tanh(yaw_error / self.cfg.yaw_radius)) * smooth_transition_func
+        yaw_distance = torch.exp(- (yaw_error **2) / self.cfg.yaw_radius)
         yaw_error = yaw_error * smooth_transition_func
+
+        combined_distance = 1.0 - torch.tanh((pos_error + yaw_error) / self.cfg.pos_radius)
 
         # Velocity error components, used for stabliization tuning
         lin_vel_b = quat_rotate_inverse(base_ori_w, lin_vel_w)
@@ -538,19 +551,31 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         # action_error = torch.sum(torch.square(self._actions), dim=1) 
         action_error = torch.norm(self._actions, dim=1)
 
+        if self.cfg.scale_reward_with_time:
+            time_scale = 1.0 / self.cfg.policy_rate_hz
+        else:
+            time_scale = 1.0
 
+        # rewards = {
+        #     "endeffector_pos_error": pos_error * self.cfg.pos_error_reward_scale * self.step_dt,
+        #     "endeffector_pos_distance": pos_distance * self.cfg.pos_distance_reward_scale * self.step_dt,
+        #     "endeffector_ori_error": ori_error * self.cfg.ori_error_reward_scale * self.step_dt,
+        #     "endeffector_lin_vel": lin_vel_error * self.cfg.lin_vel_reward_scale * self.step_dt,
+        #     "endeffector_ang_vel": ang_vel_error * self.cfg.ang_vel_reward_scale * self.step_dt,
+        #     "joint_vel": joint_vel_error * self.cfg.joint_vel_reward_scale * self.step_dt,
+        # }
         rewards = {
-            "endeffector_pos_error": pos_error * self.cfg.pos_error_reward_scale,
-            "endeffector_pos_distance": pos_distance * self.cfg.pos_distance_reward_scale,
-            "endeffector_ori_error": ori_error * self.cfg.ori_error_reward_scale,
-            "endeffector_yaw_error": yaw_error * self.cfg.yaw_error_reward_scale,
-            "endeffector_yaw_distance": yaw_distance * self.cfg.yaw_distance_reward_scale,
-            "endeffector_lin_vel": lin_vel_error * self.cfg.lin_vel_reward_scale,
-            "endeffector_ang_vel": ang_vel_error * self.cfg.ang_vel_reward_scale,
-            "joint_vel": joint_vel_error * self.cfg.joint_vel_reward_scale,
-            "action_norm": action_error * self.cfg.action_norm_reward_scale,
+            "endeffector_pos_error": pos_error * self.cfg.pos_error_reward_scale * time_scale,
+            "endeffector_pos_distance": pos_distance * self.cfg.pos_distance_reward_scale * time_scale,
+            "endeffector_ori_error": ori_error * self.cfg.ori_error_reward_scale * time_scale,
+            "endeffector_yaw_error": yaw_error * self.cfg.yaw_error_reward_scale * time_scale,
+            "endeffector_yaw_distance": yaw_distance * self.cfg.yaw_distance_reward_scale * time_scale,
+            "endeffector_lin_vel": lin_vel_error * self.cfg.lin_vel_reward_scale * time_scale,
+            "endeffector_ang_vel": ang_vel_error * self.cfg.ang_vel_reward_scale * time_scale,
+            # "joint_vel": joint_vel_error * self.cfg.joint_vel_reward_scale * time_scale,
+            "joint_vel": combined_distance * self.cfg.joint_vel_reward_scale * time_scale,
+            "action_norm": action_error * self.cfg.action_norm_reward_scale * time_scale,
         }
-
         errors = {
             "pos_error": pos_error,
             "pos_distance": pos_distance,

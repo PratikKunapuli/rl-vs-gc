@@ -168,7 +168,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: dict):
             env_cfg.num_observations += 1
         
         if env_cfg.use_full_ori_matrix:
-            env_cfg.num_observations += 6
+            # env_cfg.num_observations += 6
+            env_cfg.num_observations += 9
 
         # These are now modifyable in the CLI with hydra 
         # you simply need to add env.pos_radius=0.8 in the CLI
@@ -324,7 +325,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: dict):
             lastgaelam = 0
             for t in reversed(range(args.num_steps)):
                 if t == args.num_steps - 1:
-                    nextnonterminal = 1.0 - next_done.long()
+                    # nextnonterminal = 1.0 - next_done.long()
+                    nextnonterminal = 1.0 - next_truncated.long()
                     nextvalues = next_value
                 else:
                     nextnonterminal = 1.0 - dones[t + 1]

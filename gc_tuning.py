@@ -24,7 +24,8 @@ args_cli = parser.parse_args()
 
 # args_cli.headless=False
 args_cli.headless=True
-args_cli.enable_cameras=True
+# args_cli.enable_cameras=True
+args_cli.enable_cameras=False
 # Launch app
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
@@ -39,6 +40,62 @@ import envs.hover
 
 from rl.policies import DecoupledController
 
+master_env_cfg = parse_env_cfg(args_cli.task, num_envs= args_cli.num_envs, use_fabric=not args_cli.disable_fabric)
+env_cfg = master_env_cfg.copy()
+
+env_cfg.goal_cfg = "rand" 
+
+env_cfg.sim_rate_hz = 100
+env_cfg.policy_rate_hz = 50
+env_cfg.sim.dt = 1/env_cfg.sim_rate_hz
+env_cfg.decimation = env_cfg.sim_rate_hz // env_cfg.policy_rate_hz
+env_cfg.sim.render_interval = env_cfg.decimation
+env_cfg.eval_mode = True
+
+env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
+
+def eval_trial(trial):
+    obs_dict, info = env.reset()
+    # Get mass from env
+    vehicle_mass = env.vehicle_mass # this is pulled from the body "vehicle" in the USD file
+    # vehicle_mass = torch.tensor([0.706028], device=env.device)
+    arm_mass = env.arm_mass 
+    # arm_mass = env.arm_mass - vehicle_mass
+    inertia =  env.quad_inertia
+    arm_offset = env.arm_offset
+    pos_offset = env.position_offset
+    ori_offset = env.orientation_offset
+    steps = 0
+    terminated_count = 0
+
+    gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, com_pos_w=None, device=env.device)
+
+    while steps < 500:
+        obs_tensor = obs_dict["policy"]
+        full_state = obs_dict["full_state"]
+        action_gc = gc.get_action(full_state)
+
+        action = action_gc.to(obs_tensor.device)
+
+        # # If we want metrics from the state directly intead of the reward we can use these.
+        # goal_pos_w = full_state[:, 26:26 + 3]
+        # goal_ori_w = full_state[:, 26 + 3:26 + 7]
+        # ee_pos = full_state[:, 13:16]
+        # ee_ori_quat = full_state[:, 16:20]
+        # ee_vel = full_state[:, 20:23]
+        # ee_omega = full_state[:, 23:26]
+        # quad_pos = full_state[:, :3]
+        # quad_ori_quat = full_state[:, 3:7]
+        # quad_vel = full_state[:, 7:10]
+        # quad_omega = full_state[:, 10:13]
+
+        obs_dict, reward, terminated, truncated, info = env.step(action)
+        terminated_count += terminated.sum().item()
+        steps += 1
+    
+
+
+
 def main():
 
     # Tasks are: 
@@ -52,7 +109,7 @@ def main():
     # Can also specify the task goal
     # env_cfg.task_goal = "rand" or "fixed" or "initial"
 
-    env_cfg = parse_env_cfg(args_cli.task, num_envs= args_cli.num_envs, use_fabric=not args_cli.disable_fabric)
+    env_cfg = master_env_cfg.copy()
 
     env_cfg.viewer.eye = (5.0, 2.0, 2.0)
     env_cfg.viewer.resolution = (1920, 1080)
@@ -70,12 +127,12 @@ def main():
     print(env_cfg.robot.spawn)
 
     env_cfg.goal_cfg = "rand" # "rand" or "fixed"
-    # env_cfg.goal_pos = [-0.2007, -0.2007, 0.5]
-    # env_cfg.goal_pos = [-0.15, -0.15, 0.5]
-    env_cfg.goal_pos = [0.0, 0.0, 0.5]
+    # # env_cfg.goal_pos = [-0.2007, -0.2007, 0.5]
+    # # env_cfg.goal_pos = [-0.15, -0.15, 0.5]
+    # env_cfg.goal_pos = [0.0, 0.0, 0.5]
     
-    # env_cfg.goal_ori = [1.0, 0.0, 0.0, 0.0]
-    env_cfg.goal_ori = [0.7071068, 0.0, 0.0, 0.7071068]
+    # # env_cfg.goal_ori = [1.0, 0.0, 0.0, 0.0]
+    # env_cfg.goal_ori = [0.7071068, 0.0, 0.0, 0.7071068]
     
     
     env_cfg.sim_rate_hz = 100

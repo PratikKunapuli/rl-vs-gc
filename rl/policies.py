@@ -142,8 +142,9 @@ class DecoupledController():
         self.position_offset = pos_offset
         self.orientation_offset = ori_offset
         self.moment_scale_xy = 0.5
-        self.moment_scale_z = 0.025 
+        self.moment_scale_z = 0.1
         self.thrust_to_weight = 3.0
+
         self.device = torch.device(device)
         self.inertia_tensor.to(self.device)
         
