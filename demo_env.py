@@ -54,25 +54,25 @@ def main():
 
     env_cfg = parse_env_cfg(args_cli.task, num_envs= args_cli.num_envs, use_fabric=not args_cli.disable_fabric)
 
-    env_cfg.viewer.eye = (5.0, 2.0, 2.0)
-    env_cfg.viewer.resolution = (1920, 1080)
-    env_cfg.viewer.lookat = (0.0, 1.5, 0.5)
-    env_cfg.viewer.origin_type = "env"
-    env_cfg.viewer.env_index = 0
-    # env_cfg.viewer.eye = (0.75, 0.75, 1.25)
-    # env_cfg.viewer.resolution = (1280, 720)
-    # env_cfg.viewer.lookat = (-0.2, -0.2, 0.5)
+    # env_cfg.viewer.eye = (5.0, 2.0, 2.0)
+    # env_cfg.viewer.resolution = (1920, 1080)
+    # env_cfg.viewer.lookat = (0.0, 1.5, 0.5)
     # env_cfg.viewer.origin_type = "env"
     # env_cfg.viewer.env_index = 0
+    env_cfg.viewer.eye = (0.75, 0.75, 3.75)
+    env_cfg.viewer.resolution = (1280, 720)
+    env_cfg.viewer.lookat = (-0.2, -0.2, 3.0)
+    env_cfg.viewer.origin_type = "env"
+    env_cfg.viewer.env_index = 0
 
     # import code; code.interact(local=locals())
 
     print(env_cfg.robot.spawn)
 
-    env_cfg.goal_cfg = "rand" # "rand" or "fixed"
+    env_cfg.goal_cfg = "fixed" # "rand" or "fixed"
     # env_cfg.goal_pos = [-0.2007, -0.2007, 0.5]
     # env_cfg.goal_pos = [-0.15, -0.15, 0.5]
-    env_cfg.goal_pos = [0.0, 0.0, 0.5]
+    env_cfg.goal_pos = [0.0, 0.0, 3.0]
     
     # env_cfg.goal_ori = [1.0, 0.0, 0.0, 0.0]
     env_cfg.goal_ori = [0.7071068, 0.0, 0.0, 0.7071068]
@@ -86,9 +86,13 @@ def main():
     env_cfg.eval_mode = True
     # env_cfg.init_cfg = "fixed"
 
+    env_cfg.task_body = "root"
+    env_cfg.goal_body = "COM"
+    env_cfg.gc_mode = True
+
     
     if "Traj" in args_cli.task:
-        env_cfg.trajectory_params["x_amp"] = 1.0
+        env_cfg.trajectory_params["x_amp"] = 1.01
         env_cfg.trajectory_params["y_amp"] = 0.0
         env_cfg.trajectory_params["z_amp"] = 0.0
         env_cfg.trajectory_params["z_offset"] = 0.5
@@ -131,7 +135,12 @@ def main():
 
     # gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, com_pos_w=env.com_pos_w, device=env.device)
     
-    gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, com_pos_w=None, device=env.device)
+    # gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=True, com_pos_w=None, device=env.device,
+    #                          use_full_obs=False)
+    gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=True, com_pos_w=None, device=env.device,
+                             kp_pos_gain_xy=43.507, kp_pos_gain_z=24.167, kd_pos_gain_xy=9.129, kd_pos_gain_z=6.081,
+                             kp_att_gain_xy=998.777, kp_att_gain_z=18.230, kd_att_gain_xy=47.821, kd_att_gain_z=8.818)
+    
     # print("Quad in EE Frame: ", gc.quad_pos_ee_frame)
     # print("COM in EE Frame: ", gc.com_pos_ee_frame)
 
@@ -141,7 +150,7 @@ def main():
         "step_trigger": lambda step: step == 0,
         # "episode_trigger": lambda episode: episode == 0,
         "video_length": 501,
-        "name_prefix": "traj_test"
+        "name_prefix": "com_test"
     }
     env = gym.wrappers.RecordVideo(env, **video_kwargs)
 
@@ -151,6 +160,7 @@ def main():
     done_count = 0
     ee_omega_list = []
     quad_omega_list = []
+    ee_pos_list = []
     
     import code; code.interact(local=locals())
     
@@ -167,29 +177,32 @@ def main():
             action = torch.tile(action, (args_cli.num_envs, 1)).to(obs_tensor.device)
 
 
-            full_state = obs_dict["full_state"]
-            action_gc = gc.get_action(full_state)
-            # print("Action GC: ", action_gc)
+            # full_state = obs_dict["full_state"]
+            # action_gc = gc.get_action(full_state)
+            obs = obs_dict["gc"]
+            action_gc = gc.get_action(obs)
+            print("Action GC: ", action_gc)
             # print("Action shape: ", action_gc.shape)
 
-            goal_pos_w = full_state[:, 26:26 + 3]
-            goal_ori_w = full_state[:, 26 + 3:26 + 7]
-            ee_pos = full_state[:, 13:16]
-            ee_ori_quat = full_state[:, 16:20]
-            ee_vel = full_state[:, 20:23]
-            ee_omega = full_state[:, 23:26]
-            quad_pos = full_state[:, :3]
-            quad_ori_quat = full_state[:, 3:7]
-            quad_vel = full_state[:, 7:10]
-            quad_omega = full_state[:, 10:13]
-            batch_size = full_state.shape[0]
+            # goal_pos_w = full_state[:, 26:26 + 3]
+            # goal_ori_w = full_state[:, 26 + 3:26 + 7]
+            # ee_pos = full_state[:, 13:16]
+            # ee_ori_quat = full_state[:, 16:20]
+            # ee_vel = full_state[:, 20:23]
+            # ee_omega = full_state[:, 23:26]
+            # quad_pos = full_state[:, :3]
+            # quad_ori_quat = full_state[:, 3:7]
+            # quad_vel = full_state[:, 7:10]
+            # quad_omega = full_state[:, 10:13]
+            # batch_size = full_state.shape[0]
 
             # print("[Debug] Quad Omega: ", quad_omega)
             # print("[Debug] EE Omega: ", ee_omega)
             # print("[Debug] Omega equal?: ", torch.allclose(quad_omega, ee_omega))
 
-            ee_omega_list.append(ee_omega.detach().cpu().numpy())
-            quad_omega_list.append(quad_omega.detach().cpu().numpy())
+            # ee_omega_list.append(ee_omega.detach().cpu().numpy())
+            # quad_omega_list.append(quad_omega.detach().cpu().numpy())
+            # ee_pos_list.append(ee_pos.detach().cpu().numpy())
 
 
             action = action_gc.to(obs_tensor.device)
@@ -201,11 +214,18 @@ def main():
             print()
             # input()
         print("Final info: ", info)
+        # import code; code.interact(local=locals())
         # print("Catch count: ", info['log']['Episode Reward/catch'].item())
         # print("Max possible catches: ", args_cli.num_envs * 5.0)
         # print("Catch percentage: ", info['log']['Episode Reward/catch'].item() / (args_cli.num_envs * 5.0))
 
         print("Done!")
+        # import numpy as np
+        # ee_pos = np.array(ee_pos_list).squeeze()
+        # print("EE Pos: ", ee_pos.shape)
+        # np.save("ee_pos_mass_com.npy", ee_pos)
+
+
         # import matplotlib.pyplot as plt
         # import numpy as np
 

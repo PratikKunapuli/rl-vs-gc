@@ -1,5 +1,5 @@
 import argparse
-
+import sys 
 from omni.isaac.lab.app import AppLauncher
 
 # local imports
@@ -21,16 +21,20 @@ parser.add_argument("--goal_task", type=str, default="rand", help="Goal task for
 parser.add_argument("--frame", type=str, default="root", help="Frame of the task.")
 parser.add_argument("--baseline", type=bool, default=False, help="Use baseline policy.")
 parser.add_argument("--case_study", type=bool, default=False, help="Use case study policy.")
+parser.add_argument("--save_prefix", type=str, default="", help="Prefix for saving files.")
 
 
 # append RSL-RL cli arguments
 cli_args.add_rsl_rl_args(parser)
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
-args_cli = parser.parse_args()
+args_cli, hydra_args = parser.parse_known_args()
 # always enable cameras to record video
 args_cli.enable_cameras = True
 args_cli.headless = True # make false to see the simulation
+
+# clear out sys.argv for Hydra
+sys.argv = [sys.argv[0]] + hydra_args
 
 # launch omniverse app
 app_launcher = AppLauncher(args_cli)
@@ -55,6 +59,8 @@ from rsl_rl.runners import OnPolicyRunner
 from omni.isaac.lab.utils.dict import print_dict
 
 import omni.isaac.lab_tasks  # noqa: F401
+from omni.isaac.lab.envs import DirectRLEnvCfg, ManagerBasedRLEnvCfg
+from omni.isaac.lab_tasks.utils.hydra import hydra_task_config
 from omni.isaac.lab_tasks.utils import get_checkpoint_path, parse_env_cfg
 from omni.isaac.lab_tasks.utils.wrappers.rsl_rl import (
     RslRlOnPolicyRunnerCfg,
@@ -66,16 +72,18 @@ from omni.isaac.lab_tasks.utils.wrappers.rsl_rl import (
 import numpy as np
 import torch
 
+@hydra_task_config(args_cli.task, "rsl_rl_cfg_entry_point")
+def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolicyRunnerCfg):
+    # torch.manual_seed(args_cli.seed)
+    # env_cfg = parse_env_cfg(
+    #     args_cli.task, device=args_cli.device, num_envs=args_cli.num_envs, use_fabric=not args_cli.disable_fabric
+    # )
 
-def main():
-    torch.manual_seed(args_cli.seed)
     
-    env_cfg = parse_env_cfg(
-        args_cli.task, device=args_cli.device, num_envs=args_cli.num_envs, use_fabric=not args_cli.disable_fabric
-    )
+    # agent_cfg: RslRlOnPolicyRunnerCfg = cli_args.parse_rsl_rl_cfg(args_cli.task, args_cli)
+    agent_cfg = cli_args.update_rsl_rl_cfg(agent_cfg, args_cli)
+    env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
 
-    
-    agent_cfg: RslRlOnPolicyRunnerCfg = cli_args.parse_rsl_rl_cfg(args_cli.task, args_cli)
     # specify directory for logging experiments
     log_root_path = os.path.join("logs", "rsl_rl", agent_cfg.experiment_name)
     log_root_path = os.path.abspath(log_root_path)
@@ -88,7 +96,11 @@ def main():
     if not args_cli.baseline:
         policy_path = log_dir
     else:
-        policy_path = "./baseline_0dof/"
+        # policy_path = "./baseline_0dof/"
+        # policy_path = "./baseline_0dof_com_lqr_tune/"
+        # policy_path = "./baseline_0dof_com_reward_tune/"
+        policy_path = "./baseline_0dof_ee_reward_tune/"
+        # policy_path = "./baseline_0dof_ee_lqr_tune/"
 
 
 
@@ -99,6 +111,11 @@ def main():
         env_cfg.sim.dt = 1/env_cfg.sim_rate_hz
         env_cfg.decimation = env_cfg.sim_rate_hz // env_cfg.policy_rate_hz
         env_cfg.sim.render_interval = env_cfg.decimation
+        env_cfg.gc_mode = True
+        env_cfg.task_body = "COM"
+        env_cfg.goal_body = "COM"
+        env_cfg.reward_task_body = "root"
+        env_cfg.reward_goal_body = "root"
 
         # env_cfg.yaw_distance_reward_scale = 5.0
     # else:
@@ -108,6 +125,9 @@ def main():
 
     env_cfg.eval_mode = True
     env_cfg.viewer.resolution = (1920, 1080)
+    env_cfg.seed = args_cli.seed
+    env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
+    agent_cfg.device = env_cfg.sim.device
     
 
     # If ".hydra/config.yaml" is present, load some of the reward scalars from there
@@ -182,13 +202,15 @@ def main():
     if args_cli.case_study:
         # Manual override of env cfg
         env_cfg.goal_cfg = "fixed"
-        env_cfg.goal_pos = [0.0, 0.0, 0.5]
+        # env_cfg.goal_pos = [0.0, 0.0, 0.5]
+        env_cfg.goal_pos = [0.0, 0.0, 3.0]
         env_cfg.goal_ori = [0.7071068, 0.0, 0.0, 0.7071068]
         env_cfg.init_cfg = "default"
 
         # Camera settings
-        env_cfg.viewer.eye = (0.75, 0.75, 1.25)
-        env_cfg.viewer.lookat = (0.0, 0.0, 0.5)
+        env_cfg.viewer.eye = (0.75, 0.75, 3.75)
+        # env_cfg.viewer.lookat = (0.0, 0.0, 0.5)
+        env_cfg.viewer.lookat = (0.0, 0.0, 3.0)
         env_cfg.viewer.origin_type = "env"
         env_cfg.viewer.env_index = 0
 
@@ -199,9 +221,13 @@ def main():
     # env_cfg.viewer.origin_type = "env"
     # env_cfg.viewer.env_index = 0
 
+    # Manual override of env cfg
+    # env_cfg.goal_pos_range = 2.0
+    # env_cfg.goal_yaw_range = 0.0 #0.0 1.5708  3.14159
+
     envs = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
 
-    save_prefix = ""
+    save_prefix = args_cli.save_prefix
     if args_cli.case_study:
         save_prefix = "case_study_"
     
@@ -237,7 +263,33 @@ def main():
         arm_offset = envs.arm_offset
         pos_offset = envs.position_offset
         ori_offset = envs.orientation_offset
-        agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=device)
+        # Hand-tuned gains
+        # agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=device)
+        
+        # Optuna-tuned gains for EE-Reward
+        agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=device,
+                                    kp_pos_gain_xy=43.507, kp_pos_gain_z=24.167, kd_pos_gain_xy=9.129, kd_pos_gain_z=6.081,
+                                    kp_att_gain_xy=998.777, kp_att_gain_z=18.230, kd_att_gain_xy=47.821, kd_att_gain_z=8.818)
+        
+        # Optuna-tuned gains for EE-LQR Cost (equal pos and yaw weight)
+        # agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=device,
+        #                             kp_pos_gain_xy=24.675, kp_pos_gain_z=31.101, kd_pos_gain_xy=7.894, kd_pos_gain_z=8.207,
+        #                             kp_att_gain_xy=950.228, kp_att_gain_z=10.539, kd_att_gain_xy=39.918, kd_att_gain_z=5.719)
+        
+        # Optuna-tuned gains for COM-Reward
+        # agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=device,
+        #                             kp_pos_gain_xy=38.704, kp_pos_gain_z=39.755, kd_pos_gain_xy=10.413, kd_pos_gain_z=13.509,
+        #                             kp_att_gain_xy=829.511, kp_att_gain_z=1.095, kd_att_gain_xy=38.383, kd_att_gain_z=4.322)
+        
+        # Optuna-tuned gains for COM-LQR Cost (equal pos and yaw weight)
+        # agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=device,
+        #                             kp_pos_gain_xy=49.960, kp_pos_gain_z=23.726, kd_pos_gain_xy=13.218, kd_pos_gain_z=6.878,
+        #                             kp_att_gain_xy=775.271, kp_att_gain_z=3.609, kd_att_gain_xy=41.144, kd_att_gain_z=1.903)
+        
+        # Optuna-tuned gains for COM-LQR Cost (environment has further away goals)
+        # agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=device,
+        #                             kp_pos_gain_xy=24.172, kp_pos_gain_z=28.362, kd_pos_gain_xy=6.149, kd_pos_gain_z=8.881,
+        #                             kp_att_gain_xy=955.034, kp_att_gain_z=14.370, kd_att_gain_xy=36.101, kd_att_gain_z=8.828)
     
     else:
         envs = RslRlVecEnvWrapper(envs) # This calls Reset!!
@@ -253,6 +305,7 @@ def main():
         # export_policy_as_jit(
         #     ppo_runner.alg.actor_critic, ppo_runner.obs_normalizer, path=export_model_dir, filename="policy.pt"
         # )
+        
     
     if args_cli.baseline:
         obs_dict, info = envs.reset()
@@ -262,8 +315,13 @@ def main():
         obs, dict_obs = envs.get_observations()
         obs_dict = dict_obs['observations']
 
-    # print("Starting obs: ", obs)
+    print("Starting obs: ", obs_dict["full_state"])
+
+    ee_start = obs_dict["full_state"][:, 13:16]
+    goal_start = obs_dict["full_state"][:, 26:26 + 3]
+    print("starting norm: ", torch.norm(ee_start - goal_start, dim=1))
     # input("Check and press Enter to continue...")
+    # import code; code.interact(local=locals())
 
     full_state_size = obs_dict["full_state"].shape[1]
     full_states = torch.zeros((envs.num_envs, 500, full_state_size), dtype=torch.float32).to(device)
@@ -281,7 +339,8 @@ def main():
                 full_states[:, steps, :] = obs_dict["full_state"]
 
                 if args_cli.baseline:
-                    action = agent.get_action(obs_dict["full_state"])
+                    # action = agent.get_action(obs_dict["full_state"])
+                    action = agent.get_action(obs_dict["gc"])
                 else:
                     actions = agent(obs_tensor)
 
@@ -299,6 +358,7 @@ def main():
                 steps += 1
                 print("Step: ", steps)
 
+            print("Full states shape: ", full_states.shape)
             torch.save(full_states, os.path.join(policy_path, save_prefix + "eval_full_states.pt"))
             torch.save(rewards, os.path.join(policy_path, save_prefix + "eval_rewards.pt"))
 
