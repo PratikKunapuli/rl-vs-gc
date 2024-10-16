@@ -15,6 +15,18 @@ def vee_map(S):
     return torch.stack([S[:, 2, 1], S[:, 0, 2], S[:, 1, 0]], dim=1)
 
 @torch.jit.script
+def hat_map(v):
+    """Convert vector to skew-symmetric matrix.
+
+    Args:
+        v: The vector. Shape is (N, 3).
+
+    Returns:
+        The skew-symmetric matrix representation of the vector. Shape is (N, 3, 3).
+    """
+    return isaac_math_utils.skew_symmetric_matrix(v)
+
+@torch.jit.script
 def yaw_from_quat(q: torch.Tensor) -> torch.Tensor:
     """Get yaw angle from quaternion.
 

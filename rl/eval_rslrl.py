@@ -51,7 +51,7 @@ import yaml
 
 import gymnasium as gym
 import envs
-from policies import DecoupledController
+from controllers.decoupled_controller import DecoupledController
 
 
 from rsl_rl.runners import OnPolicyRunner
@@ -150,6 +150,20 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
                     env_cfg.yaw_smooth_transition_scale = hydra_cfg["yaw_smooth_transition_scale"]
                 if "yaw_radius" in hydra_cfg:
                     env_cfg.yaw_radius = hydra_cfg["yaw_radius"]
+                if "pos_distance_reward_scale" in hydra_cfg:
+                    env_cfg.pos_distance_reward_scale = hydra_cfg["pos_distance_reward_scale"]
+                if "pos_error_reward_scale" in hydra_cfg:
+                    env_cfg.pos_error_reward_scale = hydra_cfg["pos_error_reward_scale"]
+                if "lin_vel_reward_scale" in hydra_cfg:
+                    env_cfg.lin_vel_reward_scale = hydra_cfg["lin_vel_reward_scale"]
+                if "ang_vel_reward_scale" in hydra_cfg:
+                    env_cfg.ang_vel_reward_scale = hydra_cfg["ang_vel_reward_scale"]
+                if "combined_alpha" in hydra_cfg:
+                    env_cfg.combined_alpha = hydra_cfg["combined_alpha"]
+                if "combined_tolerance" in hydra_cfg:
+                    env_cfg.combined_tolerance = hydra_cfg["combined_tolerance"]
+                if "combined_reward_scale" in hydra_cfg:
+                    env_cfg.combined_reward_scale = hydra_cfg["combined_reward_scale"]
     # else:
     #     yaml_base = "./logs/rsl_rl/AM_0DOF_Hover/2024-09-14_14-38-12_rsl_rl_test_default_1024_env_pos_distance_15_yaw_error_-2.0_no_smooth_transition_full_ori"
     #     with open(os.path.join(yaml_base, "params/env.yaml"), "r") as f:
@@ -331,6 +345,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
     steps = 0
     done = False
     done_count = 0
+    times = []
     # input("Press Enter to continue...")
     with torch.no_grad():
         while simulation_app.is_running():
@@ -338,11 +353,13 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
                 obs_tensor = obs_dict["policy"]
                 full_states[:, steps, :] = obs_dict["full_state"]
 
+                start = time.time()
                 if args_cli.baseline:
                     # action = agent.get_action(obs_dict["full_state"])
                     action = agent.get_action(obs_dict["gc"])
                 else:
                     actions = agent(obs_tensor)
+                times.append(time.time() - start)
 
                 if args_cli.baseline:
                     obs_dict, reward, terminated, truncated, info = envs.step(action)
@@ -366,6 +383,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
             envs.close()
             simulation_app.close()
 
+    print("\nAverage inference time: ", np.mean(times))
     
 
 

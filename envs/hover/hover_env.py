@@ -109,6 +109,9 @@ class AerialManipulatorHoverEnvBaseCfg(DirectRLEnvCfg):
     crash_penalty = 0.0
     scale_reward_with_time = False
     square_reward_errors = False
+    combined_alpha = 0.0
+    combined_tolerance = 0.0
+    combined_scale = 0.0
 
     
 
@@ -270,6 +273,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         self._episode_sums = {
             key: torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
             for key in [
+                "endeffector_combined_error",
                 "endeffector_lin_vel",
                 "endeffector_ang_vel",
                 "endeffector_pos_error",
@@ -287,6 +291,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         self._episode_error_sums = {
             key: torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
             for key in [
+                "combined_error",
                 "pos_error",
                 "pos_distance",
                 "ori_error",
@@ -582,8 +587,10 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         yaw_distance = torch.exp(- (yaw_error **2) / self.cfg.yaw_radius)
         yaw_error = yaw_error * smooth_transition_func
 
-        combined_error = (pos_error)**2 + (yaw_error * self.arm_length)**2
-        combined_distance = torch.exp(- (combined_error) / self.cfg.pos_radius)
+        # combined_error = (pos_error)**2 + (yaw_error * self.arm_length)**2
+        combined_error = pos_error/self.cfg.goal_pos_range + yaw_error/self.cfg.goal_yaw_range
+        combined_reward = (1 + torch.exp(self.cfg.combined_alpha * (combined_error - self.cfg.combined_tolerance)))**-1
+        combined_distance = combined_reward
 
         # Velocity error components, used for stabliization tuning
         lin_vel_b = quat_rotate_inverse(base_ori_w, lin_vel_w)
@@ -628,6 +635,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
 
 
         rewards = {
+            "endeffector_combined_error": combined_reward * self.cfg.combined_scale * time_scale,
             "endeffector_pos_error": pos_error * self.cfg.pos_error_reward_scale * time_scale,
             "endeffector_pos_distance": pos_distance * self.cfg.pos_distance_reward_scale * time_scale,
             "endeffector_ori_error": ori_error * self.cfg.ori_error_reward_scale * time_scale,
@@ -642,6 +650,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
             "crash_penalty": self.reset_terminated[:].float() * crash_penalty_time * time_scale,
         }
         errors = {
+            "combined_error": combined_error,
             "pos_error": pos_error,
             "pos_distance": pos_distance,
             "ori_error": ori_error,

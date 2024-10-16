@@ -37,7 +37,7 @@ import envs
 import envs.hover
 # from AerialManipulation.envs.hover import hover_env
 
-from rl.policies import DecoupledController
+from controllers.decoupled_controller import DecoupledController
 
 def main():
 

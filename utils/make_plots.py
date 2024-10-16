@@ -1765,33 +1765,52 @@ def load_single_rl_data(rl_eval_path, min_reward = 0.0, max_reward = 15.0):
 
 def plot_rl_trials():
     rl_exp_labels = [
-                     "pos bonus (15)", 
+                    #  "pos bonus (15)", 
                     #  "DC EE LQR",
                     #  "stay alive (2)", 
-                     "stay_alive (2) squared", 
+                    #  "stay_alive (2) squared", 
                     #  "stay alive (5)", 
                     #  "crash penalty (2)", 
                     #  "crash penalty (5)",
-                    "crash penalty normalized (2)",
-                    "combined exp bonus (0.8)",
+                    # "crash penalty normalized (2)",
+                    # "combined exp bonus (0.8)",
                     # "combined exp bonus (0.8) no vel",
-                    "COM crash (2)"
+                    # "COM crash (2)",
+                    # r"AP($\alpha$, tol)=(2, 1.5)",
+                    # r"AP($\alpha$, tol)=(10, 0.5)(high vel)",
+                    # r"AP($\alpha$, tol)=(10, 0.5)(low vel)",
+                    r"AP($\alpha$, tol)=(20, 1.0)",
+                    r"AP($\alpha$, tol)=(3, 1.0)",
+                    r"AP($\alpha$, tol)=(50, 0.6)",
+                    r"AP($\alpha$, tol)=(3, 1.0)(low vel)",
+                    # "combined radius 0.1",
+                    # "combined radius 1.0",
                     ]
 
     rl_seeds_list = []
-    rl_seeds_list.append("../rl/logs/rsl_rl/AM_0DOF_Hover/2024-10-01_17-52-33_new_defaults_anneal_50e6_seed_0/")
+    # rl_seeds_list.append("../rl/logs/rsl_rl/AM_0DOF_Hover/2024-10-01_17-52-33_new_defaults_anneal_50e6_seed_0/")
     # rl_seeds_list.append("../rl/baseline_0dof_ee_lqr_tune/")
     # rl_seeds_list.append("../rl/logs/rsl_rl/AM_0_DOF/2024-10-04_12-26-01_LQR_reward_-2_pos_-2_yaw_stay_alive_10/")
-    rl_seeds_list.append("../rl/logs/rsl_rl/AM_0_DOF/2024-10-07_12-33-16_LQR_reward_squared_-2_pos_-2_yaw_stay_alive_10/")
+    # rl_seeds_list.append("../rl/logs/rsl_rl/AM_0_DOF/2024-10-07_12-33-16_LQR_reward_squared_-2_pos_-2_yaw_stay_alive_10/")
     # rl_seeds_list.append("../rl/logs/rsl_rl/AM_0_DOF/2024-10-07_13-08-43_LQR_reward_-5_pos_-5_yaw_stay_alive_10/")
     # rl_seeds_list.append("../rl/logs/rsl_rl/AM_0_DOF/2024-10-07_13-27-55_LQR_reward_-2_pos_-2_yaw_-10_crash/")
     # rl_seeds_list.append("../rl/logs/rsl_rl/AM_0_DOF/2024-10-07_14-44-21_LQR_reward_-5_pos_-5_yaw_-10_crash/")
-    rl_seeds_list.append("../rl/logs/rsl_rl/AM_0_DOF/2024-10-07_16-05-19_LQR_reward_normalized_yaw_-2_pos_-2_yaw_-10_crash/")
-    rl_seeds_list.append("../rl/logs/rsl_rl/AM_0_DOF/2024-10-07_16-12-06_combined_pos_and_yaw_1.0_radius_0.8/")
+    # rl_seeds_list.append("../rl/logs/rsl_rl/AM_0_DOF/2024-10-07_16-05-19_LQR_reward_normalized_yaw_-2_pos_-2_yaw_-10_crash/")
+    # rl_seeds_list.append("../rl/logs/rsl_rl/AM_0_DOF/2024-10-07_16-12-06_combined_pos_and_yaw_1.0_radius_0.8/")
     # rl_seeds_list.append("../rl/logs/rsl_rl/AM_0_DOF/2024-10-07_16-46-48_combined_pos_and_yaw_1.0_radius_0.8_no_vel/")
-    rl_seeds_list.append("../rl/logs/rsl_rl/AM_0DOF_COM/2024-10-07_18-59-53_LQR_-2_pos_-2_yaw_-10_crash_COM_all_bodies_reward_change/")
+    # rl_seeds_list.append("../rl/logs/rsl_rl/AM_0DOF_COM/2024-10-07_18-59-53_LQR_-2_pos_-2_yaw_-10_crash_COM_all_bodies_reward_change/")
+    # rl_seeds_list.append("../rl/logs/rsl_rl/AM_0DOF_AP/2024-10-15_15-49-27_agile_test_alpha_2_tol_1.5/")
+    # rl_seeds_list.append("../rl/logs/rsl_rl/AM_0DOF_AP/2024-10-15_15-49-25_precision_test_alpha_10_tol_0.5_vel_-0.1_ang_vel_-0.1/")
+    # rl_seeds_list.append("../rl/logs/rsl_rl/AM_0DOF_AP/2024-10-15_16-08-12_precision_test_alpha_10_tol_0.5_vel_-0.05_ang_vel_-0.01/")
+    rl_seeds_list.append("../rl/logs/rsl_rl/AM_0DOF_AP/2024-10-16_10-58-03_test_alpha_20_tol_1.0/")
+    rl_seeds_list.append("../rl/logs/rsl_rl/AM_0DOF_AP/2024-10-16_10-58-04_test_alpha_3_tol_1.0/")
+    rl_seeds_list.append("../rl/logs/rsl_rl/AM_0DOF_AP/2024-10-16_14-08-25_test_alpha_50_tol_0.6/")
+    rl_seeds_list.append("../rl/logs/rsl_rl/AM_0DOF_AP/2024-10-16_14-04-37_test_alpha_3_tol_1.0_original_vel_penalties/")
+    # rl_seeds_list.append("../rl/logs/rsl_rl/AM_0_DOF/2024-10-07_19-00-25_combined_pos_and_yaw_1.0_radius_0.1_jit/")
+    # rl_seeds_list.append("../rl/logs/rsl_rl/AM_0_DOF/2024-10-07_19-01-14_combined_pos_and_yaw_1.0_radius_1.0_jit/")
 
     time_axis = np.arange(0, 499) * 0.02
+
 
     fig, axs = plt.subplots(1, 2, dpi=1000)
     for i in range(len(rl_seeds_list)):
@@ -1807,7 +1826,7 @@ def plot_rl_trials():
     axs[1].set_xlabel("Time (s)")
     axs[1].set_ylabel("Yaw Error (rad)")
     handles, labels = axs[0].get_legend_handles_labels()
-    fig.legend(handles=handles, labels=labels, loc='lower center', ncol=4, bbox_to_anchor=(0.5, -0.25))
+    fig.legend(handles=handles, labels=labels, loc='lower center', ncol=3, bbox_to_anchor=(0.5, -0.1))
     plt.tight_layout()
     # plt.savefig("rl_trials.pdf", dpi=1000, format='pdf', bbox_inches='tight')
     plt.savefig("rl_trials.png", dpi=1000, format='png', bbox_inches='tight')
@@ -1835,8 +1854,8 @@ if __name__ == "__main__":
 
     # plot_ball_catching(rl_eval_path, dc_eval_path)
 
-    plot_rl_pareto()
-    # plot_rl_trials()
+    # plot_rl_pareto()
+    plot_rl_trials()
     exit()
 
 

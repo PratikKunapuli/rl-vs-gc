@@ -103,6 +103,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
     log_dir = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     if agent_cfg.run_name:
         log_dir += f"_{agent_cfg.run_name}"
+    agent_run_name = log_dir
     log_dir = os.path.join(log_root_path, log_dir)
 
     if env_cfg.use_yaw_representation:
@@ -152,6 +153,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
 
     # close the simulator
     env.close()
+
+    print("\n\nPlease run the following line to evaluate the trained model: ")
+    print(f"python eval_rslrl.py --video --task {args_cli.task} --num_envs 100 --experiment_name {agent_cfg.experiment_name}--load_run {agent_run_name}")
 
 
 if __name__ == "__main__":
