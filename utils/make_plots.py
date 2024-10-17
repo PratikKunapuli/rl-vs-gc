@@ -1779,10 +1779,15 @@ def plot_rl_trials():
                     # r"AP($\alpha$, tol)=(2, 1.5)",
                     # r"AP($\alpha$, tol)=(10, 0.5)(high vel)",
                     # r"AP($\alpha$, tol)=(10, 0.5)(low vel)",
-                    r"AP($\alpha$, tol)=(20, 1.0)",
-                    r"AP($\alpha$, tol)=(3, 1.0)",
-                    r"AP($\alpha$, tol)=(50, 0.6)",
+                    # r"AP($\alpha$, tol)=(10, 0.5)",
+                    # r"AP($\alpha$, tol)=(20, 1.0)",
+                    # r"AP($\alpha$, tol)=(3, 1.0)",
+                    # r"AP($\alpha$, tol)=(50, 0.6)",
                     r"AP($\alpha$, tol)=(3, 1.0)(low vel)",
+                    r"AP($\alpha$, tol)=(50, 0.3)",
+                    r"AP($\alpha$, tol)=(3, 0.6)(low vel)",
+                    r"AP($\alpha$, tol)=(50, 0.3)(low vel)",
+                    r"AP($\alpha$, tol)=(1, 0.1)(high vel)",
                     # "combined radius 0.1",
                     # "combined radius 1.0",
                     ]
@@ -1802,10 +1807,14 @@ def plot_rl_trials():
     # rl_seeds_list.append("../rl/logs/rsl_rl/AM_0DOF_AP/2024-10-15_15-49-27_agile_test_alpha_2_tol_1.5/")
     # rl_seeds_list.append("../rl/logs/rsl_rl/AM_0DOF_AP/2024-10-15_15-49-25_precision_test_alpha_10_tol_0.5_vel_-0.1_ang_vel_-0.1/")
     # rl_seeds_list.append("../rl/logs/rsl_rl/AM_0DOF_AP/2024-10-15_16-08-12_precision_test_alpha_10_tol_0.5_vel_-0.05_ang_vel_-0.01/")
-    rl_seeds_list.append("../rl/logs/rsl_rl/AM_0DOF_AP/2024-10-16_10-58-03_test_alpha_20_tol_1.0/")
-    rl_seeds_list.append("../rl/logs/rsl_rl/AM_0DOF_AP/2024-10-16_10-58-04_test_alpha_3_tol_1.0/")
-    rl_seeds_list.append("../rl/logs/rsl_rl/AM_0DOF_AP/2024-10-16_14-08-25_test_alpha_50_tol_0.6/")
+    # rl_seeds_list.append("../rl/logs/rsl_rl/AM_0DOF_AP/2024-10-16_10-58-03_test_alpha_20_tol_1.0/")
+    # rl_seeds_list.append("../rl/logs/rsl_rl/AM_0DOF_AP/2024-10-16_10-58-04_test_alpha_3_tol_1.0/")
+    # rl_seeds_list.append("../rl/logs/rsl_rl/AM_0DOF_AP/2024-10-16_14-08-25_test_alpha_50_tol_0.6/")
     rl_seeds_list.append("../rl/logs/rsl_rl/AM_0DOF_AP/2024-10-16_14-04-37_test_alpha_3_tol_1.0_original_vel_penalties/")
+    rl_seeds_list.append("../rl/logs/rsl_rl/AM_0DOF_AP/2024-10-16_15-55-13_test_alpha_50_tol_0.3/")
+    rl_seeds_list.append("../rl/logs/rsl_rl/AM_0DOF_AP/2024-10-16_15-50-55_test_alpha_3_tol_0.6_original_vel_penalties/")
+    rl_seeds_list.append("../rl/logs/rsl_rl/AM_0DOF_AP/2024-10-16_19-04-09_test_alpha_50_tol_0.3_original_vel_penalties/")
+    rl_seeds_list.append("../rl/logs/rsl_rl/AM_0DOF_AP/2024-10-16_19-01-01_test_alpha_1_tol_0.1_vel_-0.1_ang_vel_-0.05//")
     # rl_seeds_list.append("../rl/logs/rsl_rl/AM_0_DOF/2024-10-07_19-00-25_combined_pos_and_yaw_1.0_radius_0.1_jit/")
     # rl_seeds_list.append("../rl/logs/rsl_rl/AM_0_DOF/2024-10-07_19-01-14_combined_pos_and_yaw_1.0_radius_1.0_jit/")
 

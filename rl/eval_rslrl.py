@@ -380,10 +380,12 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
             torch.save(rewards, os.path.join(policy_path, save_prefix + "eval_rewards.pt"))
 
             print("Final Info: \n\n", info, "\n")
+
+            print("\nAverage inference time: ", np.mean(times))
             envs.close()
             simulation_app.close()
 
-    print("\nAverage inference time: ", np.mean(times))
+    
     
 
 

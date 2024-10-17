@@ -74,7 +74,7 @@ def yaw_error_from_quats(q1: torch.Tensor, q2: torch.Tensor, dof:int) -> torch.T
     operand = (b1*b2).sum(dim=1) / (b1_norm * b2_norm)
     return torch.arccos(torch.clamp(operand, -1.0+1e-8, 1.0-1e-8)).view(shape1[:-1])
 
-# @torch.jit.script
+@torch.jit.script
 def quat_from_yaw(yaw: torch.Tensor) -> torch.Tensor:
     """Get quaternion from yaw angle.
 
