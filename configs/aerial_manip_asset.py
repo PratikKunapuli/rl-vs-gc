@@ -225,7 +225,7 @@ AERIAL_MANIPULATOR_1DOF_WRIST_CFG = ArticulationCfg(
         ),
     },
 )
-"""Configuration for the Aerial Manipulator 1DOF."""
+"""Configuration for the Aerial Manipulator 0DOF."""
 
 AERIAL_MANIPULATOR_0DOF_CFG = ArticulationCfg(
     prim_path="{ENV_REGEX_NS}/Robot",

@@ -588,7 +588,7 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         yaw_error = yaw_error * smooth_transition_func
 
         # combined_error = (pos_error)**2 + (yaw_error * self.arm_length)**2
-        combined_error = pos_error/self.cfg.goal_pos_range + yaw_error/self.cfg.goal_yaw_range
+        combined_error = pos_error/self.cfg.goal_pos_range + (yaw_error/self.cfg.goal_yaw_range)*self.arm_length
         combined_reward = (1 + torch.exp(self.cfg.combined_alpha * (combined_error - self.cfg.combined_tolerance)))**-1
         combined_distance = combined_reward
 

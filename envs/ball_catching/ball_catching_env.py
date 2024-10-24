@@ -22,7 +22,7 @@ from omni.isaac.core.utils.prims import get_prim_at_path
 from pxr import Usd, UsdShade, Gf
 # Local imports
 from configs.aerial_manip_asset import AERIAL_MANIPULATOR_0DOF_DEBUG_BALL_CATCHING_CFG, AERIAL_MANIPULATOR_0DOF_BALL_CATCHING_CFG, BALL_CFG
-from utils.math_utilities import yaw_from_quat, yaw_error_from_quats, quat_from_yaw
+from utils.math_utilities import yaw_from_quat, yaw_error_from_quats, quat_from_yaw, compute_desired_pose_from_transform
 
 class AerialManipulatorBallCatchEnvWindow(BaseEnvWindow):
     """Window manager for the Quadcopter environment."""
@@ -53,6 +53,8 @@ class AerialManipulatorBallCatchingEnvBaseCfg(DirectRLEnvCfg):
     ui_window_class_type = AerialManipulatorBallCatchEnvWindow
     num_states = 0
     debug_vis = True
+
+    seed = 0
 
     # simulation
     sim: SimulationCfg = SimulationCfg(
@@ -178,6 +180,7 @@ class AerialManipulatorBallCatchingEnvBaseCfg(DirectRLEnvCfg):
     wrist_joint_active = True
 
     eval_mode = False
+    gc_mode = False
 
     # ball_obj : RigidObjectCfg = BALL_CFG.replace(prim_path="/World/envs/env_.*/Ball")
 
@@ -246,6 +249,8 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
 
     def __init__(self, cfg: AerialManipulatorBallCatchingEnvBaseCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
+
+        torch.manual_seed(self.cfg.seed)
 
         # Actions / Actuation interfaces
         self._actions = torch.zeros(self.num_envs, self.cfg.num_actions, device=self.device)
@@ -477,6 +482,28 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
             ],
             dim=-1                                          # (num_envs, 22)
         )
+
+
+        quad_pos_w, quad_ori_w, quad_lin_vel_w, quad_ang_vel_w = self.get_frame_state_from_task("COM")
+        goal_pos, goal_ori = self.get_goal_state_from_task("COM")
+        # print("[Isaac Env: Observations] Quad pos: ", quad_pos_w)
+        # print("[Isaac Env: Observations] EE pos: ", ee_pos_w)
+
+        if self.cfg.gc_mode:
+            gc_obs = torch.cat(
+                [
+                    quad_pos_w,
+                    quad_ori_w,
+                    quad_lin_vel_w,
+                    quad_ang_vel_w,
+                    goal_pos,
+                    yaw_from_quat(goal_ori).unsqueeze(1),
+                ],
+                dim=-1
+            )
+        else:
+            gc_obs = None
+
         
         # We also need the state information for other controllers like the decoupled controller.
         # This is the full state of the robot
@@ -505,7 +532,7 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
             dim=-1                                          # (num_envs, 18)
         )
 
-        return {"policy": obs, "full_state": full_state}
+        return {"policy": obs, "gc": gc_obs, "full_state": full_state}
 
     def _get_rewards(self) -> torch.Tensor:
         """
@@ -854,10 +881,33 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
             base_ori_w = self._robot.data.body_quat_w[:, self._body_id].squeeze(1)
             lin_vel_w = self._robot.data.body_lin_vel_w[:, self._body_id].squeeze(1)
             ang_vel_w = self._robot.data.body_ang_vel_w[:, self._body_id].squeeze(1)
+        elif task_body == "COM":
+            frame_id = self._robot.find_bodies("COM")[0]
+            base_pos_w = self._robot.data.body_pos_w[:, frame_id].squeeze(1)
+            base_ori_w = self._robot.data.body_quat_w[:, frame_id].squeeze(1)
+            lin_vel_w = self._robot.data.body_lin_vel_w[:, frame_id].squeeze(1)
+            ang_vel_w = self._robot.data.body_ang_vel_w[:, frame_id].squeeze(1)
         else:
             raise ValueError("Invalid task body: ", self.cfg.task_body)
 
         return base_pos_w, base_ori_w, lin_vel_w, ang_vel_w
+
+    def get_goal_state_from_task(self, goal_body:str) -> tuple[torch.Tensor, torch.Tensor]:
+        if goal_body == "root":
+            goal_pos_w = self._desired_pos_w
+            goal_ori_w = self._desired_ori_w
+        elif goal_body == "endeffector":
+            goal_pos_w = self._desired_pos_w
+            goal_ori_w = self._desired_ori_w
+        elif goal_body == "COM":
+            # desired_pos, desired_yaw = self.compute_desired_pose_from_transform(self._desired_pos_w, self._desired_ori_w, self.com_pos_e)
+            desired_pos, desired_yaw = compute_desired_pose_from_transform(self._desired_pos_w, self._desired_ori_w, self.com_pos_e, 0)
+            goal_pos_w = desired_pos
+            goal_ori_w = quat_from_yaw(desired_yaw)
+        else:
+            raise ValueError("Invalid goal body: ", self.cfg.goal_body)
+
+        return goal_pos_w, goal_ori_w
 
     def _setup_scene(self):
         self._robot = Articulation(self.cfg.robot)

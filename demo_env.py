@@ -64,30 +64,41 @@ def main():
     # env_cfg.viewer.lookat = (0.0, 1.5, 0.5)
     # env_cfg.viewer.origin_type = "env"
     # env_cfg.viewer.env_index = 0
-    env_cfg.viewer.eye = (0.75, 0.75, 3.75)
+    
+    env_cfg.viewer.eye = (-0.25, 0.25, 0.25)
     env_cfg.viewer.resolution = (1280, 720)
-    env_cfg.viewer.lookat = (-0.2, -0.2, 3.0)
-    env_cfg.viewer.origin_type = "env"
+    env_cfg.viewer.lookat = (0.0, 0.0, 0.0)
+    env_cfg.viewer.origin_type = "asset_root"
     env_cfg.viewer.env_index = 0
+    env_cfg.viewer.asset_name = "robot"
+
+    # env_cfg.viewer.eye = (-0.75, -0.5, 3.75)
+    # env_cfg.viewer.resolution = (1280, 720)
+    # env_cfg.viewer.lookat = (0.0, -0.5, 3.0)
+    # env_cfg.viewer.origin_type = "env"
+    # env_cfg.viewer.env_index = 0
 
     # import code; code.interact(local=locals())
 
     print(env_cfg.robot.spawn)
 
-    env_cfg.goal_cfg = "fixed" # "rand" or "fixed"
+    env_cfg.seed = 1
+    env_cfg.goal_cfg = "rand" # "rand" or "fixed"
     # env_cfg.goal_pos = [-0.2007, -0.2007, 0.5]
     # env_cfg.goal_pos = [-0.15, -0.15, 0.5]
-    env_cfg.goal_pos = [0.0, 0.0, 3.0]
+    env_cfg.goal_pos = [0.0, -1.0, 3.0]
     
-    env_cfg.goal_ori = [1.0, 0.0, 0.0, 0.0]
-    # env_cfg.goal_ori = [0.7071068, 0.0, 0.0, 0.7071068]
+    env_cfg.goal_ori = [1.0, 0.0, 0.0, 0.0] # 0 deg z axis
+    # env_cfg.goal_ori = [0.7071068, 0.0, 0.0, 0.7071068] # pi/2 deg z axis
+    # env_cfg.goal_ori = [0.0871557, 0.0, 0.0, 0.9961947] # 170 deg z axis
+
     
     
-    env_cfg.sim_rate_hz = 100
-    env_cfg.policy_rate_hz = 50
-    env_cfg.sim.dt = 1/env_cfg.sim_rate_hz
-    env_cfg.decimation = env_cfg.sim_rate_hz // env_cfg.policy_rate_hz
-    env_cfg.sim.render_interval = env_cfg.decimation
+    # env_cfg.sim_rate_hz = 100
+    # env_cfg.policy_rate_hz = 50
+    # env_cfg.sim.dt = 1/env_cfg.sim_rate_hz
+    # env_cfg.decimation = env_cfg.sim_rate_hz // env_cfg.policy_rate_hz
+    # env_cfg.sim.render_interval = env_cfg.decimation
     env_cfg.eval_mode = True
     # env_cfg.init_cfg = "fixed"
 
@@ -95,6 +106,7 @@ def main():
     env_cfg.goal_body = "COM"
 
     env_cfg.gc_mode = True
+    env_cfg.control_mode = "CTATT"
 
     
     if "Traj" in args_cli.task:
@@ -139,6 +151,11 @@ def main():
 
     # input("Press Enter to continue...")
 
+    gc = DecoupledController(env.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=env.device,
+                                    kp_pos_gain_xy=6.5, kp_pos_gain_z=15.0, kd_pos_gain_xy=4.0, kd_pos_gain_z=9.0,
+                                    kp_att_gain_xy=544, kp_att_gain_z=544, kd_att_gain_xy=46.64, kd_att_gain_z=46.64, 
+                                    skip_precompute=True, vehicle="Crazyflie", control_mode="CTATT")
+
     # gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, com_pos_w=env.com_pos_w, device=env.device)
     
     # gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=True, com_pos_w=None, device=env.device,
@@ -147,7 +164,7 @@ def main():
     #                          kp_pos_gain_xy=43.507, kp_pos_gain_z=24.167, kd_pos_gain_xy=9.129, kd_pos_gain_z=6.081,
     #                          kp_att_gain_xy=998.777, kp_att_gain_z=18.230, kd_att_gain_xy=47.821, kd_att_gain_z=8.818)
     
-    nmpc = NMPC(args_cli.num_envs, (vehicle_mass+arm_mass).detach().cpu().numpy(), inertia.detach().cpu().numpy())
+    # nmpc = NMPC(args_cli.num_envs, (vehicle_mass+arm_mass).detach().cpu().numpy(), inertia.detach().cpu().numpy())
     
     # print("Quad in EE Frame: ", gc.quad_pos_ee_frame)
     # print("COM in EE Frame: ", gc.com_pos_ee_frame)
@@ -158,7 +175,7 @@ def main():
         "step_trigger": lambda step: step == 0,
         # "episode_trigger": lambda episode: episode == 0,
         "video_length": 501,
-        "name_prefix": "nmpc_test"
+        "name_prefix": "crazyflie_srt_ctatt"
     }
     env = gym.wrappers.RecordVideo(env, **video_kwargs)
 
@@ -166,15 +183,15 @@ def main():
     obs_dict, info = env.reset()
 
     gc_obs = obs_dict["gc"]
-    init_states = np.zeros((args_cli.num_envs, 18, 1))
-    goals = np.zeros((args_cli.num_envs, 12, 1))
-    init_states[:,:3,0] = gc_obs[:,:3].detach().cpu().numpy()
-    init_states[:,3:12,0] = isaac_math_utils.matrix_from_quat(gc_obs[:,3:7]).detach().cpu().numpy().reshape(-1, 9)
-    init_states[:,12:15,0] = gc_obs[:,7:10].detach().cpu().numpy()
-    init_states[:,15:18,0] = gc_obs[:,10:13].detach().cpu().numpy()
-    goals[:,:3,0] = gc_obs[:,13:16].detach().cpu().numpy()
-    goals[:,3:12,0] = isaac_math_utils.matrix_from_quat(math_utils.quat_from_yaw(gc_obs[:,16])).detach().cpu().numpy().reshape(-1, 9)
-    nmpc.initialize(init_states, goals)
+    # init_states = np.zeros((args_cli.num_envs, 18, 1))
+    # goals = np.zeros((args_cli.num_envs, 12, 1))
+    # init_states[:,:3,0] = gc_obs[:,:3].detach().cpu().numpy()
+    # init_states[:,3:12,0] = isaac_math_utils.matrix_from_quat(gc_obs[:,3:7]).detach().cpu().numpy().reshape(-1, 9)
+    # init_states[:,12:15,0] = gc_obs[:,7:10].detach().cpu().numpy()
+    # init_states[:,15:18,0] = gc_obs[:,10:13].detach().cpu().numpy()
+    # goals[:,:3,0] = gc_obs[:,13:16].detach().cpu().numpy()
+    # goals[:,3:12,0] = isaac_math_utils.matrix_from_quat(math_utils.quat_from_yaw(gc_obs[:,16])).detach().cpu().numpy().reshape(-1, 9)
+    # nmpc.initialize(init_states, goals)
 
 
 
@@ -185,7 +202,7 @@ def main():
     quad_omega_list = []
     ee_pos_list = []
     
-    import code; code.interact(local=locals())
+    # import code; code.interact(local=locals())
     
     while simulation_app.is_running():
         while done_count < 1:
@@ -203,19 +220,19 @@ def main():
             # full_state = obs_dict["full_state"]
             # action_gc = gc.get_action(full_state)
             obs = obs_dict["gc"]
-            # action_gc = gc.get_action(obs)
-            # print("Action GC: ", action_gc)
+            action_gc = gc.get_action(obs)
+            print("Action GC: ", action_gc)
 
             print("Pos: ", obs[:,:3])
             print("Goal pos: ", obs[:,13:16])
 
-            init_states[:,:3,0] = obs[:,:3].detach().cpu().numpy()
-            init_states[:,3:12,0] = isaac_math_utils.matrix_from_quat(obs[:,3:7]).detach().cpu().numpy().reshape(-1, 9)
-            init_states[:,12:15,0] = obs[:,7:10].detach().cpu().numpy()
-            init_states[:,15:18,0] = obs[:,10:13].detach().cpu().numpy()
-            action_nmpc = nmpc.get_action(init_states).squeeze()
-            action = torch.from_numpy(action_nmpc).to(obs_tensor.device)
-            print("action: ", action)
+            # init_states[:,:3,0] = obs[:,:3].detach().cpu().numpy()
+            # init_states[:,3:12,0] = isaac_math_utils.matrix_from_quat(obs[:,3:7]).detach().cpu().numpy().reshape(-1, 9)
+            # init_states[:,12:15,0] = obs[:,7:10].detach().cpu().numpy()
+            # init_states[:,15:18,0] = obs[:,10:13].detach().cpu().numpy()
+            # action_nmpc = nmpc.get_action(init_states).squeeze()
+            # action = torch.from_numpy(action_nmpc).to(obs_tensor.device)
+            # print("action: ", action)
 
 
             # print("Action shape: ", action_gc.shape)
@@ -241,7 +258,7 @@ def main():
             # ee_pos_list.append(ee_pos.detach().cpu().numpy())
 
 
-            # action = action_gc.to(obs_tensor.device)
+            action = action_gc.to(obs_tensor.device)
 
             obs_dict, reward, terminated, truncated, info = env.step(action)
             done_count += terminated.sum().item() + truncated.sum().item()

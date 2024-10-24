@@ -4,7 +4,7 @@ from torch.distributions.normal import Normal
 import numpy as np
 
 import omni.isaac.lab.utils.math as isaac_math_utils
-from utils.math_utilities import vee_map, yaw_from_quat, quat_from_yaw
+from utils.math_utilities import vee_map, yaw_from_quat, quat_from_yaw, matrix_log
 
 def compute_2d_rotation_matrix(thetas: torch.tensor):
     """
@@ -74,7 +74,7 @@ class DecoupledController():
     def __init__(self, num_envs, num_dofs, vehicle_mass, arm_mass, inertia_tensor, pos_offset, ori_offset, print_debug=False, com_pos_w=None, device='cpu',
                   kp_pos_gain_xy=10.0, kp_pos_gain_z=20.0, kd_pos_gain_xy=7.0, kd_pos_gain_z=9.0, 
                   kp_att_gain_xy=400.0, kp_att_gain_z=2.0, kd_att_gain_xy=70.0, kd_att_gain_z=2.0,
-                  tuning_mode=False, use_full_obs=False):
+                  tuning_mode=False, use_full_obs=False, skip_precompute=False, vehicle="AM", control_mode="CTBM"):
         self.num_envs = num_envs
         self.num_dofs = num_dofs
         self.print_debug = print_debug
@@ -86,14 +86,25 @@ class DecoupledController():
         self.mass = vehicle_mass + arm_mass
         self.com_pos_w = com_pos_w
 
+        self.control_mode = control_mode
+
         print("\n\n[Debug] Total Mass: ", self.mass, "\n\n")
 
         self.inertia_tensor = inertia_tensor
         self.position_offset = pos_offset
         self.orientation_offset = ori_offset
-        self.moment_scale_xy = 0.5
-        self.moment_scale_z = 0.025 #0.025 # 0.1
-        self.thrust_to_weight = 3.0
+
+        if vehicle == "AM":
+            self.moment_scale_xy = 0.5
+            self.moment_scale_z = 0.025 #0.025 # 0.1
+            self.thrust_to_weight = 3.0
+        else:
+            #Crazyflie
+            self.thrust_to_weight = 1.6
+            self.moment_scale_xy = 0.01
+            self.moment_scale_z = 0.01
+            # self.attitude_scale = torch.pi/6.0
+            self.attitude_scale = torch.pi
 
         self.device = torch.device(device)
         self.inertia_tensor.to(self.device)
@@ -121,7 +132,8 @@ class DecoupledController():
         # self.kp_att = torch.tensor([400.0, 200.0, 2.0], device=self.device) 
         # self.kd_att = torch.tensor([50.0, 200.0, 2.0], device=self.device)
 
-        self.precompute_transforms()
+        if not skip_precompute:
+            self.precompute_transforms()
 
     def precompute_transforms(self):
         quad_pos_w = self.position_offset
@@ -326,11 +338,34 @@ class DecoupledController():
         M_des = torch.bmm(inertia.view(batch_size, 3, 3), att_pd.unsqueeze(2)).squeeze(2) + \
                 torch.cross(quad_omega, I_omega, dim=1) 
         
+        if self.control_mode == "CTBM":
+            return collective_thrust, M_des
+
+        elif self.control_mode == "CTATT":
+            print("DC R des: ", R_des)
+            # roll, pitch, yaw  = isaac_math_utils.euler_xyz_from_quat(isaac_math_utils.quat_from_matrix(R_des))
+            # print(roll.shape)
+            # att_des = torch.stack([isaac_math_utils.wrap_to_pi(roll), isaac_math_utils.wrap_to_pi(pitch), isaac_math_utils.wrap_to_pi(yaw)], dim=1)
+            # att_des = att_des.clamp(-self.attitude_scale, self.attitude_scale)
+            # print(att_des.shape)
+
+            # Convert the SO(3) matrix R_des to a tangent element by taking the log map and then vee mapping
+            R_des_log = matrix_log(R_des)
+            att_des = vee_map(R_des_log)
+            # print("DC Attitude: ", att_des)
+            # roll, pitch, yaw  = isaac_math_utils.euler_xyz_from_quat(isaac_math_utils.quat_from_matrix(R_des))
+            # att_des = torch.stack([isaac_math_utils.wrap_to_pi(roll), isaac_math_utils.wrap_to_pi(pitch), isaac_math_utils.wrap_to_pi(yaw)], dim=1)
+            # att_des = att_des.clamp(-self.attitude_scale, self.attitude_scale)
+
+            return collective_thrust, att_des
+        
+        else:
+            raise NotImplementedError("Control mode not implemented!")
 
         # print("Thrust: ", collective_thrust) # (n, 1)
         # print("M_des (COM frame): ", M_des)
 
-        return collective_thrust, M_des
+        
 
     def shift_CTBM_to_rigid_frame(self, collective_thrust, M_des, com_in_local_frame):
         """
@@ -434,12 +469,22 @@ class DecoupledController():
         # Shift CTBM to rigid body frame
         # collective_thrust, M_des = self.shift_CTBM_to_rigid_frame(collective_thrust, M_des, self.com_pos_v_frame)
         # print("M_des (body frame): ", M_des)
+        # if self.print_debug:
+        # print(M_des.shape)
 
-        
-        u1 = self.rescale_command(collective_thrust, 0.0, self.thrust_to_weight * 9.81*self.mass).view(batch_size, 1)
-        u2 = self.rescale_command(M_des[:, 0], -self.moment_scale_xy, self.moment_scale_xy).view(batch_size, 1)
-        u3 = self.rescale_command(M_des[:, 1], -self.moment_scale_xy, self.moment_scale_xy).view(batch_size, 1)
-        u4 = self.rescale_command(M_des[:, 2], -self.moment_scale_z, self.moment_scale_z).view(batch_size, 1)
+        if self.control_mode == "CTBM":
+            u1 = self.rescale_command(collective_thrust, 0.0, self.thrust_to_weight * 9.81*self.mass).view(batch_size, 1)
+            u2 = self.rescale_command(M_des[:, 0], -self.moment_scale_xy, self.moment_scale_xy).view(batch_size, 1)
+            u3 = self.rescale_command(M_des[:, 1], -self.moment_scale_xy, self.moment_scale_xy).view(batch_size, 1)
+            u4 = self.rescale_command(M_des[:, 2], -self.moment_scale_z, self.moment_scale_z).view(batch_size, 1)
+        elif self.control_mode == "CTATT":
+            u1 = self.rescale_command(collective_thrust, 0.0, self.thrust_to_weight * 9.81*self.mass).view(batch_size, 1)
+            u2 = self.rescale_command(M_des[:, 0], -self.attitude_scale, self.attitude_scale).view(batch_size, 1)
+            u3 = self.rescale_command(M_des[:, 1], -self.attitude_scale, self.attitude_scale).view(batch_size, 1)
+            u4 = self.rescale_command(M_des[:, 2], -self.attitude_scale, self.attitude_scale).view(batch_size, 1)
+            # u2 = M_des[:, 0].view(batch_size, 1)
+            # u3 = M_des[:, 1].view(batch_size, 1)
+            # u4 = M_des[:, 2].view(batch_size, 1)
 
         # import code; code.interact(local=locals())
 
