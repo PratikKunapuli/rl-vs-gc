@@ -140,8 +140,8 @@ class QuadrotorEnvCfg(DirectRLEnvCfg):
     motor_speed_min = 0.0
     motor_speed_max = 2500.0
 
-    kp_att = 1000.0 # 544
-    kd_att = 100.0 # 46.64
+    kp_att = 1575 # 544
+    kd_att = 229.93 # 46.64
 
 
 class QuadrotorEnv(DirectRLEnv):
