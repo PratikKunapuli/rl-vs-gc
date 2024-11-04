@@ -2,6 +2,12 @@ import torch
 import omni.isaac.lab.utils.math as isaac_math_utils
 from typing import Tuple
 
+def exp_so3(S):
+    pass
+
+def matrix_log(S):
+    pass
+
 @torch.jit.script
 def vee_map(S):
     """Convert skew-symmetric matrix to vector.

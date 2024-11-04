@@ -91,6 +91,9 @@ class AerialManipulatorHoverEnvBaseCfg(DirectRLEnvCfg):
     moment_scale_z = 0.025 # 0.025 # 0.1
     thrust_to_weight = 3.0
 
+    action_space= 4
+    observation_space= 12
+
     # reward scales
     pos_radius = 0.8
     pos_radius_curriculum = 0 # 10e6
@@ -210,6 +213,8 @@ class AerialManipulator0DOFHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
     num_actions = 4
     num_joints = 0
     num_observations = 12 # TODO: Need to update this..
+    action_space= 4
+    observation_space= 12
     # 3(vel) + 3(ang vel) + 3(pos) + 9(ori) = 18
     # 3(vel) + 3(ang vel) + 3(pos) + 3(grav vector body frame) = 12
     

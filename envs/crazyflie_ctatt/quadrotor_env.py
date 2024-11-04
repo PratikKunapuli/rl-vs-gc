@@ -23,6 +23,7 @@ from omni.isaac.lab.markers import VisualizationMarkers, VisualizationMarkersCfg
 from omni.isaac.lab.utils.assets import ISAAC_NUCLEUS_DIR
 
 from utils.math_utilities import yaw_from_quat, yaw_error_from_quats, quat_from_yaw, compute_desired_pose_from_transform, vee_map, exp_so3, hat_map
+import utils.flatness_utilities as flatness_utils
 
 ##
 # Pre-defined configs
@@ -107,6 +108,7 @@ class QuadrotorEnvCfg(DirectRLEnvCfg):
     # attitude_scale = (3.14159)/2.0
     attitude_scale = 3.14159
     attitude_scale_z = torch.pi - 1e-6
+    attitude_scale_xy = 0.2
 
     control_mode = "CTBM"
     pd_loop_decimation = sim_rate_hz // pd_loop_rate_hz # decimation from sim physics rate
@@ -138,8 +140,8 @@ class QuadrotorEnvCfg(DirectRLEnvCfg):
     motor_speed_min = 0.0
     motor_speed_max = 2500.0
 
-    kp_att = 544
-    kd_att = 46.64
+    kp_att = 1000.0 # 544
+    kd_att = 100.0 # 46.64
 
 
 class QuadrotorEnv(DirectRLEnv):
@@ -262,7 +264,14 @@ class QuadrotorEnv(DirectRLEnv):
         # euler_des = actions[:, 1:] * self.cfg.attitude_scale
         # ori_des_matrix = matrix_from_euler(euler_des, "XYZ")
         # print("Env R des: ", ori_des_matrix)
-        ori_des_matrix = exp_so3(hat_map(actions[:, 1:] * self.cfg.attitude_scale))
+
+        # Exp Hat Map
+        # ori_des_matrix = exp_so3(hat_map(actions[:, 1:] * self.cfg.attitude_scale))
+
+        # Flatness based control
+        shape_des = flatness_utils.s2_projection(actions[:, 1]* self.cfg.attitude_scale_xy, actions[:, 2]* self.cfg.attitude_scale_xy)
+        psi_des = actions[:,3] * self.cfg.attitude_scale_z
+        ori_des_matrix = flatness_utils.getRotationFromShape(shape_des, psi_des)
 
 
         S_err = 0.5 * (torch.bmm(ori_des_matrix.transpose(-2, -1), ori_matrix) - torch.bmm(ori_matrix.transpose(-2, -1), ori_des_matrix)) # (n_envs, 3, 3)
