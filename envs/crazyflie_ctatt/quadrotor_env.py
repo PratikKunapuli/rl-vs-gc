@@ -118,6 +118,7 @@ class QuadrotorEnvCfg(DirectRLEnvCfg):
     ang_vel_reward_scale = -0.01
     distance_to_goal_reward_scale = 15.0
     yaw_error_reward_scale = -1.0
+    previous_action_reward_scale = -0.05
 
     # observation modifiers
     use_yaw_representation = False
@@ -159,6 +160,7 @@ class QuadrotorEnv(DirectRLEnv):
         self._wrench_des = torch.zeros(self.num_envs, 4, device=self.device)
         self._motor_speeds = torch.zeros(self.num_envs, 4, device=self.device)
         self._motor_speeds_des = torch.zeros(self.num_envs, 4, device=self.device)
+        self._previous_action = torch.zeros(self.num_envs, self.cfg.action_space, device=self.device)
 
         # Things necessary for motor dynamics
         r2o2 = math.sqrt(2.0) / 2.0
@@ -202,6 +204,7 @@ class QuadrotorEnv(DirectRLEnv):
                 "ang_vel",
                 "pos_error",
                 "yaw_error",
+                "previous_action",
             ]
         }
         # Get specific body indices
@@ -349,6 +352,7 @@ class QuadrotorEnv(DirectRLEnv):
                 pos_error_b, # 3
                 ori_error_b, # 4
                 yaw_error.unsqueeze(-1), # 1
+                self._previous_action, # 4
             ],
             dim=-1,
         )
@@ -390,13 +394,17 @@ class QuadrotorEnv(DirectRLEnv):
         # distance_to_goal_mapped = 1 - torch.tanh(distance_to_goal / 0.8)
         distance_to_goal_mapped = torch.exp(- (distance_to_goal **2) / 0.8)
 
-        ori_error = yaw_error_from_quats(self._robot.data.root_quat_w, self._desired_ori_w, 0) # Yaw error
+        ori_error = yaw_error_from_quats(self._robot.data.root_quat_w, self._desired_ori_w, 0) # Yaw error'
+
+        action_error = torch.sum(torch.square(self._actions - self._previous_action), dim=1)
+        self._previous_action = self._actions.clone()
 
         rewards = {
             "lin_vel": lin_vel * self.cfg.lin_vel_reward_scale * self.step_dt,
             "ang_vel": ang_vel * self.cfg.ang_vel_reward_scale * self.step_dt,
             "pos_error": distance_to_goal_mapped * self.cfg.distance_to_goal_reward_scale * self.step_dt,
             "yaw_error": ori_error * self.cfg.yaw_error_reward_scale * self.step_dt,
+            "previous_action": action_error * self.cfg.previous_action_reward_scale * self.step_dt,
         }
         reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
         # print("[Isaac] pos error: ", distance_to_goal)

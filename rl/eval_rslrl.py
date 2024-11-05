@@ -22,6 +22,7 @@ parser.add_argument("--frame", type=str, default="root", help="Frame of the task
 parser.add_argument("--baseline", type=bool, default=False, help="Use baseline policy.")
 parser.add_argument("--case_study", type=bool, default=False, help="Use case study policy.")
 parser.add_argument("--save_prefix", type=str, default="", help="Prefix for saving files.")
+parser.add_argument("--follow_robot", type=int, default=-1, help="Follow robot index.")
 
 
 # append RSL-RL cli arguments
@@ -106,11 +107,11 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
 
 
     if args_cli.baseline:
-        env_cfg.sim_rate_hz = 100
-        env_cfg.policy_rate_hz = 50
-        env_cfg.sim.dt = 1/env_cfg.sim_rate_hz
-        env_cfg.decimation = env_cfg.sim_rate_hz // env_cfg.policy_rate_hz
-        env_cfg.sim.render_interval = env_cfg.decimation
+        # env_cfg.sim_rate_hz = 100
+        # env_cfg.policy_rate_hz = 50
+        # env_cfg.sim.dt = 1/env_cfg.sim_rate_hz
+        # env_cfg.decimation = env_cfg.sim_rate_hz // env_cfg.policy_rate_hz
+        # env_cfg.sim.render_interval = env_cfg.decimation
         env_cfg.gc_mode = True
         env_cfg.task_body = "COM"
         env_cfg.goal_body = "COM"
@@ -213,6 +214,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
     # import code; code.interact(local=locals())
     print("\n\nUpdated env cfg: ", env_cfg)
 
+    robot_index_prefix = ""
     if args_cli.case_study:
         # Manual override of env cfg
         env_cfg.goal_cfg = "fixed"
@@ -227,6 +229,16 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         env_cfg.viewer.lookat = (0.0, 0.0, 3.0)
         env_cfg.viewer.origin_type = "env"
         env_cfg.viewer.env_index = 0
+    else:
+        if args_cli.follow_robot >= 0:
+            env_cfg.viewer.eye = (0.75, 0.75, 0.75)
+            env_cfg.viewer.lookat = (0.0, 0.0, 0.0)
+            env_cfg.viewer.resulution = (1080, 1920)
+            env_cfg.viewer.origin_type = "asset_root"
+            env_cfg.viewer.env_index = args_cli.follow_robot
+            env_cfg.viewer.asset_name = "robot"
+            robot_index_prefix = f"_robot_{args_cli.follow_robot}"
+
 
     
     # env_cfg.viewer.eye = (3.0, 1.5, 2.0)
@@ -253,7 +265,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
 
     
     # save_prefix = "ball_catch_side_view_"
-
+    video_name = save_prefix + "_eval_video" + robot_index_prefix
     if args_cli.baseline:
         video_folder_path = f"{policy_path}"
     else:
@@ -264,7 +276,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         "step_trigger": lambda step: step == 0,
         # "episode_trigger": lambda episode: (episode % args.save_interval) == 0,
         "video_length": args_cli.video_length,
-        "name_prefix": save_prefix + "eval_video"
+        "name_prefix": video_name
     }
     envs = gym.wrappers.RecordVideo(envs, **video_kwargs)
     device = envs.unwrapped.device
@@ -315,10 +327,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         # obtain the trained policy for inference
         agent = ppo_runner.get_inference_policy(device=envs.unwrapped.device)
 
-        # export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
-        # export_policy_as_jit(
-        #     ppo_runner.alg.actor_critic, ppo_runner.obs_normalizer, path=export_model_dir, filename="policy.pt"
-        # )
+        export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
+        export_policy_as_jit(
+            ppo_runner.alg.actor_critic, ppo_runner.obs_normalizer, path=export_model_dir, filename="policy.pt"
+        )
         
     
     if args_cli.baseline:
@@ -333,7 +345,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
 
     ee_start = obs_dict["full_state"][:, 13:16]
     goal_start = obs_dict["full_state"][:, 26:26 + 3]
-    print("starting norm: ", torch.norm(ee_start - goal_start, dim=1))
+    # print("starting norm: ", torch.norm(ee_start - goal_start, dim=1))
     # input("Check and press Enter to continue...")
     # import code; code.interact(local=locals())
 
