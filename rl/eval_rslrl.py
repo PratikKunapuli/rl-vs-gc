@@ -48,7 +48,7 @@ import time
 from dataclasses import dataclass
 import ast
 import re
-import yaml
+import ruamel.yaml as yaml
 
 import gymnasium as gym
 import envs
@@ -69,6 +69,7 @@ from omni.isaac.lab_tasks.utils.wrappers.rsl_rl import (
     export_policy_as_jit,
     export_policy_as_onnx,
 )
+from omni.isaac.lab.utils.io import load_yaml
 
 import numpy as np
 import torch
@@ -133,38 +134,41 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
 
     # If ".hydra/config.yaml" is present, load some of the reward scalars from there
     if os.path.exists(os.path.join(log_dir, "params/env.yaml")):
-        with open(os.path.join(log_dir, "params/env.yaml"), "r") as f:
-            hydra_cfg = yaml.load(f, Loader=yaml.FullLoader)
-            if "use_yaw_representation" in hydra_cfg:
-                env_cfg.use_yaw_representation = hydra_cfg["use_yaw_representation"]
-            if "use_full_ori_matrix" in hydra_cfg:
-                env_cfg.use_full_ori_matrix = hydra_cfg["use_full_ori_matrix"]
-            
-            if not ("Ball" in args_cli.task):
-                if "scale_reward_with_time" in hydra_cfg:
-                    env_cfg.scale_reward_with_time = hydra_cfg["scale_reward_with_time"]
-                if "yaw_error_reward_scale" in hydra_cfg:
-                    env_cfg.yaw_error_reward_scale = hydra_cfg["yaw_error_reward_scale"]
-                if "yaw_distance_reward_scale" in hydra_cfg:
-                    env_cfg.yaw_distance_reward_scale = hydra_cfg["yaw_distance_reward_scale"]
-                if "yaw_smooth_transition_scale" in hydra_cfg:
-                    env_cfg.yaw_smooth_transition_scale = hydra_cfg["yaw_smooth_transition_scale"]
-                if "yaw_radius" in hydra_cfg:
-                    env_cfg.yaw_radius = hydra_cfg["yaw_radius"]
-                if "pos_distance_reward_scale" in hydra_cfg:
-                    env_cfg.pos_distance_reward_scale = hydra_cfg["pos_distance_reward_scale"]
-                if "pos_error_reward_scale" in hydra_cfg:
-                    env_cfg.pos_error_reward_scale = hydra_cfg["pos_error_reward_scale"]
-                if "lin_vel_reward_scale" in hydra_cfg:
-                    env_cfg.lin_vel_reward_scale = hydra_cfg["lin_vel_reward_scale"]
-                if "ang_vel_reward_scale" in hydra_cfg:
-                    env_cfg.ang_vel_reward_scale = hydra_cfg["ang_vel_reward_scale"]
-                if "combined_alpha" in hydra_cfg:
-                    env_cfg.combined_alpha = hydra_cfg["combined_alpha"]
-                if "combined_tolerance" in hydra_cfg:
-                    env_cfg.combined_tolerance = hydra_cfg["combined_tolerance"]
-                if "combined_reward_scale" in hydra_cfg:
-                    env_cfg.combined_reward_scale = hydra_cfg["combined_reward_scale"]
+        # with open(os.path.join(log_dir, "params/env.yaml"), "r") as f:
+            # hydra_cfg = yaml.load(f, Loader=yaml.FullLoader)
+        f = os.path.join(log_dir, "params/env.yaml")
+        loader = yaml.YAML(typ="safe")
+        hydra_cfg = loader.load(f)
+        if "use_yaw_representation" in hydra_cfg:
+            env_cfg.use_yaw_representation = hydra_cfg["use_yaw_representation"]
+        if "use_full_ori_matrix" in hydra_cfg:
+            env_cfg.use_full_ori_matrix = hydra_cfg["use_full_ori_matrix"]
+        
+        if not ("Ball" in args_cli.task):
+            if "scale_reward_with_time" in hydra_cfg:
+                env_cfg.scale_reward_with_time = hydra_cfg["scale_reward_with_time"]
+            if "yaw_error_reward_scale" in hydra_cfg:
+                env_cfg.yaw_error_reward_scale = hydra_cfg["yaw_error_reward_scale"]
+            if "yaw_distance_reward_scale" in hydra_cfg:
+                env_cfg.yaw_distance_reward_scale = hydra_cfg["yaw_distance_reward_scale"]
+            if "yaw_smooth_transition_scale" in hydra_cfg:
+                env_cfg.yaw_smooth_transition_scale = hydra_cfg["yaw_smooth_transition_scale"]
+            if "yaw_radius" in hydra_cfg:
+                env_cfg.yaw_radius = hydra_cfg["yaw_radius"]
+            if "pos_distance_reward_scale" in hydra_cfg:
+                env_cfg.pos_distance_reward_scale = hydra_cfg["pos_distance_reward_scale"]
+            if "pos_error_reward_scale" in hydra_cfg:
+                env_cfg.pos_error_reward_scale = hydra_cfg["pos_error_reward_scale"]
+            if "lin_vel_reward_scale" in hydra_cfg:
+                env_cfg.lin_vel_reward_scale = hydra_cfg["lin_vel_reward_scale"]
+            if "ang_vel_reward_scale" in hydra_cfg:
+                env_cfg.ang_vel_reward_scale = hydra_cfg["ang_vel_reward_scale"]
+            if "combined_alpha" in hydra_cfg:
+                env_cfg.combined_alpha = hydra_cfg["combined_alpha"]
+            if "combined_tolerance" in hydra_cfg:
+                env_cfg.combined_tolerance = hydra_cfg["combined_tolerance"]
+            if "combined_reward_scale" in hydra_cfg:
+                env_cfg.combined_reward_scale = hydra_cfg["combined_reward_scale"]
     # else:
     #     yaml_base = "./logs/rsl_rl/AM_0DOF_Hover/2024-09-14_14-38-12_rsl_rl_test_default_1024_env_pos_distance_15_yaw_error_-2.0_no_smooth_transition_full_ori"
     #     with open(os.path.join(yaml_base, "params/env.yaml"), "r") as f:

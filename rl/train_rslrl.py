@@ -49,13 +49,14 @@ import gymnasium as gym
 import os
 import torch
 from datetime import datetime
+import ruamel.yaml as yaml
 
 import envs
 
 from rsl_rl.runners import OnPolicyRunner
 
 from omni.isaac.lab.envs import DirectRLEnvCfg, ManagerBasedRLEnvCfg
-from omni.isaac.lab.utils.dict import print_dict
+from omni.isaac.lab.utils.dict import print_dict, class_to_dict
 from omni.isaac.lab.utils.io import dump_pickle, dump_yaml
 
 import omni.isaac.lab_tasks  # noqa: F401
@@ -67,6 +68,14 @@ torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 torch.backends.cudnn.deterministic = False
 torch.backends.cudnn.benchmark = False
+
+
+def custom_yaml_dump(data, filename):
+    if not os.path.exists(os.path.dirname(filename)):
+            os.makedirs(os.path.dirname(filename), exist_ok=True)
+
+    dumper = yaml.YAML(typ='unsafe')
+    dumper.dump(data, open(filename, "w"))
 
 
 @hydra_task_config(args_cli.task, "rsl_rl_cfg_entry_point")
@@ -143,10 +152,13 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         runner.load(resume_path)
 
     # dump the configuration into log-directory
-    dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
-    dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
-    dump_pickle(os.path.join(log_dir, "params", "env.pkl"), env_cfg)
-    dump_pickle(os.path.join(log_dir, "params", "agent.pkl"), agent_cfg)
+    # dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
+    # dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
+    # dump_pickle(os.path.join(log_dir, "params", "env.pkl"), env_cfg)
+    # dump_pickle(os.path.join(log_dir, "params", "agent.pkl"), agent_cfg)
+    
+    custom_yaml_dump(env_cfg.to_dict(), os.path.join(log_dir, "params", "env.yaml"))
+    custom_yaml_dump(agent_cfg.to_dict(), os.path.join(log_dir, "params", "agent.yaml"))
 
     # run training
     runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)

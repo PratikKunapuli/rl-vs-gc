@@ -17,6 +17,8 @@ from omni.isaac.lab.utils.math import (subtract_frame_transforms, combine_frame_
                                         random_orientation, quat_inv, quat_rotate_inverse, quat_mul, yaw_quat, quat_conjugate,
                                         quat_rotate, normalize, wrap_to_pi)
 from omni.isaac.lab_assets import CRAZYFLIE_CFG
+import gymnasium as gym
+import numpy as np
 
 # Local imports
 from configs.aerial_manip_asset import AERIAL_MANIPULATOR_2DOF_CFG, AERIAL_MANIPULATOR_1DOF_CFG, AERIAL_MANIPULATOR_1DOF_WRIST_CFG, AERIAL_MANIPULATOR_0DOF_CFG, AERIAL_MANIPULATOR_0DOF_DEBUG_CFG
@@ -91,8 +93,9 @@ class AerialManipulatorHoverEnvBaseCfg(DirectRLEnvCfg):
     moment_scale_z = 0.025 # 0.025 # 0.1
     thrust_to_weight = 3.0
 
-    action_space= 4
-    observation_space= 12
+    action_space= gym.spaces.Box(low=-1.0, high=1.0, shape=(4,))
+    observation_space= gym.spaces.Box(low=-np.inf, high=np.inf, shape=(12,))
+    state_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(0,))
 
     # reward scales
     pos_radius = 0.8
@@ -123,8 +126,8 @@ class AerialManipulatorHoverEnvBaseCfg(DirectRLEnvCfg):
     # "rand" - Random goal position and orientation
     # "fixed" - Fixed goal position and orientation set apriori
     # "initial" - Goal position and orientation is the initial position and orientation of the robot
-    goal_pos = None
-    goal_ori = None
+    goal_pos = (0, 0, 0)
+    goal_ori = (1, 0, 0, 0)
 
     goal_pos_range = 2.0
     goal_yaw_range = 3.14159
@@ -213,8 +216,8 @@ class AerialManipulator0DOFHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
     num_actions = 4
     num_joints = 0
     num_observations = 12 # TODO: Need to update this..
-    action_space= 4
-    observation_space= 12
+    # action_space= gym.spaces.Box(low=-1.0, high=1.0, shape=(4,))
+    # observation_space= gym.spaces.Box(low=-1e9, high=1e9, shape=(12,))
     # 3(vel) + 3(ang vel) + 3(pos) + 9(ori) = 18
     # 3(vel) + 3(ang vel) + 3(pos) + 3(grav vector body frame) = 12
     
