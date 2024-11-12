@@ -22,6 +22,8 @@ from omni.isaac.lab.utils.math import subtract_frame_transforms, random_yaw_orie
 from omni.isaac.lab.markers import VisualizationMarkers, VisualizationMarkersCfg
 from omni.isaac.lab.utils.assets import ISAAC_NUCLEUS_DIR
 
+from utils.assets import MODELS_PATH
+from configs.aerial_manip_asset import CRAZYFLIE_MANIPULATOR_0DOF_CFG
 from utils.math_utilities import yaw_from_quat, yaw_error_from_quats, quat_from_yaw, compute_desired_pose_from_transform, vee_map, exp_so3, hat_map
 import utils.flatness_utilities as flatness_utils
 
@@ -144,6 +146,14 @@ class QuadrotorEnvCfg(DirectRLEnvCfg):
     kp_att = 1575 # 544
     kd_att = 229.93 # 46.64
 
+@configclass
+class QuadrotorManipulatorEnvCfg(QuadrotorEnvCfg):
+    # robot
+    robot: ArticulationCfg = CRAZYFLIE_MANIPULATOR_0DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+    # robot: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+    # robot: ArticulationCfg = (CRAZYFLIE_CFG.spawn.replace(usd_path=f"{MODELS_PATH}/crazyflie_manipulator.usd")).replace(prim_path="/World/envs/env_.*/Robot")
+    # robot: ArticulationCfg = (CRAZYFLIE_CFG.replace(usd_path=f"{MODELS_PATH}/crazyflie_manipulator.usd")).replace(prim_path="/World/envs/env_.*/Robot")
+
 
 class QuadrotorEnv(DirectRLEnv):
     cfg: QuadrotorEnvCfg
@@ -233,7 +243,7 @@ class QuadrotorEnv(DirectRLEnv):
         # print("Crazyflie inertia: ", self._robot.root_physx_view.get_inertias()[0, self._body_id, :].view(-1, 3, 3).squeeze())
         # print("TM_to_f: \n", self.TM_to_f)
         # print("f_to_TM: \n", self.f_to_TM)
-        # import code; code.interact(local=locals())
+        import code; code.interact(local=locals())
 
 
     def _setup_scene(self):

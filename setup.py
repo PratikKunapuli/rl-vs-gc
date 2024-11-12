@@ -6,6 +6,10 @@ setup(
     packages=find_packages(),
     install_requires=[
         'gymnasium',
-        'torch'
+        'torch',
+        'ruamel.yaml',
+        'seaborn',
+        'matplotlib',
+        'warp-lang'
     ],
 )

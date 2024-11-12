@@ -231,6 +231,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         env_cfg.viewer.eye = (0.75, 0.75, 3.75)
         # env_cfg.viewer.lookat = (0.0, 0.0, 0.5)
         env_cfg.viewer.lookat = (0.0, 0.0, 3.0)
+        env_cfg.viewer.resolution = (1080, 1920)
         env_cfg.viewer.origin_type = "env"
         env_cfg.viewer.env_index = 0
     else:
@@ -330,6 +331,12 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
 
         # obtain the trained policy for inference
         agent = ppo_runner.get_inference_policy(device=envs.unwrapped.device)
+
+        # actor_params =  sum(p.numel() for p in ppo_runner.alg.actor_critic.actor.parameters() if p.requires_grad)
+        # critic_params = sum(p.numel() for p in ppo_runner.alg.actor_critic.critic.parameters() if p.requires_grad)
+        # print(f"Actor params: {actor_params}, Critic params: {critic_params}")
+        # print("Total params: ", actor_params + critic_params)
+        # input()
 
         export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
         export_policy_as_jit(

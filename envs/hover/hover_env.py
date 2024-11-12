@@ -115,6 +115,7 @@ class AerialManipulatorHoverEnvBaseCfg(DirectRLEnvCfg):
     crash_penalty = 0.0
     scale_reward_with_time = False
     square_reward_errors = False
+    square_pos_error = True
     combined_alpha = 0.0
     combined_tolerance = 0.0
     combined_scale = 0.0
@@ -142,7 +143,7 @@ class AerialManipulatorHoverEnvBaseCfg(DirectRLEnvCfg):
     has_end_effector = True
     use_grav_vector = True
     use_full_ori_matrix = True
-    use_yaw_representation = True
+    use_yaw_representation = False
 
     shoulder_joint_active = True
     wrist_joint_active = True
@@ -575,7 +576,10 @@ class AerialManipulatorHoverEnv(DirectRLEnv):
         # Computes the error from the desired position and orientation
         pos_error = torch.linalg.norm(goal_pos_w - base_pos_w, dim=1)
         # pos_distance = 1.0 - torch.tanh(pos_error / self.cfg.pos_radius)
-        pos_distance = torch.exp(- (pos_error **2) / self.cfg.pos_radius)
+        if self.cfg.square_pos_error:
+            pos_distance = torch.exp(- (pos_error **2) / self.cfg.pos_radius)
+        else:
+            pos_distance = torch.exp(- (pos_error) / self.cfg.pos_radius)
 
         ori_error = quat_error_magnitude(goal_ori_w, base_ori_w)
         

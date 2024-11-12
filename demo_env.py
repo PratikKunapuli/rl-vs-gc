@@ -78,7 +78,8 @@ def main():
     # env_cfg.viewer.origin_type = "env"
     # env_cfg.viewer.env_index = 0
 
-    # import code; code.interact(local=locals())
+    print("Dropping into Demo_Env")
+    import code; code.interact(local=locals())
 
     print(env_cfg.robot.spawn)
 

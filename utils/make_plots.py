@@ -1839,6 +1839,49 @@ def plot_rl_trials():
     plt.tight_layout()
     # plt.savefig("rl_trials.pdf", dpi=1000, format='pdf', bbox_inches='tight')
     plt.savefig("rl_trials.png", dpi=1000, format='png', bbox_inches='tight')
+
+def plot_case_study():
+    rl_pos_squared_path = "../rl/logs/rsl_rl/AM_0DOF/2024-11-06_13-59-09_test_paper_params_no_yaw_error_in_obs/"
+    rl_pos_not_squared_path = "../rl/logs/rsl_rl/AM_0DOF/2024-11-07_09-22-59_test_paper_params_no_yaw_pos_error_not_squared/"
+    rl_com_path = "../rl/logs/rsl_rl/AM_0DOF/2024-11-07_10-32-36_test_paper_params_pos_error_not_squared_COM/"
+    dc_path = "../rl/baseline_0dof_ee_reward_tune/"
+
+    rl_pos_squared_data = torch.load(os.path.join(rl_pos_squared_path, "case_study_eval_full_states.pt"))
+    rl_pos_not_squared_data = torch.load(os.path.join(rl_pos_not_squared_path, "case_study_eval_full_states.pt"))
+    rl_com_data = torch.load(os.path.join(rl_com_path, "case_study_eval_full_states.pt"))
+    dc_data = torch.load(os.path.join(dc_path, "case_study_eval_full_states.pt"))
+
+    max_time = 200
+    rl_pos_squared_pos_error = torch.norm(rl_pos_squared_data[:, :max_time, -7:-4] - rl_pos_squared_data[:, :max_time, 13:16], dim=-1)
+    rl_pos_squared_yaw_error = math_utils.yaw_error_from_quats(rl_pos_squared_data[:, :max_time, -4:], rl_pos_squared_data[:, :max_time, 16:20], 0)
+    rl_pos_not_squared_pos_error = torch.norm(rl_pos_not_squared_data[:, :max_time, -7:-4] - rl_pos_not_squared_data[:, :max_time, 13:16], dim=-1)
+    rl_pos_not_squared_yaw_error = math_utils.yaw_error_from_quats(rl_pos_not_squared_data[:, :max_time, -4:], rl_pos_not_squared_data[:, :max_time, 16:20], 0)
+    rl_com_pos_error = torch.norm(rl_com_data[:, :max_time, -7:-4] - rl_com_data[:, :max_time, 13:16], dim=-1)
+    rl_com_yaw_error = math_utils.yaw_error_from_quats(rl_com_data[:, :max_time, -4:], rl_com_data[:, :max_time, 16:20], 0)
+    dc_pos_error = torch.norm(dc_data[:, :max_time, -7:-4] - dc_data[:, :max_time, 13:16], dim=-1)
+    dc_yaw_error = math_utils.yaw_error_from_quats(dc_data[:, :max_time, -4:], dc_data[:, :max_time, 16:20], 0)
+
+    
+    time_axis = np.arange(0, max_time) * 0.02
+    fig, axs = plt.subplots(1, 2, dpi=1000)
+    axs[0].plot(time_axis, rl_pos_squared_pos_error.mean(dim=0).cpu().numpy(), label="RL-EE", color="tab:blue")
+    # axs[0].plot(time_axis, rl_pos_not_squared_pos_error.mean(dim=0).cpu().numpy(), label="RL Pos Not Squared")
+    # axs[0].plot(time_axis, rl_com_pos_error.mean(dim=0).cpu().numpy(), label="RL-COM", color="tab:purple")
+    axs[0].plot(time_axis, dc_pos_error.mean(dim=0).cpu().numpy(), label="DC", color="tab:orange")
+    axs[1].plot(time_axis, rl_pos_squared_yaw_error.mean(dim=0).cpu().numpy(), label="RL-EE", color="tab:blue")
+    # axs[1].plot(time_axis, rl_pos_not_squared_yaw_error.mean(dim=0).cpu().numpy(), label="RL Pos Not Squared")
+    # axs[1].plot(time_axis, rl_com_yaw_error.mean(dim=0).cpu().numpy(), label="RL-COM", color="tab:purple")
+    axs[1].plot(time_axis, dc_yaw_error.mean(dim=0).cpu().numpy(), label="DC", color="tab:orange")
+    axs[0].set_xlabel("Time (s)")
+    axs[0].set_ylabel("Position Error (m)")
+    axs[1].set_xlabel("Time (s)")
+    axs[1].set_ylabel("Yaw Error (rad)")
+    handles, labels = axs[0].get_legend_handles_labels()
+    fig.legend(handles=handles, labels=labels, loc='lower center', ncol=3, bbox_to_anchor=(0.5, -0.1))
+    plt.tight_layout()
+    # plt.savefig("case_study.pdf", dpi=1000, format='pdf', bbox_inches='tight')
+    plt.savefig("case_study.png", dpi=1000, format='png', bbox_inches='tight')
+
     
 
 
@@ -1864,7 +1907,8 @@ if __name__ == "__main__":
     # plot_ball_catching(rl_eval_path, dc_eval_path)
 
     # plot_rl_pareto()
-    plot_rl_trials()
+    # plot_rl_trials()
+    plot_case_study()
     exit()
 
 
