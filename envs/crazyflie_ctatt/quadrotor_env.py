@@ -104,7 +104,8 @@ class QuadrotorEnvCfg(DirectRLEnvCfg):
 
     # robot
     robot: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
-    thrust_to_weight = 1.6
+    thrust_to_weight = 1.8
+    # thrust_to_weight = 1.9
     moment_scale = 0.01
     # attitude_scale = (3.14159/180.0) * 30.0
     # attitude_scale = (3.14159)/2.0
@@ -183,6 +184,7 @@ class QuadrotorEnv(DirectRLEnv):
         self._motor_speeds = torch.zeros(self.num_envs, 4, device=self.device)
         self._motor_speeds_des = torch.zeros(self.num_envs, 4, device=self.device)
         self._previous_action = torch.zeros(self.num_envs, self.cfg.action_space, device=self.device)
+        self._thrust_to_weight = self.cfg.thrust_to_weight * torch.ones(self.num_envs, device=self.device)
 
         # Things necessary for motor dynamics
         r2o2 = math.sqrt(2.0) / 2.0
@@ -323,13 +325,13 @@ class QuadrotorEnv(DirectRLEnv):
         self._actions = actions.clone().clamp(-1.0, 1.0)
 
         if self.cfg.control_mode == "CTBM":
-            self._wrench_des[:, 0] = ((self._actions[:, 0] + 1.0) / 2.0) * (self._robot_weight * self.cfg.thrust_to_weight)
+            self._wrench_des[:, 0] = ((self._actions[:, 0] + 1.0) / 2.0) * (self._robot_weight * self._thrust_to_weight)
             self._wrench_des[:, 1:] = self.cfg.moment_scale * self._actions[:, 1:]
         elif self.cfg.control_mode == "CTATT":
             # 0th action is collective thrust
             # 1st and 2nd action are desired attitude for pitch and roll
             # 3rd action is desired yaw rate
-            self._wrench_des[:, 0] = ((self._actions[:, 0] + 1.0) / 2.0) * (self._robot_weight * self.cfg.thrust_to_weight)
+            self._wrench_des[:, 0] = ((self._actions[:, 0] + 1.0) / 2.0) * (self._robot_weight * self._thrust_to_weight)
             
             # compute wrench from desired attitude and current attitude using PD controller
             self._wrench_des[:,1:] = self._get_moment_from_ctatt(self._actions)
@@ -524,6 +526,16 @@ class QuadrotorEnv(DirectRLEnv):
         self._robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids)
         self._robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
         self._motor_speeds[env_ids] = 1788.53 * torch.ones_like(self._motor_speeds[env_ids])
+        
+        # Domain Randomization
+        self.domain_randomization(env_ids)
+
+    def domain_randomization(self, env_ids: torch.Tensor | None):
+        if env_ids is None or env_ids.shape[0] == 0:
+            return
+        
+        # randomize thrust to weight ratio
+        self._thrust_to_weight[env_ids] = torch.zeros_like(self._thrust_to_weight[env_ids]).normal_(mean=0.0, std=0.4) + self.cfg.thrust_to_weight
 
     def get_body_state_by_name(self, body_name: str) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         if body_name == "body":
@@ -587,7 +599,7 @@ class QuadrotorEnv(DirectRLEnv):
                                         markers={
                                         "frame": sim_utils.UsdFileCfg(
                                             usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/UIElements/frame_prim.usd",
-                                            scale=(0.05, 0.05, 0.05),
+                                            scale=(0.03, 0.03, 0.03),
                                         ),})
                 self.frame_visualizer = VisualizationMarkers(marker_cfg)
             # set their visibility to true
