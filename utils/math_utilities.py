@@ -111,52 +111,69 @@ def eval_sinusoid(t: torch.Tensor, amp:torch.Tensor, freq:torch.Tensor, phase:to
 @torch.jit.script
 def eval_lissajous_curve(t: torch.Tensor, amp: torch.Tensor, freq: torch.Tensor, phase: torch.Tensor, offset: torch.Tensor, derivatives: int = 0) -> Tuple[torch.Tensor, torch.Tensor]:
     """
-    Evaluate a Lissajous curve and its derivatives.
+    Evaluate Lissajous curves and their derivatives for multiple environments.
 
     Args:
-        t: The time samples. Shape is (num_samples,).
-        amp: The amplitudes. Shape is (num_curves,).
-        freq: The frequencies. Shape is (num_curves,).
-        phase: The phases. Shape is (num_curves,).
-        offset: The offsets. Shape is (num_curves,).
-        derivatives: The number of derivatives to compute (0 to 4).
+        t: Time samples. Shape: (num_samples,).
+        amp: Amplitudes. Shape: (n_envs, n_curves).
+        freq: Frequencies. Shape: (n_envs, n_curves).
+        phase: Phases. Shape: (n_envs, n_curves).
+        offset: Offsets. Shape: (n_envs, n_curves).
+        derivatives: Number of derivatives to compute (0 to 4).
 
     Returns:
-        pos: A tensor containing the evaluated Lissajous curves and their derivatives.
-        yaw: A tensor containing the yaw angles of the Lissajous curves.
-        The shape of the tensor is (num_derivatives + 1, num_curves, num_samples).
+        pos: Tensor containing the evaluated Lissajous curves and their derivatives.
+             Shape: (num_derivatives + 1, n_envs, 3, num_samples).
+        yaw: Tensor containing the yaw angles of the Lissajous curves.
+             Shape: (num_derivatives + 1, n_envs, num_samples).
     """
-    num_curves = amp.shape[0]
+    if len(amp.shape) == 1:
+        amp = amp.unsqueeze(0)
+        freq = freq.unsqueeze(0)
+        phase = phase.unsqueeze(0)
+        offset = offset.unsqueeze(0)
+    num_envs, num_curves = amp.shape
     num_samples = t.shape[0]
 
-    t = t.unsqueeze(0).expand(num_curves, num_samples)
-    amp = amp.unsqueeze(1).expand(num_curves, num_samples)
-    freq = freq.unsqueeze(1).expand(num_curves, num_samples)
-    phase = phase.unsqueeze(1).expand(num_curves, num_samples)
-    offset = offset.unsqueeze(1).expand(num_curves, num_samples)
+    # Reshape and expand tensors to enable broadcasting
+    t = t.view(1, 1, num_samples).expand(num_envs, num_curves, num_samples)
+    amp = amp.unsqueeze(-1).expand(num_envs, num_curves, num_samples)
+    freq = freq.unsqueeze(-1).expand(num_envs, num_curves, num_samples)
+    phase = phase.unsqueeze(-1).expand(num_envs, num_curves, num_samples)
+    offset = offset.unsqueeze(-1).expand(num_envs, num_curves, num_samples)
 
-    curves = amp * torch.sin(freq * t + phase) + offset
+    # Compute theta, sin(theta), and cos(theta) once for efficiency
+    theta = freq * t + phase        # Shape: (n_envs, n_curves, num_samples)
+    sin_theta = torch.sin(theta)
+    cos_theta = torch.cos(theta)
 
+    # Initialize the list of results with the position (0th derivative)
+    curves = amp * sin_theta + offset
     results = [curves]
 
+    # Compute derivatives up to the specified order
     if derivatives >= 1:
-        first_derivative = amp * freq * torch.cos(freq * t + phase)
+        first_derivative = amp * freq * cos_theta
         results.append(first_derivative)
 
     if derivatives >= 2:
-        second_derivative = -amp * (freq ** 2) * torch.sin(freq * t + phase)
+        second_derivative = -amp * freq.pow(2) * sin_theta
         results.append(second_derivative)
 
     if derivatives >= 3:
-        third_derivative = -amp * (freq ** 3) * torch.cos(freq * t + phase)
+        third_derivative = -amp * freq.pow(3) * cos_theta
         results.append(third_derivative)
 
     if derivatives >= 4:
-        fourth_derivative = amp * (freq ** 4) * torch.sin(freq * t + phase)
+        fourth_derivative = amp * freq.pow(4) * sin_theta
         results.append(fourth_derivative)
 
-    full_data = torch.stack(results, dim=0)
-    return full_data[:,:3,:], full_data[:,3,:]
+    # Stack the results and split into position and yaw
+    full_data = torch.stack(results, dim=0)  # Shape: (num_derivatives + 1, n_envs, n_curves, num_samples)
+    pos = full_data[:, :, :3, :]             # Position curves (x, y, z)
+    yaw = full_data[:, :, 3, :]              # Yaw curves
+
+    return pos, yaw
 
 @torch.jit.script
 def compute_desired_pose_from_transform(
