@@ -438,7 +438,7 @@ BALL_CFG = RigidObjectCfg(
 CRAZYFLIE_MANIPULATOR_0DOF_CFG = ArticulationCfg(
     prim_path="{ENV_REGEX_NS}/Robot",
     spawn=sim_utils.UsdFileCfg(
-        usd_path=f"{MODELS_PATH}/crazyflie_manipulator.usd",
+        usd_path=f"{MODELS_PATH}/Crazyflie_manipulator_v2.usd",
         # usd_path=f"{MODELS_PATH}/aerial_manipulator_0dof_debug.usd",
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,
@@ -461,10 +461,10 @@ CRAZYFLIE_MANIPULATOR_0DOF_CFG = ArticulationCfg(
             ".*": 0.0,
         },
         joint_vel={
-            "m1_jopint": 200.0,
-            "m2_jopint": -200.0,
-            "m3_jopint": 200.0,
-            "m4_jopint": -200.0,
+            "m1_joint": 200.0,
+            "m2_joint": -200.0,
+            "m3_joint": 200.0,
+            "m4_joint": -200.0,
         },
     ),
 

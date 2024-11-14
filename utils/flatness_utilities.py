@@ -92,3 +92,19 @@ def getRotationFromShape(s: torch.Tensor, psi: torch.Tensor) -> torch.Tensor:
         torch.Tensor: The rotation matrix R, of shape N, 3, 3.
     """
     return torch.bmm(H2(s), H1(psi))
+
+@torch.jit.script
+def getAttitudeFromRotationAndYaw(R: torch.Tensor, psi: torch.Tensor) -> torch.Tensor:
+    """
+    Construct the shape s as H2^-1(R * H1^-1(psi)) according to the paper:
+    "Dynamically Feasible Task Space Planning for Underactuated Aerial Manipulators" by Jake Welde, et al. [https://ieeexplore.ieee.org/document/9325015]
+
+    Args:
+        R (torch.Tensor): The rotation matrix R, of shape N, 3, 3.
+        psi (torch.Tensor): The orientation of the quadrotor, of shape N, 1.
+    Returns:
+        torch.Tensor: The shape s, of shape N, 3.
+    """
+    H2 = torch.bmm(R, H1(psi).transpose(-2, -1))
+    x_des, y_des = inv_s2_projection(H2[:, :, 2])
+    return torch.stack((x_des, y_des, psi), dim=1)

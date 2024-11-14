@@ -5,6 +5,7 @@ import numpy as np
 
 import omni.isaac.lab.utils.math as isaac_math_utils
 from utils.math_utilities import vee_map, yaw_from_quat, quat_from_yaw, matrix_log
+import utils.flatness_utilities as flat_utils
 
 def compute_2d_rotation_matrix(thetas: torch.tensor):
     """
@@ -104,7 +105,8 @@ class DecoupledController():
             self.moment_scale_xy = 0.01
             self.moment_scale_z = 0.01
             # self.attitude_scale = torch.pi/6.0
-            self.attitude_scale = torch.pi
+            self.attitude_scale_z = torch.pi
+            self.attitude_scale_xy = 0.2
 
         self.device = torch.device(device)
         self.inertia_tensor.to(self.device)
@@ -350,8 +352,16 @@ class DecoupledController():
             # print(att_des.shape)
 
             # Convert the SO(3) matrix R_des to a tangent element by taking the log map and then vee mapping
-            R_des_log = matrix_log(R_des)
-            att_des = vee_map(R_des_log)
+            # R_des_log = matrix_log(R_des)
+            # att_des = vee_map(R_des_log)
+
+            # Flatness based approach
+            # H2_s = torch.bmm(R_des, flat_utils.H1(yaw_des).transpose(-2, -1))
+            # s_des = H2_s[:, :, 2]
+            # x_des, y_des = flat_utils.inv_s2_projection(s_des)
+            # att_des = torch.stack([x_des, y_des, yaw_des], dim=1)
+            att_des = flat_utils.getAttitudeFromRotationAndYaw(R_des, yaw_des)
+
             # print("DC Attitude: ", att_des)
             # roll, pitch, yaw  = isaac_math_utils.euler_xyz_from_quat(isaac_math_utils.quat_from_matrix(R_des))
             # att_des = torch.stack([isaac_math_utils.wrap_to_pi(roll), isaac_math_utils.wrap_to_pi(pitch), isaac_math_utils.wrap_to_pi(yaw)], dim=1)
@@ -479,9 +489,9 @@ class DecoupledController():
             u4 = self.rescale_command(M_des[:, 2], -self.moment_scale_z, self.moment_scale_z).view(batch_size, 1)
         elif self.control_mode == "CTATT":
             u1 = self.rescale_command(collective_thrust, 0.0, self.thrust_to_weight * 9.81*self.mass).view(batch_size, 1)
-            u2 = self.rescale_command(M_des[:, 0], -self.attitude_scale, self.attitude_scale).view(batch_size, 1)
-            u3 = self.rescale_command(M_des[:, 1], -self.attitude_scale, self.attitude_scale).view(batch_size, 1)
-            u4 = self.rescale_command(M_des[:, 2], -self.attitude_scale, self.attitude_scale).view(batch_size, 1)
+            u2 = self.rescale_command(M_des[:, 0], -self.attitude_scale_xy, self.attitude_scale_xy).view(batch_size, 1)
+            u3 = self.rescale_command(M_des[:, 1], -self.attitude_scale_xy, self.attitude_scale_xy).view(batch_size, 1)
+            u4 = self.rescale_command(M_des[:, 2], -self.attitude_scale_z, self.attitude_scale_z).view(batch_size, 1)
             # u2 = M_des[:, 0].view(batch_size, 1)
             # u3 = M_des[:, 1].view(batch_size, 1)
             # u4 = M_des[:, 2].view(batch_size, 1)

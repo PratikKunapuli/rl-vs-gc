@@ -18,7 +18,7 @@ from omni.isaac.lab.scene import InteractiveSceneCfg
 from omni.isaac.lab.sim import SimulationCfg
 from omni.isaac.lab.terrains import TerrainImporterCfg
 from omni.isaac.lab.utils import configclass
-from omni.isaac.lab.utils.math import subtract_frame_transforms, random_yaw_orientation, matrix_from_quat, matrix_from_euler
+from omni.isaac.lab.utils.math import subtract_frame_transforms, random_yaw_orientation, matrix_from_quat, matrix_from_euler, quat_rotate_inverse, quat_rotate, normalize, wrap_to_pi
 from omni.isaac.lab.markers import VisualizationMarkers, VisualizationMarkersCfg
 from omni.isaac.lab.utils.assets import ISAAC_NUCLEUS_DIR
 
@@ -111,15 +111,16 @@ class QuadrotorEnvCfg(DirectRLEnvCfg):
     attitude_scale = 3.14159
     attitude_scale_z = torch.pi - 1e-6
     attitude_scale_xy = 0.2
+    has_end_effector = False
 
-    control_mode = "CTBM"
+    control_mode = "CTATT" # "CTBM" or "CTATT"
     pd_loop_decimation = sim_rate_hz // pd_loop_rate_hz # decimation from sim physics rate
 
     # reward scales
     lin_vel_reward_scale = -0.05
     ang_vel_reward_scale = -0.01
     distance_to_goal_reward_scale = 15.0
-    yaw_error_reward_scale = -1.0
+    yaw_error_reward_scale = -2.0
     previous_action_reward_scale = -0.05
 
     # observation modifiers
@@ -131,6 +132,11 @@ class QuadrotorEnvCfg(DirectRLEnvCfg):
     goal_cfg="rand"
     goal_pos = [0.0, 0.0, 3.0]
     goal_ori = [1.0, 0.0, 0.0, 0.0]
+
+    task_body = "body"
+    goal_body = "body"
+    reward_task_body = "body"
+    reward_goal_body = "body"
 
     seed = 0
 
@@ -151,9 +157,15 @@ class QuadrotorManipulatorEnvCfg(QuadrotorEnvCfg):
     # robot
     robot: ArticulationCfg = CRAZYFLIE_MANIPULATOR_0DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
     # robot: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+    # robot: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
     # robot: ArticulationCfg = (CRAZYFLIE_CFG.spawn.replace(usd_path=f"{MODELS_PATH}/crazyflie_manipulator.usd")).replace(prim_path="/World/envs/env_.*/Robot")
     # robot: ArticulationCfg = (CRAZYFLIE_CFG.replace(usd_path=f"{MODELS_PATH}/crazyflie_manipulator.usd")).replace(prim_path="/World/envs/env_.*/Robot")
 
+    has_end_effector=True
+    task_body = "endeffector"
+    goal_body = "endeffector"
+    reward_task_body = "endeffector"
+    reward_goal_body = "endeffector"
 
 class QuadrotorEnv(DirectRLEnv):
     cfg: QuadrotorEnvCfg
@@ -219,8 +231,16 @@ class QuadrotorEnv(DirectRLEnv):
         }
         # Get specific body indices
         self._body_id = self._robot.find_bodies("body")[0]
+        if self.cfg.has_end_effector:
+            self._ee_id = self._robot.find_bodies("endeffector")[0]
+            default_masses = self._robot.root_physx_view.get_masses()[0]
+            # default_masses[self._ee_id] = 1e-9 # 0 gram end effector
+            default_masses[self._ee_id] = 0.005 # 5 gram end effector
+            new_masses = default_masses.tile((self.num_envs, 1))
+            self._robot.root_physx_view.set_masses(new_masses, torch.arange(self.num_envs))
         self._robot_mass = self._robot.root_physx_view.get_masses()[0].sum()
         self._gravity_magnitude = torch.tensor(self.sim.cfg.gravity, device=self.device).norm()
+        self._grav_vector_unit = torch.tensor([0.0, 0.0, -1.0], device=self.device).tile((self.num_envs, 1))
         self._robot_weight = (self._robot_mass * self._gravity_magnitude).item()
 
         self._frame_positions = torch.zeros(self.num_envs, 2, 3, device=self.device)
@@ -243,7 +263,7 @@ class QuadrotorEnv(DirectRLEnv):
         # print("Crazyflie inertia: ", self._robot.root_physx_view.get_inertias()[0, self._body_id, :].view(-1, 3, 3).squeeze())
         # print("TM_to_f: \n", self.TM_to_f)
         # print("f_to_TM: \n", self.f_to_TM)
-        import code; code.interact(local=locals())
+        # import code; code.interact(local=locals())
 
 
     def _setup_scene(self):
@@ -348,17 +368,30 @@ class QuadrotorEnv(DirectRLEnv):
         self._robot.set_external_force_and_torque(self._thrust, self._moment, body_ids=self._body_id)
 
     def _get_observations(self) -> dict:
+        pos_w, ori_w, lin_vel_w, ang_vel_w = self.get_body_state_by_name(self.cfg.task_body)
+
+        # print("Num envs: ", self.num_envs)
+        # print("Pos: ", pos_w.shape)
+        # print("Ori: ", ori_w.shape)
+        # print("Lin vel: ", lin_vel_w.shape)
+        # print("Ang vel: ", ang_vel_w.shape)
+        
+
         pos_error_b, ori_error_b = subtract_frame_transforms(
-            self._robot.data.root_state_w[:, :3], self._robot.data.root_state_w[:, 3:7], self._desired_pos_w, self._desired_ori_w
+            pos_w, ori_w, self._desired_pos_w, self._desired_ori_w
         )
 
         yaw_error = yaw_error_from_quats(self._robot.data.root_quat_w, self._desired_ori_w, 0)
 
+        lin_vel_b = quat_rotate_inverse(ori_w, lin_vel_w)
+        ang_vel_b = quat_rotate_inverse(ori_w, ang_vel_w)
+        grav_vector_b = quat_rotate_inverse(ori_w, self._grav_vector_unit)
+
         obs = torch.cat(
             [
-                self._robot.data.root_lin_vel_b, # 3
-                self._robot.data.root_ang_vel_b, # 3
-                self._robot.data.projected_gravity_b, # 3
+                lin_vel_b, # 3
+                ang_vel_b, # 3
+                grav_vector_b, # 3
                 pos_error_b, # 3
                 ori_error_b, # 4
                 yaw_error.unsqueeze(-1), # 1
@@ -368,12 +401,13 @@ class QuadrotorEnv(DirectRLEnv):
         )
 
         if self.cfg.gc_mode:
+            pos_w, ori_w, lin_vel_w, ang_vel_w = self.get_body_state_by_name(self.cfg.task_body)
             gc_obs = torch.cat(
                 [
-                    self._robot.data.root_pos_w,
-                    self._robot.data.root_quat_w,
-                    self._robot.data.root_lin_vel_w,
-                    self._robot.data.root_ang_vel_w,
+                    pos_w,
+                    ori_w,
+                    lin_vel_w,
+                    ang_vel_w,
                     self._desired_pos_w,
                     yaw_from_quat(self._desired_ori_w).unsqueeze(1),
                 ],
@@ -398,13 +432,18 @@ class QuadrotorEnv(DirectRLEnv):
         return observations
 
     def _get_rewards(self) -> torch.Tensor:
-        lin_vel = torch.sum(torch.square(self._robot.data.root_lin_vel_b), dim=1)
-        ang_vel = torch.sum(torch.square(self._robot.data.root_ang_vel_b), dim=1)
-        distance_to_goal = torch.linalg.norm(self._desired_pos_w - self._robot.data.root_pos_w, dim=1)
-        # distance_to_goal_mapped = 1 - torch.tanh(distance_to_goal / 0.8)
-        distance_to_goal_mapped = torch.exp(- (distance_to_goal **2) / 0.8)
+        pos_w, ori_w, lin_vel_w, ang_vel_w = self.get_body_state_by_name(self.cfg.reward_task_body)
+        lin_vel_b = quat_rotate_inverse(ori_w, lin_vel_w)
+        ang_vel_b = quat_rotate_inverse(ori_w, ang_vel_w)
 
-        ori_error = yaw_error_from_quats(self._robot.data.root_quat_w, self._desired_ori_w, 0) # Yaw error'
+        lin_vel = torch.sum(torch.square(lin_vel_b), dim=1)
+        ang_vel = torch.sum(torch.square(ang_vel_b), dim=1)
+        distance_to_goal = torch.linalg.norm(self._desired_pos_w - pos_w, dim=1)
+        # distance_to_goal_mapped = 1 - torch.tanh(distance_to_goal / 0.8)
+        # distance_to_goal_mapped = torch.exp(- (distance_to_goal**2) / 0.8)
+        distance_to_goal_mapped = torch.exp(- (distance_to_goal) / 0.8)
+
+        ori_error = yaw_error_from_quats(ori_w, self._desired_ori_w, 0) # Yaw error'
 
         action_error = torch.sum(torch.square(self._actions - self._previous_action), dim=1)
         self._previous_action = self._actions.clone()
@@ -486,7 +525,59 @@ class QuadrotorEnv(DirectRLEnv):
         self._robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
         self._motor_speeds[env_ids] = 1788.53 * torch.ones_like(self._motor_speeds[env_ids])
 
+    def get_body_state_by_name(self, body_name: str) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        if body_name == "body":
+            pos = self._robot.data.body_pos_w[:, self._body_id].squeeze(1)
+            ori = self._robot.data.body_quat_w[:, self._body_id].squeeze(1)
+            vel = self._robot.data.body_lin_vel_w[:, self._body_id].squeeze(1)
+            ang_vel = self._robot.data.body_ang_vel_w[:, self._body_id].squeeze(1)
+        elif body_name == "root":
+            pos = self._robot.data.root_pos_w
+            ori = self._robot.data.root_quat_w
+            vel = self._robot.data.root_lin_vel_w
+            ang_vel = self._robot.data.root_ang_vel_w
+        elif body_name == "endeffector":
+            pos = self._robot.data.body_pos_w[:, self._ee_id].squeeze(1)
+            ori = self._robot.data.body_quat_w[:, self._ee_id].squeeze(1)
+            vel = self._robot.data.body_lin_vel_w[:, self._ee_id].squeeze(1)
+            ang_vel = self._robot.data.body_ang_vel_w[:, self._ee_id].squeeze(1)
+        else:
+            raise NotImplementedError(f"Body name {body_name} is not implemented.")
+        return pos, ori, vel, ang_vel
+    
+    def compute_desired_pose_from_transform(self, goal_pos_w, goal_ori_w, pos_transform):
+        # Find b2 in the ori frame, set z component to 0 and the desired yaw is the atan2 of the x and y components
+        b2 = quat_rotate(goal_ori_w, torch.tensor([[0.0, 1.0, 0.0]], device=goal_ori_w.device).tile(goal_ori_w.shape[0], 1))
+        if self.cfg.num_joints == 0:
+            b2[:, 2] = 0.0
+        b2 = normalize(b2)
         
+        # Yaw is the angle between b2 and the y-axis
+        yaw_desired = torch.atan2(b2[:, 1], b2[:, 0]) - torch.pi/2
+        yaw_desired = wrap_to_pi(yaw_desired)
+
+        # Position desired is the pos_transform along -b2 direction
+        pos_desired = goal_pos_w + torch.bmm(torch.linalg.norm(pos_transform, dim=1).tile(self.num_envs, 1, 1), -1*b2.unsqueeze(1)).squeeze(1)
+
+        
+        return pos_desired, yaw_desired
+
+    def get_goal_state_from_task(self, goal_body:str) -> tuple[torch.Tensor, torch.Tensor]:
+        if goal_body == "root":
+            goal_pos_w = self._desired_pos_w
+            goal_ori_w = self._desired_ori_w
+        elif goal_body == "endeffector":
+            goal_pos_w = self._desired_pos_w
+            goal_ori_w = self._desired_ori_w
+        elif goal_body == "COM":
+            # desired_pos, desired_yaw = self.compute_desired_pose_from_transform(self._desired_pos_w, self._desired_ori_w, self.com_pos_e)
+            desired_pos, desired_yaw = compute_desired_pose_from_transform(self._desired_pos_w, self._desired_ori_w, self.com_pos_e, 0)
+            goal_pos_w = desired_pos
+            goal_ori_w = quat_from_yaw(desired_yaw)
+        else:
+            raise ValueError("Invalid goal body: ", self.cfg.goal_body)
+
+        return goal_pos_w, goal_ori_w
 
     def _set_debug_vis_impl(self, debug_vis: bool):
         # create markers if necessary for the first tome
@@ -506,14 +597,13 @@ class QuadrotorEnv(DirectRLEnv):
                 self.goal_pos_visualizer.set_visibility(False)
 
     def _debug_vis_callback(self, event):
-        # update the markers
-        # update the markers
+        pos, ori, _, _ = self.get_body_state_by_name(self.cfg.task_body)
         # Update frame positions for debug visualization
-        self._frame_positions[:, 0] = self._robot.data.root_pos_w
+        self._frame_positions[:, 0] = pos
         self._frame_positions[:, 1] = self._desired_pos_w
         # self._frame_positions[:, 2] = self._robot.data.body_pos_w[:, self._body_id].squeeze(1)
         # self._frame_positions[:, 2] = com_pos_w
-        self._frame_orientations[:, 0] = self._robot.data.root_quat_w
+        self._frame_orientations[:, 0] = ori
         self._frame_orientations[:, 1] = self._desired_ori_w
         # self._frame_orientations[:, 2] = self._robot.data.body_quat_w[:, self._body_id].squeeze(1)
         # self._frame_orientations[:, 2] = com_ori_w
