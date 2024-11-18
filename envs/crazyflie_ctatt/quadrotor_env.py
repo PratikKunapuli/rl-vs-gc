@@ -121,6 +121,8 @@ class QuadrotorEnvCfg(DirectRLEnvCfg):
     lin_vel_reward_scale = -0.05
     ang_vel_reward_scale = -0.01
     distance_to_goal_reward_scale = 15.0
+    pos_radius = 0.8
+    pos_radius_curriculum = 0
     yaw_error_reward_scale = -2.0
     previous_action_reward_scale = -0.05
 
@@ -153,6 +155,9 @@ class QuadrotorEnvCfg(DirectRLEnvCfg):
     kp_att = 1575 # 544
     kd_att = 229.93 # 46.64
 
+    # Domain Randomization
+    dr_dict = {}
+
 @configclass
 class QuadrotorManipulatorEnvCfg(QuadrotorEnvCfg):
     # robot
@@ -167,6 +172,8 @@ class QuadrotorManipulatorEnvCfg(QuadrotorEnvCfg):
     goal_body = "endeffector"
     reward_task_body = "endeffector"
     reward_goal_body = "endeffector"
+
+    dr_dict = {'thrust_to_weight':  False}
 
 class QuadrotorEnv(DirectRLEnv):
     cfg: QuadrotorEnvCfg
@@ -369,7 +376,18 @@ class QuadrotorEnv(DirectRLEnv):
         self._moment[:, 0, :] = wrench[:, 1:]
         self._robot.set_external_force_and_torque(self._thrust, self._moment, body_ids=self._body_id)
 
+    def _apply_curriculum(self, total_timesteps):
+        """
+        Apply the curriculum to the environment.
+        """
+        # print("[Isaac Env: Curriculum] Total Timesteps: ", total_timesteps, " Pos Radius: ", self.cfg.pos_radius)
+        if self.cfg.pos_radius_curriculum > 0:
+            # half the pos radius every pos_radius_curriculum timesteps
+            self.cfg.pos_radius = 0.8 * (0.5 ** (total_timesteps // self.cfg.pos_radius_curriculum))
+
     def _get_observations(self) -> dict:
+        self._apply_curriculum(self.common_step_counter * self.num_envs)
+
         pos_w, ori_w, lin_vel_w, ang_vel_w = self.get_body_state_by_name(self.cfg.task_body)
 
         # print("Num envs: ", self.num_envs)
@@ -418,12 +436,13 @@ class QuadrotorEnv(DirectRLEnv):
         else:
             gc_obs = None
 
+
         full_state = torch.cat(
             [
-                self._robot.data.root_pos_w,
-                self._robot.data.root_quat_w,
-                self._robot.data.root_lin_vel_w,
-                self._robot.data.root_ang_vel_w,
+                pos_w,
+                ori_w,
+                lin_vel_w,
+                ang_vel_w,
                 self._desired_pos_w,
                 self._desired_ori_w,
             ],
@@ -443,7 +462,7 @@ class QuadrotorEnv(DirectRLEnv):
         distance_to_goal = torch.linalg.norm(self._desired_pos_w - pos_w, dim=1)
         # distance_to_goal_mapped = 1 - torch.tanh(distance_to_goal / 0.8)
         # distance_to_goal_mapped = torch.exp(- (distance_to_goal**2) / 0.8)
-        distance_to_goal_mapped = torch.exp(- (distance_to_goal) / 0.8)
+        distance_to_goal_mapped = torch.exp(- (distance_to_goal) / self.cfg.pos_radius)
 
         ori_error = yaw_error_from_quats(ori_w, self._desired_ori_w, 0) # Yaw error'
 
@@ -494,6 +513,7 @@ class QuadrotorEnv(DirectRLEnv):
         extras["Episode_Termination/time_out"] = torch.count_nonzero(self.reset_time_outs[env_ids]).item()
         extras["Metrics/final_distance_to_goal"] = final_distance_to_goal.item()
         extras["Metrics/final_yaw_error_to_goal"] = final_yaw_error.item()
+        extras["Metrics/pos_radius"] = self.cfg.pos_radius
         self.extras["log"].update(extras)
 
         self._robot.reset(env_ids)
@@ -535,7 +555,8 @@ class QuadrotorEnv(DirectRLEnv):
             return
         
         # randomize thrust to weight ratio
-        self._thrust_to_weight[env_ids] = torch.zeros_like(self._thrust_to_weight[env_ids]).normal_(mean=0.0, std=0.4) + self.cfg.thrust_to_weight
+        if self.cfg.dr_dict.get("thrust_to_weight", False):
+            self._thrust_to_weight[env_ids] = torch.zeros_like(self._thrust_to_weight[env_ids]).normal_(mean=0.0, std=0.4) + self.cfg.thrust_to_weight
 
     def get_body_state_by_name(self, body_name: str) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         if body_name == "body":
