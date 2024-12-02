@@ -121,12 +121,13 @@ class QuadrotorEnvCfg(DirectRLEnvCfg):
     # reward scales
     pos_distance_reward_scale = 15.0
     pos_radius = 0.8
-    pos_radius_curriculum = 0
+    pos_radius_curriculum = 50000000
     pos_error_reward_scale= 0.0
     lin_vel_reward_scale = -0.05
     ang_vel_reward_scale = -0.01
     yaw_error_reward_scale = -2.0
-    previous_action_reward_scale = -0.05
+    previous_thrust_reward_scale = -0.1
+    previous_attitude_reward_scale = -0.1
     stay_alive_reward = 0.0
     crash_penalty = 0.0
     scale_reward_with_time = True
@@ -137,7 +138,7 @@ class QuadrotorEnvCfg(DirectRLEnvCfg):
 
     eval_mode = False
     gc_mode = False
-    goal_cfg="rand"
+    goal_cfg= "rand"
     goal_pos = [0.0, 0.0, 3.0]
     goal_ori = [1.0, 0.0, 0.0, 0.0]
 
@@ -145,7 +146,7 @@ class QuadrotorEnvCfg(DirectRLEnvCfg):
     goal_body = "body"
     reward_task_body = "body"
     reward_goal_body = "body"
-    visualization_body="body"
+    visualization_body= "body"
 
 
     seed = 0
@@ -179,7 +180,7 @@ class QuadrotorManipulatorEnvCfg(QuadrotorEnvCfg):
     goal_body = "endeffector"
     reward_task_body = "endeffector"
     reward_goal_body = "endeffector"
-    visualization_body="endeffector"
+    visualization_body= "endeffector"
 
 
     dr_dict = {'thrust_to_weight':  False}
@@ -245,7 +246,8 @@ class QuadrotorEnv(DirectRLEnv):
                 "pos_distance",
                 "pos_error",
                 "yaw_error",
-                "previous_action",
+                "previous_thrust",
+                "previous_attitude",
                 "crash_penalty",
                 "stay_alive",
             ]
@@ -267,11 +269,11 @@ class QuadrotorEnv(DirectRLEnv):
             self.body_pos_ee_frame, self.body_ori_ee_frame = subtract_frame_transforms(ee_pos, ee_ori, quad_pos, quad_ori)
             # self.body_pos_ee_frame = ee_pos - quad_pos
             
-            print("ee_pos: ", ee_pos)
-            print("quad_pos: ", quad_pos)
+            # print("ee_pos: ", ee_pos)
+            # print("quad_pos: ", quad_pos)
             # print("Body pos in EE frame: ", self.body_pos_ee_frame)
             # print("Body ori in EE frame: ", self.body_ori_ee_frame)
-            import code; code.interact(local=locals())
+            # import code; code.interact(local=locals())
             self.body_pos_ee_frame = self.body_pos_ee_frame.tile((self.num_envs, 1))
 
         self._robot_mass = self._robot.root_physx_view.get_masses()[0].sum()
@@ -505,7 +507,10 @@ class QuadrotorEnv(DirectRLEnv):
 
         ori_error = yaw_error_from_quats(ori_w, self._desired_ori_w, 0) # Yaw error'
 
-        action_error = torch.sum(torch.square(self._actions - self._previous_action), dim=1)
+        # action_error = torch.sum(torch.square(self._actions - self._previous_action), dim=1)
+        action_thrust_error = torch.square(self._actions[:, 0] - self._previous_action[:, 0])
+        action_att_error = torch.sum(torch.square(self._actions[:, 1:] - self._previous_action[:, 1:]), dim=1)
+
         self._previous_action = self._actions.clone()
         crash_penalty_time = self.cfg.crash_penalty * (self.max_episode_length - self.episode_length_buf)
 
@@ -520,7 +525,8 @@ class QuadrotorEnv(DirectRLEnv):
             "pos_distance": distance_to_goal_mapped * self.cfg.pos_distance_reward_scale * time_scale,
             "pos_error": distance_to_goal * self.cfg.pos_error_reward_scale * time_scale,
             "yaw_error": ori_error * self.cfg.yaw_error_reward_scale * time_scale,
-            "previous_action": action_error * self.cfg.previous_action_reward_scale * time_scale,
+            "previous_thrust": action_thrust_error * self.cfg.previous_thrust_reward_scale * time_scale,
+            "previous_attitude": action_att_error * self.cfg.previous_attitude_reward_scale * time_scale,
             "crash_penalty": self.reset_terminated[:].float() * crash_penalty_time * time_scale,
             "stay_alive": torch.ones_like(distance_to_goal) * self.cfg.stay_alive_reward * time_scale,
         }
