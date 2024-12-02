@@ -236,12 +236,17 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         env_cfg.init_cfg = "default"
 
         # Camera settings
-        env_cfg.viewer.eye = (0.75, 0.75, 3.75)
-        # env_cfg.viewer.lookat = (0.0, 0.0, 0.5)
+        if "Crazyflie" in args_cli.task:
+            env_cfg.viewer.eye = (0.25, 0.25, 3.25)
+            # env_cfg.viewer.lookat = (0.0, 0.0, 0.5)
+        else:
+            env_cfg.viewer.eye = (0.75, 0.75, 3.75)
+            # env_cfg.viewer.lookat = (0.0, 0.0, 0.5)
         env_cfg.viewer.lookat = (0.0, 0.0, 3.0)
         env_cfg.viewer.resolution = (1080, 1920)
         env_cfg.viewer.origin_type = "env"
         env_cfg.viewer.env_index = 0
+            
     else:
         if args_cli.follow_robot >= 0:
             if "Crazyflie" in args_cli.task:
