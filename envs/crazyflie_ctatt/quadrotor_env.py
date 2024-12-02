@@ -23,7 +23,7 @@ from omni.isaac.lab.markers import VisualizationMarkers, VisualizationMarkersCfg
 from omni.isaac.lab.utils.assets import ISAAC_NUCLEUS_DIR
 
 from utils.assets import MODELS_PATH
-from configs.aerial_manip_asset import CRAZYFLIE_MANIPULATOR_0DOF_CFG
+from configs.aerial_manip_asset import CRAZYFLIE_MANIPULATOR_0DOF_CFG, CRAZYFLIE_MANIPULATOR_0DOF_LONG_CFG
 from utils.math_utilities import yaw_from_quat, yaw_error_from_quats, quat_from_yaw, compute_desired_pose_from_transform, vee_map, exp_so3, hat_map
 import utils.flatness_utilities as flatness_utils
 
@@ -170,6 +170,25 @@ class QuadrotorEnvCfg(DirectRLEnvCfg):
 class QuadrotorManipulatorEnvCfg(QuadrotorEnvCfg):
     # robot
     robot: ArticulationCfg = CRAZYFLIE_MANIPULATOR_0DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+    # robot: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+    # robot: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+    # robot: ArticulationCfg = (CRAZYFLIE_CFG.spawn.replace(usd_path=f"{MODELS_PATH}/crazyflie_manipulator.usd")).replace(prim_path="/World/envs/env_.*/Robot")
+    # robot: ArticulationCfg = (CRAZYFLIE_CFG.replace(usd_path=f"{MODELS_PATH}/crazyflie_manipulator.usd")).replace(prim_path="/World/envs/env_.*/Robot")
+
+    has_end_effector=True
+    task_body = "endeffector"
+    goal_body = "endeffector"
+    reward_task_body = "endeffector"
+    reward_goal_body = "endeffector"
+    visualization_body= "endeffector"
+
+
+    dr_dict = {'thrust_to_weight':  False}
+
+@configclass
+class QuadrotorManipulatorLongEnvCfg(QuadrotorEnvCfg):
+    # robot
+    robot: ArticulationCfg = CRAZYFLIE_MANIPULATOR_0DOF_LONG_CFG.replace(prim_path="/World/envs/env_.*/Robot")
     # robot: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
     # robot: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
     # robot: ArticulationCfg = (CRAZYFLIE_CFG.spawn.replace(usd_path=f"{MODELS_PATH}/crazyflie_manipulator.usd")).replace(prim_path="/World/envs/env_.*/Robot")
