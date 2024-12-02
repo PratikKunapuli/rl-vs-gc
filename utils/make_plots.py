@@ -1883,7 +1883,9 @@ def plot_case_study():
     plt.savefig("case_study.png", dpi=1000, format='png', bbox_inches='tight')
 
     
-
+def plot_crazyflie_evals():
+    rl_ee_path = "../rl/logs/rsl_rl/CrazyflieManipulator_CTATT/2024-11-18_16-07-09_full_ori_pos_anneal_50e6_prev_action_-0.1/"
+    dc_path = "../rl/baseline_cf_0dof/"
 
 if __name__ == "__main__":
     # rl_eval_path = "../rl/runs/AM_0DOF_hover_pos_and_yaw_yaw_error_scale_-0.1_custom_yaw_error_1/"

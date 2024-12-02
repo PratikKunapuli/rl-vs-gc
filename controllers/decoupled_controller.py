@@ -101,7 +101,7 @@ class DecoupledController():
             self.thrust_to_weight = 3.0
         else:
             #Crazyflie
-            self.thrust_to_weight = 1.6
+            self.thrust_to_weight = 1.8
             self.moment_scale_xy = 0.01
             self.moment_scale_z = 0.01
             # self.attitude_scale = torch.pi/6.0
@@ -344,7 +344,7 @@ class DecoupledController():
             return collective_thrust, M_des
 
         elif self.control_mode == "CTATT":
-            print("DC R des: ", R_des)
+            # print("DC R des: ", R_des)
             # roll, pitch, yaw  = isaac_math_utils.euler_xyz_from_quat(isaac_math_utils.quat_from_matrix(R_des))
             # print(roll.shape)
             # att_des = torch.stack([isaac_math_utils.wrap_to_pi(roll), isaac_math_utils.wrap_to_pi(pitch), isaac_math_utils.wrap_to_pi(yaw)], dim=1)

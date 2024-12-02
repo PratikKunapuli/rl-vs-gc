@@ -101,23 +101,31 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         # policy_path = "./baseline_0dof/"
         # policy_path = "./baseline_0dof_com_lqr_tune/"
         # policy_path = "./baseline_0dof_com_reward_tune/"
-        policy_path = "./baseline_0dof_ee_reward_tune/"
+        # policy_path = "./baseline_0dof_ee_reward_tune/"
         # policy_path = "./baseline_0dof_ee_lqr_tune/"
 
-
-
-
-    if args_cli.baseline:
+        
         # env_cfg.sim_rate_hz = 100
         # env_cfg.policy_rate_hz = 50
         # env_cfg.sim.dt = 1/env_cfg.sim_rate_hz
         # env_cfg.decimation = env_cfg.sim_rate_hz // env_cfg.policy_rate_hz
         # env_cfg.sim.render_interval = env_cfg.decimation
         env_cfg.gc_mode = True
-        env_cfg.task_body = "COM"
-        env_cfg.goal_body = "COM"
-        env_cfg.reward_task_body = "root"
-        env_cfg.reward_goal_body = "root"
+        if "Crazyflie" in args_cli.task:
+            env_cfg.task_body = "body"
+            env_cfg.goal_body = "body"
+            env_cfg.reward_task_body = "endeffector"
+            env_cfg.reward_goal_body = "endeffector"
+
+            policy_path = "./baseline_cf_0dof/"
+        else:
+            env_cfg.task_body = "COM"
+            env_cfg.goal_body = "COM"
+            env_cfg.reward_task_body = "root"
+            env_cfg.reward_goal_body = "root"
+
+            policy_path = "./baseline_0dof_ee_reward_tune/"
+            
 
         # env_cfg.yaw_distance_reward_scale = 5.0
     # else:
@@ -236,12 +244,20 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         env_cfg.viewer.env_index = 0
     else:
         if args_cli.follow_robot >= 0:
-            env_cfg.viewer.eye = (0.75, 0.75, 0.75)
-            env_cfg.viewer.lookat = (0.0, 0.0, 0.0)
-            env_cfg.viewer.resulution = (1080, 1920)
-            env_cfg.viewer.origin_type = "asset_root"
-            env_cfg.viewer.env_index = args_cli.follow_robot
-            env_cfg.viewer.asset_name = "robot"
+            if "Crazyflie" in args_cli.task:
+                env_cfg.viewer.eye = (-0.5, 0.5, 0.5)
+                env_cfg.viewer.resolution = (1920, 1080)
+                env_cfg.viewer.lookat = (0.0, 0.0, 0.0)
+                env_cfg.viewer.origin_type = "asset_root"
+                env_cfg.viewer.env_index = args_cli.follow_robot
+                env_cfg.viewer.asset_name = "robot"
+            else:
+                env_cfg.viewer.eye = (0.75, 0.75, 0.75)
+                env_cfg.viewer.lookat = (0.0, 0.0, 0.0)
+                env_cfg.viewer.resulution = (1080, 1920)
+                env_cfg.viewer.origin_type = "asset_root"
+                env_cfg.viewer.env_index = args_cli.follow_robot
+                env_cfg.viewer.asset_name = "robot"
             robot_index_prefix = f"_robot_{args_cli.follow_robot}"
 
 
@@ -255,6 +271,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
     # Manual override of env cfg
     # env_cfg.goal_pos_range = 2.0
     # env_cfg.goal_yaw_range = 0.0 #0.0 1.5708  3.14159
+
+
 
     envs = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
 
@@ -297,11 +315,19 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         # Hand-tuned gains
         # agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=device)
         
-        # Optuna-tuned gains for EE-Reward
-        agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=device,
-                                    kp_pos_gain_xy=43.507, kp_pos_gain_z=24.167, kd_pos_gain_xy=9.129, kd_pos_gain_z=6.081,
-                                    kp_att_gain_xy=998.777, kp_att_gain_z=18.230, kd_att_gain_xy=47.821, kd_att_gain_z=8.818)
         
+        if "Crazyflie" not in args_cli.task:
+            # Optuna-tuned gains for EE-Reward
+            agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=device,
+                                        kp_pos_gain_xy=43.507, kp_pos_gain_z=24.167, kd_pos_gain_xy=9.129, kd_pos_gain_z=6.081,
+                                        kp_att_gain_xy=998.777, kp_att_gain_z=18.230, kd_att_gain_xy=47.821, kd_att_gain_z=8.818)
+        else:
+            # Crazyflie DC
+            agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=device,
+                                        kp_pos_gain_xy=6.5, kp_pos_gain_z=15.0, kd_pos_gain_xy=4.0, kd_pos_gain_z=9.0,
+                                        kp_att_gain_xy=544, kp_att_gain_z=544, kd_att_gain_xy=46.64, kd_att_gain_z=46.64, 
+                                        skip_precompute=True, vehicle="Crazyflie", control_mode="CTATT", print_debug=False)
+            
         # Optuna-tuned gains for EE-LQR Cost (equal pos and yaw weight)
         # agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=device,
         #                             kp_pos_gain_xy=24.675, kp_pos_gain_z=31.101, kd_pos_gain_xy=7.894, kd_pos_gain_z=8.207,
@@ -380,6 +406,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
                 if args_cli.baseline:
                     # action = agent.get_action(obs_dict["full_state"])
                     action = agent.get_action(obs_dict["gc"])
+                    # print("Obs: ", obs_dict["gc"][args_cli.follow_robot])
                 else:
                     actions = agent(obs_tensor)
                 times.append(time.time() - start)
@@ -405,6 +432,31 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
             print("Final Info: \n\n", info, "\n")
 
             print("\nAverage inference time: ", np.mean(times))
+
+            quad_pos = full_states[args_cli.follow_robot, :-1, 0:3].cpu().numpy()
+            ee_pos = full_states[args_cli.follow_robot, :-1, 13:16].cpu().numpy()
+            goal_pos = full_states[args_cli.follow_robot, :-1, 26:26 + 3].cpu().numpy()
+
+            # import matplotlib.pyplot as plt
+            # plt.figure()
+            # plt.subplot(3, 1, 1)
+            # plt.plot(quad_pos[:, 0], label="Quad X")
+            # plt.plot(ee_pos[:, 0], label="EE X")
+            # plt.plot(goal_pos[:, 0], label="Goal X")
+            # plt.legend()
+            # plt.subplot(3, 1, 2)
+            # plt.plot(quad_pos[:, 1], label="Quad Y")
+            # plt.plot(ee_pos[:, 1], label="EE Y")
+            # plt.plot(goal_pos[:, 1], label="Goal Y")
+            # plt.legend()
+            # plt.subplot(3, 1, 3)
+            # plt.plot(quad_pos[:, 2], label="Quad Z")
+            # plt.plot(ee_pos[:, 2], label="EE Z")
+            # plt.plot(goal_pos[:, 2], label="Goal Z")
+            # plt.legend()
+            # plt.savefig(os.path.join(policy_path, save_prefix + "eval_plot.png"))
+
+
             envs.close()
             simulation_app.close()
 

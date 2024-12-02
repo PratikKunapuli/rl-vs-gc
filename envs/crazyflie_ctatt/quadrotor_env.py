@@ -18,7 +18,7 @@ from omni.isaac.lab.scene import InteractiveSceneCfg
 from omni.isaac.lab.sim import SimulationCfg
 from omni.isaac.lab.terrains import TerrainImporterCfg
 from omni.isaac.lab.utils import configclass
-from omni.isaac.lab.utils.math import subtract_frame_transforms, random_yaw_orientation, matrix_from_quat, matrix_from_euler, quat_rotate_inverse, quat_rotate, normalize, wrap_to_pi
+from omni.isaac.lab.utils.math import subtract_frame_transforms, random_yaw_orientation, matrix_from_quat, matrix_from_euler, quat_rotate_inverse, quat_rotate, normalize, wrap_to_pi, quat_apply
 from omni.isaac.lab.markers import VisualizationMarkers, VisualizationMarkersCfg
 from omni.isaac.lab.utils.assets import ISAAC_NUCLEUS_DIR
 
@@ -104,6 +104,7 @@ class QuadrotorEnvCfg(DirectRLEnvCfg):
 
     # robot
     robot: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+    end_effector_mass = float(1e-9)
     thrust_to_weight = 1.8
     # thrust_to_weight = 1.9
     moment_scale = 0.01
@@ -118,17 +119,21 @@ class QuadrotorEnvCfg(DirectRLEnvCfg):
     pd_loop_decimation = sim_rate_hz // pd_loop_rate_hz # decimation from sim physics rate
 
     # reward scales
-    lin_vel_reward_scale = -0.05
-    ang_vel_reward_scale = -0.01
-    distance_to_goal_reward_scale = 15.0
+    pos_distance_reward_scale = 15.0
     pos_radius = 0.8
     pos_radius_curriculum = 0
+    pos_error_reward_scale= 0.0
+    lin_vel_reward_scale = -0.05
+    ang_vel_reward_scale = -0.01
     yaw_error_reward_scale = -2.0
     previous_action_reward_scale = -0.05
+    stay_alive_reward = 0.0
+    crash_penalty = 0.0
+    scale_reward_with_time = True
 
     # observation modifiers
     use_yaw_representation = False
-    use_full_ori_matrix = False
+    use_full_ori_matrix = True
 
     eval_mode = False
     gc_mode = False
@@ -140,6 +145,8 @@ class QuadrotorEnvCfg(DirectRLEnvCfg):
     goal_body = "body"
     reward_task_body = "body"
     reward_goal_body = "body"
+    visualization_body="body"
+
 
     seed = 0
 
@@ -172,6 +179,8 @@ class QuadrotorManipulatorEnvCfg(QuadrotorEnvCfg):
     goal_body = "endeffector"
     reward_task_body = "endeffector"
     reward_goal_body = "endeffector"
+    visualization_body="endeffector"
+
 
     dr_dict = {'thrust_to_weight':  False}
 
@@ -233,9 +242,12 @@ class QuadrotorEnv(DirectRLEnv):
             for key in [
                 "lin_vel",
                 "ang_vel",
+                "pos_distance",
                 "pos_error",
                 "yaw_error",
                 "previous_action",
+                "crash_penalty",
+                "stay_alive",
             ]
         }
         # Get specific body indices
@@ -244,9 +256,24 @@ class QuadrotorEnv(DirectRLEnv):
             self._ee_id = self._robot.find_bodies("endeffector")[0]
             default_masses = self._robot.root_physx_view.get_masses()[0]
             # default_masses[self._ee_id] = 1e-9 # 0 gram end effector
-            default_masses[self._ee_id] = 0.005 # 5 gram end effector
+            default_masses[self._ee_id] = self.cfg.end_effector_mass # 5 gram end effector
             new_masses = default_masses.tile((self.num_envs, 1))
             self._robot.root_physx_view.set_masses(new_masses, torch.arange(self.num_envs))
+
+            ee_pos = self._robot.data.body_pos_w[0, self._ee_id]
+            ee_ori = self._robot.data.body_quat_w[0, self._ee_id]
+            quad_pos = self._robot.data.body_pos_w[0, self._body_id]
+            quad_ori = self._robot.data.body_quat_w[0, self._body_id]
+            self.body_pos_ee_frame, self.body_ori_ee_frame = subtract_frame_transforms(ee_pos, ee_ori, quad_pos, quad_ori)
+            # self.body_pos_ee_frame = ee_pos - quad_pos
+            
+            print("ee_pos: ", ee_pos)
+            print("quad_pos: ", quad_pos)
+            # print("Body pos in EE frame: ", self.body_pos_ee_frame)
+            # print("Body ori in EE frame: ", self.body_ori_ee_frame)
+            import code; code.interact(local=locals())
+            self.body_pos_ee_frame = self.body_pos_ee_frame.tile((self.num_envs, 1))
+
         self._robot_mass = self._robot.root_physx_view.get_masses()[0].sum()
         self._gravity_magnitude = torch.tensor(self.sim.cfg.gravity, device=self.device).norm()
         self._grav_vector_unit = torch.tensor([0.0, 0.0, -1.0], device=self.device).tile((self.num_envs, 1))
@@ -389,6 +416,7 @@ class QuadrotorEnv(DirectRLEnv):
         self._apply_curriculum(self.common_step_counter * self.num_envs)
 
         pos_w, ori_w, lin_vel_w, ang_vel_w = self.get_body_state_by_name(self.cfg.task_body)
+        goal_pos_w, goal_ori_w = self.get_goal_state_from_task(self.cfg.task_body)
 
         # print("Num envs: ", self.num_envs)
         # print("Pos: ", pos_w.shape)
@@ -398,10 +426,13 @@ class QuadrotorEnv(DirectRLEnv):
         
 
         pos_error_b, ori_error_b = subtract_frame_transforms(
-            pos_w, ori_w, self._desired_pos_w, self._desired_ori_w
+            pos_w, ori_w, goal_pos_w, goal_ori_w
         )
 
-        yaw_error = yaw_error_from_quats(self._robot.data.root_quat_w, self._desired_ori_w, 0)
+        if self.cfg.use_full_ori_matrix:
+            ori_error_b = matrix_from_quat(ori_error_b).view(-1, 9)
+
+        yaw_error = yaw_error_from_quats(self._robot.data.root_quat_w, goal_ori_w, 0)
 
         lin_vel_b = quat_rotate_inverse(ori_w, lin_vel_w)
         ang_vel_b = quat_rotate_inverse(ori_w, ang_vel_w)
@@ -413,7 +444,7 @@ class QuadrotorEnv(DirectRLEnv):
                 ang_vel_b, # 3
                 grav_vector_b, # 3
                 pos_error_b, # 3
-                ori_error_b, # 4
+                ori_error_b, # 4 or 9 if use_full_ori_matrix
                 yaw_error.unsqueeze(-1), # 1
                 self._previous_action, # 4
             ],
@@ -428,26 +459,34 @@ class QuadrotorEnv(DirectRLEnv):
                     ori_w,
                     lin_vel_w,
                     ang_vel_w,
-                    self._desired_pos_w,
-                    yaw_from_quat(self._desired_ori_w).unsqueeze(1),
+                    goal_pos_w,
+                    yaw_from_quat(goal_ori_w).unsqueeze(1),
                 ],
                 dim=-1
             )
         else:
             gc_obs = None
 
-
-        full_state = torch.cat(
-            [
-                pos_w,
-                ori_w,
-                lin_vel_w,
-                ang_vel_w,
-                self._desired_pos_w,
-                self._desired_ori_w,
-            ],
-            dim=-1,
-        )
+        if self.cfg.eval_mode:
+            quad_pos_w, quad_ori_w, quad_lin_vel_w, quad_ang_vel_w = self.get_body_state_by_name("body")
+            ee_pos_w, ee_ori_w, ee_lin_vel_w, ee_ang_vel_w = self.get_body_state_by_name("endeffector")
+            full_state = torch.cat(
+                [
+                    quad_pos_w,                                 # (num_envs, 3) [0-3]
+                    quad_ori_w,                                 # (num_envs, 4) [3-7]
+                    quad_lin_vel_w,                             # (num_envs, 3) [7-10]
+                    quad_ang_vel_w,                             # (num_envs, 3) [10-13]
+                    ee_pos_w,                                   # (num_envs, 3) [13-16]
+                    ee_ori_w,                                   # (num_envs, 4) [16-20]
+                    ee_lin_vel_w,                               # (num_envs, 3) [20-23]
+                    ee_ang_vel_w,                               # (num_envs, 3) [23-26]
+                    self._desired_pos_w,                        # (num_envs, 3) [26-29]
+                    self._desired_ori_w,                        # (num_envs, 4) [29-33]
+                ],
+                dim=-1,
+            )
+        else:
+            full_state = None
 
         observations = {"policy": obs, "gc": gc_obs, "full_state": full_state}
         return observations
@@ -468,13 +507,22 @@ class QuadrotorEnv(DirectRLEnv):
 
         action_error = torch.sum(torch.square(self._actions - self._previous_action), dim=1)
         self._previous_action = self._actions.clone()
+        crash_penalty_time = self.cfg.crash_penalty * (self.max_episode_length - self.episode_length_buf)
+
+        if self.cfg.scale_reward_with_time:
+            time_scale = self.step_dt
+        else:
+            time_scale = 1.0
 
         rewards = {
-            "lin_vel": lin_vel * self.cfg.lin_vel_reward_scale * self.step_dt,
-            "ang_vel": ang_vel * self.cfg.ang_vel_reward_scale * self.step_dt,
-            "pos_error": distance_to_goal_mapped * self.cfg.distance_to_goal_reward_scale * self.step_dt,
-            "yaw_error": ori_error * self.cfg.yaw_error_reward_scale * self.step_dt,
-            "previous_action": action_error * self.cfg.previous_action_reward_scale * self.step_dt,
+            "lin_vel": lin_vel * self.cfg.lin_vel_reward_scale * time_scale,
+            "ang_vel": ang_vel * self.cfg.ang_vel_reward_scale * time_scale,
+            "pos_distance": distance_to_goal_mapped * self.cfg.pos_distance_reward_scale * time_scale,
+            "pos_error": distance_to_goal * self.cfg.pos_error_reward_scale * time_scale,
+            "yaw_error": ori_error * self.cfg.yaw_error_reward_scale * time_scale,
+            "previous_action": action_error * self.cfg.previous_action_reward_scale * time_scale,
+            "crash_penalty": self.reset_terminated[:].float() * crash_penalty_time * time_scale,
+            "stay_alive": torch.ones_like(distance_to_goal) * self.cfg.stay_alive_reward * time_scale,
         }
         reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
         # print("[Isaac] pos error: ", distance_to_goal)
@@ -607,6 +655,15 @@ class QuadrotorEnv(DirectRLEnv):
             desired_pos, desired_yaw = compute_desired_pose_from_transform(self._desired_pos_w, self._desired_ori_w, self.com_pos_e, 0)
             goal_pos_w = desired_pos
             goal_ori_w = quat_from_yaw(desired_yaw)
+        elif goal_body == "body":
+            # desired_pos, desired_yaw = self.compute_desired_pose_from_transform(self._desired_pos_w, self._desired_ori_w, self.com_pos_e)
+            # desired_pos, desired_yaw = compute_desired_pose_from_transform(self._desired_pos_w, self._desired_ori_w, self.body_pos_ee_frame, 0)
+            # desired_pos_w is the ee in world frame, we want the corresponding body pos in world frame
+            desired_pos = self._desired_pos_w + quat_apply(self._desired_ori_w, self.body_pos_ee_frame)
+            # desired_pos = self._desired_pos_w + self.body_pos_ee_frame
+            # desired_pos = self._desired_pos_w
+            goal_pos_w = desired_pos
+            goal_ori_w = self._desired_ori_w
         else:
             raise ValueError("Invalid goal body: ", self.cfg.goal_body)
 
@@ -630,14 +687,21 @@ class QuadrotorEnv(DirectRLEnv):
                 self.goal_pos_visualizer.set_visibility(False)
 
     def _debug_vis_callback(self, event):
-        pos, ori, _, _ = self.get_body_state_by_name(self.cfg.task_body)
+        pos, ori, _, _ = self.get_body_state_by_name(self.cfg.visualization_body)
+        # body_pos, body_ori, _, _ = self.get_body_state_by_name("body")
+        # ee_pos, ee_ori, _, _ = self.get_body_state_by_name("endeffector")
+
         # Update frame positions for debug visualization
         self._frame_positions[:, 0] = pos
+        # self._frame_positions[:, 0] = body_pos
         self._frame_positions[:, 1] = self._desired_pos_w
+        # self._frame_positions[:, 2] = ee_pos
         # self._frame_positions[:, 2] = self._robot.data.body_pos_w[:, self._body_id].squeeze(1)
         # self._frame_positions[:, 2] = com_pos_w
         self._frame_orientations[:, 0] = ori
+        # self._frame_orientations[:, 0] = body_ori
         self._frame_orientations[:, 1] = self._desired_ori_w
+        # self._frame_orientations[:, 2] = ee_ori
         # self._frame_orientations[:, 2] = self._robot.data.body_quat_w[:, self._body_id].squeeze(1)
         # self._frame_orientations[:, 2] = com_ori_w
         self.frame_visualizer.visualize(self._frame_positions.flatten(0, 1), self._frame_orientations.flatten(0,1))

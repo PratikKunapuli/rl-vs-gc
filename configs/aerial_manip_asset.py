@@ -455,7 +455,7 @@ CRAZYFLIE_MANIPULATOR_0DOF_CFG = ArticulationCfg(
         copy_from_source=False,
     ),
     init_state=ArticulationCfg.InitialStateCfg(
-        pos=(0.0, 0.0, 0.5),
+        pos=(0.0, -0.05, 0.5),
         # Default joint positions and velocities is 0.0
         joint_pos={
             ".*": 0.0,

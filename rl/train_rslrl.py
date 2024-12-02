@@ -168,6 +168,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
 
     print("\n\nPlease run the following line to evaluate the trained model: ")
     print(f"python eval_rslrl.py --video --task {args_cli.task} --num_envs 100 --experiment_name {agent_cfg.experiment_name} --load_run {agent_run_name}")
+    print("\n Hydra args: ")
+    print(hydra_args)
 
 
 if __name__ == "__main__":
