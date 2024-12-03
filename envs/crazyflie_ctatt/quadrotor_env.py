@@ -128,6 +128,7 @@ class QuadrotorEnvCfg(DirectRLEnvCfg):
     yaw_error_reward_scale = -2.0
     previous_thrust_reward_scale = -0.1
     previous_attitude_reward_scale = -0.1
+    action_norm_reward_scale = 0.0
     stay_alive_reward = 0.0
     crash_penalty = 0.0
     scale_reward_with_time = True
@@ -221,6 +222,8 @@ class QuadrotorEnv(DirectRLEnv):
         self._motor_speeds_des = torch.zeros(self.num_envs, 4, device=self.device)
         self._previous_action = torch.zeros(self.num_envs, self.cfg.action_space, device=self.device)
         self._thrust_to_weight = self.cfg.thrust_to_weight * torch.ones(self.num_envs, device=self.device)
+        self._hover_thrust = 2.0 / self.cfg.thrust_to_weight - 1.0
+        self._nominal_action = torch.tensor([self._hover_thrust, 0.0, 0.0, 0.0], device=self.device).tile((self.num_envs, 1))
 
         # Things necessary for motor dynamics
         r2o2 = math.sqrt(2.0) / 2.0
@@ -267,6 +270,7 @@ class QuadrotorEnv(DirectRLEnv):
                 "yaw_error",
                 "previous_thrust",
                 "previous_attitude",
+                "action_norm",
                 "crash_penalty",
                 "stay_alive",
             ]
@@ -529,6 +533,7 @@ class QuadrotorEnv(DirectRLEnv):
         # action_error = torch.sum(torch.square(self._actions - self._previous_action), dim=1)
         action_thrust_error = torch.square(self._actions[:, 0] - self._previous_action[:, 0])
         action_att_error = torch.sum(torch.square(self._actions[:, 1:] - self._previous_action[:, 1:]), dim=1)
+        action_norm_error = torch.sum(torch.square(self._actions - self._nominal_action), dim=1)
 
         self._previous_action = self._actions.clone()
         crash_penalty_time = self.cfg.crash_penalty * (self.max_episode_length - self.episode_length_buf)
@@ -546,6 +551,7 @@ class QuadrotorEnv(DirectRLEnv):
             "yaw_error": ori_error * self.cfg.yaw_error_reward_scale * time_scale,
             "previous_thrust": action_thrust_error * self.cfg.previous_thrust_reward_scale * time_scale,
             "previous_attitude": action_att_error * self.cfg.previous_attitude_reward_scale * time_scale,
+            "action_norm": action_norm_error * self.cfg.action_norm_reward_scale * time_scale,
             "crash_penalty": self.reset_terminated[:].float() * crash_penalty_time * time_scale,
             "stay_alive": torch.ones_like(distance_to_goal) * self.cfg.stay_alive_reward * time_scale,
         }

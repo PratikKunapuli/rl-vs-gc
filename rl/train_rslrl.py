@@ -74,7 +74,7 @@ def custom_yaml_dump(data, filename):
     if not os.path.exists(os.path.dirname(filename)):
             os.makedirs(os.path.dirname(filename), exist_ok=True)
 
-    dumper = yaml.YAML(typ='unsafe')
+    dumper = yaml.YAML(typ='safe')
     dumper.dump(data, open(filename, "w"))
 
 

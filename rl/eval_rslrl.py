@@ -48,7 +48,8 @@ import time
 from dataclasses import dataclass
 import ast
 import re
-import ruamel.yaml as yaml
+# import ruamel.yaml as yaml
+import yaml
 
 import gymnasium as gym
 import envs
@@ -142,11 +143,13 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
 
     # If ".hydra/config.yaml" is present, load some of the reward scalars from there
     if os.path.exists(os.path.join(log_dir, "params/env.yaml")):
-        # with open(os.path.join(log_dir, "params/env.yaml"), "r") as f:
-            # hydra_cfg = yaml.load(f, Loader=yaml.FullLoader)
-        f = os.path.join(log_dir, "params/env.yaml")
-        loader = yaml.YAML(typ="safe")
-        hydra_cfg = loader.load(f)
+        with open(os.path.join(log_dir, "params/env.yaml")) as f:
+            hydra_cfg = yaml.load(f, Loader=yaml.UnsafeLoader)
+        # f = os.path.join(log_dir, "params/env.yaml")
+        # loader = yaml.YAML(typ="safe")
+        # hydra_cfg = loader.load(f)
+
+        
         if "use_yaw_representation" in hydra_cfg:
             env_cfg.use_yaw_representation = hydra_cfg["use_yaw_representation"]
         if "use_full_ori_matrix" in hydra_cfg:
