@@ -169,3 +169,4 @@ cython_debug/
 rl/logs
 rl/runs
 rl/outputs
+rl/slurm_outputs/
