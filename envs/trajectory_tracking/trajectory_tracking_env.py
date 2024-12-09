@@ -21,8 +21,12 @@ from omni.isaac.lab.sim.spawners.materials import VisualMaterialCfg, PreviewSurf
 from omni.isaac.core.utils.prims import get_prim_at_path
 from pxr import Usd, UsdShade, Gf
 # Local imports
+import gymnasium as gym
+import numpy as np
 from configs.aerial_manip_asset import AERIAL_MANIPULATOR_0DOF_CFG, AERIAL_MANIPULATOR_0DOF_DEBUG_CFG
-from utils.math_utilities import yaw_from_quat, yaw_error_from_quats, quat_from_yaw, eval_sinusoid
+from utils.math_utilities import yaw_from_quat, yaw_error_from_quats, quat_from_yaw
+from utils.trajectory_utilities import eval_sinusoid
+import utils.trajectory_utilities as traj_utils
 
 class AerialManipulatorTrajectoryTrackingEnvWindow(BaseEnvWindow):
     """Window manager for the Quadcopter environment."""
@@ -81,6 +85,9 @@ class AerialManipulatorTrajectoryTrackingEnvBaseCfg(DirectRLEnvCfg):
         debug_vis=False,
     )
 
+    action_space= gym.spaces.Box(low=-1.0, high=1.0, shape=(4,))
+    observation_space= gym.spaces.Box(low=-np.inf, high=np.inf, shape=(12,))
+    state_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(0,))
 
     # scene
     scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=2.5, replicate_physics=True)
@@ -88,25 +95,35 @@ class AerialManipulatorTrajectoryTrackingEnvBaseCfg(DirectRLEnvCfg):
     traj_update_dt = 0.1
 
     trajectory_type = "lissaajous"
-    trajectory_params = {
-        "x_amp": 1.0,
-        "y_amp": 1.0,
-        "z_amp": 1.0,
-        "x_freq": 0.5,
-        "y_freq": 0.5,
-        "z_freq": 0.5,
-        "x_phase": 0.0,
-        "y_phase": 0.0,
-        "z_phase": -1.57079632679,
-        "x_offset": 0.0,
-        "y_offset": 0.0,
-        "z_offset": 1.0,
-        "yaw_amp": 1.0,
-        "yaw_freq": 0.0,
-        "yaw_phase": 0.0,
-        "yaw_offset": 0.0,
-    }
-    param_list = [trajectory_params]
+    trajectory_horizon = 10
+    # trajectory_params = {
+    #     "x_amp": 1.0,
+    #     "y_amp": 1.0,
+    #     "z_amp": 1.0,
+    #     "x_freq": 0.5,
+    #     "y_freq": 0.5,
+    #     "z_freq": 0.5,
+    #     "x_phase": 0.0,
+    #     "y_phase": 0.0,
+    #     "z_phase": -1.57079632679,
+    #     "x_offset": 0.0,
+    #     "y_offset": 0.0,
+    #     "z_offset": 1.0,
+    #     "yaw_amp": 1.0,
+    #     "yaw_freq": 0.0,
+    #     "yaw_phase": 0.0,
+    #     "yaw_offset": 0.0,
+    # }
+    # param_list = [trajectory_params]
+    lissajous_amplitudes = [0, 0, 0, 0]
+    lissajous_frequencies = [0, 0, 0, 0]
+    lissajous_phases = [0, 0, 0, 0]
+    lissajous_offsets = [0, 0, 0, 0]
+
+    polynomial_x_coefficients= [0]
+    polynomial_y_coefficients= [0]
+    polynomial_z_coefficients= [0]
+    polynomial_yaw_coefficients= [0]
 
     # action scaling
     # moment_scale_xy = 1.0
@@ -229,10 +246,22 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         # Goal State   
         self._desired_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
         self._desired_ori_w = torch.zeros(self.num_envs, 4, device=self.device)
-        self.amplitudes = torch.zeros(self.num_envs, 4, device=self.device)
-        self.frequencies = torch.zeros(self.num_envs, 4, device=self.device)
-        self.phases = torch.zeros(self.num_envs, 4, device=self.device)
-        self.offsets = torch.zeros(self.num_envs, 4, device=self.device)
+        # self.amplitudes = torch.zeros(self.num_envs, 4, device=self.device)
+        # self.frequencies = torch.zeros(self.num_envs, 4, device=self.device)
+        # self.phases = torch.zeros(self.num_envs, 4, device=self.device)
+        # self.offsets = torch.zeros(self.num_envs, 4, device=self.device)
+        self.lissajous_amplitudes = torch.tensor(self.cfg.lissajous_amplitudes, device=self.device).tile((self.num_envs, 1))
+        self.lissajous_frequencies = torch.tensor(self.cfg.lissajous_frequencies, device=self.device).tile((self.num_envs, 1))
+        self.lissajous_phases = torch.tensor(self.cfg.lissajous_phases, device=self.device).tile((self.num_envs, 1))
+        self.lissajous_offsets = torch.tensor(self.cfg.lissajous_offsets, device=self.device).tile((self.num_envs, 1))
+
+        max_coefficients = max(len(self.cfg.polynomial_x_coefficients), len(self.cfg.polynomial_y_coefficients), len(self.cfg.polynomial_z_coefficients), len(self.cfg.polynomial_yaw_coefficients))
+        self.polynomial_coefficients = torch.zeros(self.num_envs, 4, max_coefficients, device=self.device)
+        self.polynomial_coefficients[:, 0, :len(self.cfg.polynomial_x_coefficients)] = torch.tensor(self.cfg.polynomial_x_coefficients, device=self.device).tile((self.num_envs, 1))
+        self.polynomial_coefficients[:, 1, :len(self.cfg.polynomial_y_coefficients)] = torch.tensor(self.cfg.polynomial_y_coefficients, device=self.device).tile((self.num_envs, 1))
+        self.polynomial_coefficients[:, 2, :len(self.cfg.polynomial_z_coefficients)] = torch.tensor(self.cfg.polynomial_z_coefficients, device=self.device).tile((self.num_envs, 1))
+        self.polynomial_coefficients[:, 3, :len(self.cfg.polynomial_yaw_coefficients)] = torch.tensor(self.cfg.polynomial_yaw_coefficients, device=self.device).tile((self.num_envs, 1))
+        import code; code.interact(local=locals())
 
         # Time(needed for trajectory tracking)
         self._time = torch.zeros(self.num_envs, 1, device=self.device)
@@ -380,22 +409,32 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         if len(env_ids) == 0 or env_ids.size(0) == 0:
             return
 
+        current_time = self.episode_length_buf[env_ids]
+        future_timesteps = torch.arange(0, 1+self.cfg.trajectory_horizon, device=self.device)
+        time = (current_time + future_timesteps.unsqueeze(0)) * self.cfg.traj_update_dt
+
         # Update the desired position and orientation based on the trajectory
         if self.cfg.trajectory_type == "lissaajous":
-            time = self.episode_length_buf[env_ids] * self.physics_dt
-            self._desired_pos_w[env_ids ,0] = eval_sinusoid(time, self.amplitudes[env_ids,0], self.frequencies[env_ids,0], self.phases[env_ids,0], self.offsets[env_ids,0])
-            self._desired_pos_w[env_ids,1] = eval_sinusoid(time, self.amplitudes[env_ids,1], self.frequencies[env_ids,1], self.phases[env_ids,1], self.offsets[env_ids,1])
-            self._desired_pos_w[env_ids,2] = eval_sinusoid(time, self.amplitudes[env_ids,2], self.frequencies[env_ids,2], self.phases[env_ids,2], self.offsets[env_ids,2])
+            pos_traj, yaw_traj = traj_utils.eval_lissajous_curve(time, self.lissajous_amplitudes, self.lissajous_frequencies, self.lissajous_phases, self.lissajous_offsets, derivatives=4)
 
-            self._desired_pos_w[env_ids,:2] += self._terrain.env_origins[env_ids,:2]
-            yaw_des = eval_sinusoid(time, self.amplitudes[env_ids,3], self.frequencies[env_ids,3], self.phases[env_ids,3], self.offsets[env_ids,3])
-            # print("Yaw: ", yaw_des.shape)
-            self._desired_ori_w[env_ids] = quat_from_yaw(yaw_des)
+            # self._desired_pos_w[env_ids ,0] = eval_sinusoid(time, self.amplitudes[env_ids,0], self.frequencies[env_ids,0], self.phases[env_ids,0], self.offsets[env_ids,0])
+            # self._desired_pos_w[env_ids,1] = eval_sinusoid(time, self.amplitudes[env_ids,1], self.frequencies[env_ids,1], self.phases[env_ids,1], self.offsets[env_ids,1])
+            # self._desired_pos_w[env_ids,2] = eval_sinusoid(time, self.amplitudes[env_ids,2], self.frequencies[env_ids,2], self.phases[env_ids,2], self.offsets[env_ids,2])
+
+            # self._desired_pos_w] += self._terrain.env_origins]
+            # yaw_des = eval_sinusoid(time, self.amplitudes[env_ids,3], self.frequencies[env_ids,3], self.phases[env_ids,3], self.offsets[env_ids,3])
+            # # print("Yaw: ", yaw_des.shape)
+            # self._desired_ori_w[env_ids] = quat_from_yaw(yaw_des)
             # print("self._desired_ori_w: ", self._desired_ori_w.shape)
+        elif self.cfg.trajectory_type == "polynomial":
+            pos_traj, yaw_traj = traj_utils.eval_polynomial_curve(time, self.polynomial_coefficients, derivatives=4)
+        elif self.cfg.trajectory_type == "combined":
+            pos_lissajous, yaw_lissajous = traj_utils.eval_lissajous_curve(time, self.lissajous_amplitudes, self.lissajous_frequencies, self.lissajous_phases, self.lissajous_offsets, derivatives=4)
+            pos_poly, yaw_poly = traj_utils.eval_polynomial_curve(time, self.polynomial_coefficients, derivatives=4)
+            pos_traj = pos_lissajous + pos_poly
+            yaw_traj = yaw_lissajous + yaw_poly
         else:
             raise NotImplementedError("Trajectory type not implemented")
-        
-       
 
     def _get_observations(self) -> torch.Dict[str, torch.Tensor | torch.Dict[str, torch.Tensor]]:
         """
@@ -661,42 +700,42 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         # print("[Isaac Env: Reset] Desired Pos: ", self._desired_pos_w.shape)
         # print("[Isaac Env: Reset] eval_sinusoid: ", eval_sinusoid(self._time, 1.0, 1.0, 0.0, 0.0).shape)
         # local_param_list = self.cfg.param_list * env_ids.shape[0]
-        if self.cfg.goal_cfg == "fixed":
-            self.amplitudes[env_ids, 0] = torch.tensor([self.cfg.trajectory_params["x_amp"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
-            self.amplitudes[env_ids, 1] = torch.tensor([self.cfg.trajectory_params["y_amp"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
-            self.amplitudes[env_ids, 2] = torch.tensor([self.cfg.trajectory_params["z_amp"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
-            self.amplitudes[env_ids, 3] = torch.tensor([self.cfg.trajectory_params["yaw_amp"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
-            self.frequencies[env_ids, 0] = torch.tensor([self.cfg.trajectory_params["x_freq"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
-            self.frequencies[env_ids, 1] = torch.tensor([self.cfg.trajectory_params["y_freq"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
-            self.frequencies[env_ids, 2] = torch.tensor([self.cfg.trajectory_params["z_freq"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
-            self.frequencies[env_ids, 3] = torch.tensor([self.cfg.trajectory_params["yaw_freq"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
-            self.phases[env_ids, 0] = torch.tensor([self.cfg.trajectory_params["x_phase"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
-            self.phases[env_ids, 1] = torch.tensor([self.cfg.trajectory_params["y_phase"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
-            self.phases[env_ids, 2] = torch.tensor([self.cfg.trajectory_params["z_phase"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
-            self.phases[env_ids, 3] = torch.tensor([self.cfg.trajectory_params["yaw_phase"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
-            self.offsets[env_ids, 0] = torch.tensor([self.cfg.trajectory_params["x_offset"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
-            self.offsets[env_ids, 1] = torch.tensor([self.cfg.trajectory_params["y_offset"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
-            self.offsets[env_ids, 2] = torch.tensor([self.cfg.trajectory_params["z_offset"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
-            self.offsets[env_ids, 3] = torch.tensor([self.cfg.trajectory_params["yaw_offset"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
-            # print("amplitudes: ", self.amplitudes.shape)
-            # print("frequencies: ", self.frequencies)
-        elif self.cfg.goal_cfg == "rand":
-            self.amplitudes[env_ids, 0] = torch.zeros_like(self.amplitudes[env_ids, 0]).uniform_(-2.0, 2.0)
-            self.amplitudes[env_ids, 1] = torch.zeros_like(self.amplitudes[env_ids, 1]).uniform_(-2.0, 2.0)
-            self.amplitudes[env_ids, 2] = torch.zeros_like(self.amplitudes[env_ids, 2]).uniform_(0.5, 1.5)
-            self.amplitudes[env_ids, 3] = torch.zeros_like(self.amplitudes[env_ids, 3]).uniform_(-2.0, 2.0)
-            self.frequencies[env_ids, 0] = torch.zeros_like(self.frequencies[env_ids, 0]).uniform_(0.5, 2.0)
-            self.frequencies[env_ids, 1] = torch.zeros_like(self.frequencies[env_ids, 1]).uniform_(0.5, 2.0)
-            self.frequencies[env_ids, 2] = torch.zeros_like(self.frequencies[env_ids, 2]).uniform_(0.5, 2.0)
-            self.frequencies[env_ids, 3] = torch.zeros_like(self.frequencies[env_ids, 3]).uniform_(0.5, 2.0)
-            self.phases[env_ids, 0] = torch.zeros_like(self.phases[env_ids, 0]).uniform_(0.0, 2.0*3.14159)
-            self.phases[env_ids, 1] = torch.zeros_like(self.phases[env_ids, 1]).uniform_(0.0, 2.0*3.14159)
-            self.phases[env_ids, 2] = torch.zeros_like(self.phases[env_ids, 2]).uniform_(0.0, 2.0*3.14159)
-            self.phases[env_ids, 3] = torch.zeros_like(self.phases[env_ids, 3]).uniform_(0.0, 2.0*3.14159)
-            self.offsets[env_ids, 0] = torch.zeros_like(self.offsets[env_ids, 0]).uniform_(-2.0, 2.0)
-            self.offsets[env_ids, 1] = torch.zeros_like(self.offsets[env_ids, 1]).uniform_(-2.0, 2.0)
-            self.offsets[env_ids, 2] = torch.zeros_like(self.offsets[env_ids, 2]).uniform_(0.5, 1.5)
-            self.offsets[env_ids, 3] = torch.zeros_like(self.offsets[env_ids, 3]).uniform_(-2.0, 2.0)
+        # if self.cfg.goal_cfg == "fixed":
+        #     self.amplitudes[env_ids, 0] = torch.tensor([self.cfg.trajectory_params["x_amp"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
+        #     self.amplitudes[env_ids, 1] = torch.tensor([self.cfg.trajectory_params["y_amp"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
+        #     self.amplitudes[env_ids, 2] = torch.tensor([self.cfg.trajectory_params["z_amp"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
+        #     self.amplitudes[env_ids, 3] = torch.tensor([self.cfg.trajectory_params["yaw_amp"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
+        #     self.frequencies[env_ids, 0] = torch.tensor([self.cfg.trajectory_params["x_freq"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
+        #     self.frequencies[env_ids, 1] = torch.tensor([self.cfg.trajectory_params["y_freq"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
+        #     self.frequencies[env_ids, 2] = torch.tensor([self.cfg.trajectory_params["z_freq"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
+        #     self.frequencies[env_ids, 3] = torch.tensor([self.cfg.trajectory_params["yaw_freq"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
+        #     self.phases[env_ids, 0] = torch.tensor([self.cfg.trajectory_params["x_phase"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
+        #     self.phases[env_ids, 1] = torch.tensor([self.cfg.trajectory_params["y_phase"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
+        #     self.phases[env_ids, 2] = torch.tensor([self.cfg.trajectory_params["z_phase"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
+        #     self.phases[env_ids, 3] = torch.tensor([self.cfg.trajectory_params["yaw_phase"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
+        #     self.offsets[env_ids, 0] = torch.tensor([self.cfg.trajectory_params["x_offset"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
+        #     self.offsets[env_ids, 1] = torch.tensor([self.cfg.trajectory_params["y_offset"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
+        #     self.offsets[env_ids, 2] = torch.tensor([self.cfg.trajectory_params["z_offset"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
+        #     self.offsets[env_ids, 3] = torch.tensor([self.cfg.trajectory_params["yaw_offset"]], device=self.device, requires_grad=False).float().tile((self.num_envs, 1)).squeeze()
+        #     # print("amplitudes: ", self.amplitudes.shape)
+        #     # print("frequencies: ", self.frequencies)
+        # elif self.cfg.goal_cfg == "rand":
+        #     self.amplitudes[env_ids, 0] = torch.zeros_like(self.amplitudes[env_ids, 0]).uniform_(-2.0, 2.0)
+        #     self.amplitudes[env_ids, 1] = torch.zeros_like(self.amplitudes[env_ids, 1]).uniform_(-2.0, 2.0)
+        #     self.amplitudes[env_ids, 2] = torch.zeros_like(self.amplitudes[env_ids, 2]).uniform_(0.5, 1.5)
+        #     self.amplitudes[env_ids, 3] = torch.zeros_like(self.amplitudes[env_ids, 3]).uniform_(-2.0, 2.0)
+        #     self.frequencies[env_ids, 0] = torch.zeros_like(self.frequencies[env_ids, 0]).uniform_(0.5, 2.0)
+        #     self.frequencies[env_ids, 1] = torch.zeros_like(self.frequencies[env_ids, 1]).uniform_(0.5, 2.0)
+        #     self.frequencies[env_ids, 2] = torch.zeros_like(self.frequencies[env_ids, 2]).uniform_(0.5, 2.0)
+        #     self.frequencies[env_ids, 3] = torch.zeros_like(self.frequencies[env_ids, 3]).uniform_(0.5, 2.0)
+        #     self.phases[env_ids, 0] = torch.zeros_like(self.phases[env_ids, 0]).uniform_(0.0, 2.0*3.14159)
+        #     self.phases[env_ids, 1] = torch.zeros_like(self.phases[env_ids, 1]).uniform_(0.0, 2.0*3.14159)
+        #     self.phases[env_ids, 2] = torch.zeros_like(self.phases[env_ids, 2]).uniform_(0.0, 2.0*3.14159)
+        #     self.phases[env_ids, 3] = torch.zeros_like(self.phases[env_ids, 3]).uniform_(0.0, 2.0*3.14159)
+        #     self.offsets[env_ids, 0] = torch.zeros_like(self.offsets[env_ids, 0]).uniform_(-2.0, 2.0)
+        #     self.offsets[env_ids, 1] = torch.zeros_like(self.offsets[env_ids, 1]).uniform_(-2.0, 2.0)
+        #     self.offsets[env_ids, 2] = torch.zeros_like(self.offsets[env_ids, 2]).uniform_(0.5, 1.5)
+        #     self.offsets[env_ids, 3] = torch.zeros_like(self.offsets[env_ids, 3]).uniform_(-2.0, 2.0)
 
 
 
