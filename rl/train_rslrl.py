@@ -74,7 +74,8 @@ def custom_yaml_dump(data, filename):
     if not os.path.exists(os.path.dirname(filename)):
             os.makedirs(os.path.dirname(filename), exist_ok=True)
 
-    dumper = yaml.YAML(typ='safe')
+    # dumper = yaml.YAML(typ='safe')
+    dumper = yaml.YAML()
     dumper.dump(data, open(filename, "w"))
 
 
@@ -152,13 +153,13 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         runner.load(resume_path)
 
     # dump the configuration into log-directory
-    # dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
-    # dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
+    dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
+    dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
     # dump_pickle(os.path.join(log_dir, "params", "env.pkl"), env_cfg)
     # dump_pickle(os.path.join(log_dir, "params", "agent.pkl"), agent_cfg)
     
-    custom_yaml_dump(env_cfg.to_dict(), os.path.join(log_dir, "params", "env.yaml"))
-    custom_yaml_dump(agent_cfg.to_dict(), os.path.join(log_dir, "params", "agent.yaml"))
+    # custom_yaml_dump(env_cfg.to_dict(), os.path.join(log_dir, "params", "env.yaml"))
+    # custom_yaml_dump(agent_cfg.to_dict(), os.path.join(log_dir, "params", "agent.yaml"))
 
     # run training
     runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
