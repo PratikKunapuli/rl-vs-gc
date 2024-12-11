@@ -222,7 +222,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         # env_cfg.trajectory_params["yaw_amp"] = 1.0
         # env_cfg.trajectory_params["yaw_freq"] = 1.0
         # env_cfg.traj_update_dt = 1.0
-        env_cfg.traj_update_dt = 2.0
+        # env_cfg.traj_update_dt = 2.0
 
     env_cfg.seed = args_cli.seed
 

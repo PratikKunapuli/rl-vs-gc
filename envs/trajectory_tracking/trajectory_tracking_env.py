@@ -228,6 +228,8 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         self._desired_ori_w = torch.zeros(self.num_envs, 4, device=self.device)
         self._desired_pos_traj_w = torch.zeros(self.num_envs, 1+self.cfg.trajectory_horizon, 3, device=self.device)
         self._desired_ori_traj_w = torch.zeros(self.num_envs, 1+self.cfg.trajectory_horizon, 4, device=self.device)
+        self._pos_traj = torch.zeros(5, self.num_envs, 1+self.cfg.trajectory_horizon, 3, device=self.device)
+        self._yaw_traj = torch.zeros(5, self.num_envs, 1+self.cfg.trajectory_horizon, device=self.device)
         self._pos_shift = torch.zeros(self.num_envs, 3, device=self.device)
         self._yaw_shift = torch.zeros(self.num_envs, 1, device=self.device)
         # self.amplitudes = torch.zeros(self.num_envs, 4, device=self.device)
@@ -436,6 +438,9 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
             yaw_traj = yaw_lissajous + yaw_poly
         else:
             raise NotImplementedError("Trajectory type not implemented")
+    
+        self._pos_traj = pos_traj
+        self._yaw_traj = yaw_traj
         
         if self.cfg.random_shift_trajectory:
             # Ensure the shapes are compatible for broadcasting
@@ -486,6 +491,12 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
             goal_pos_w, goal_ori_w
         )
 
+        future_pos_error_b = []
+        for i in range(self.cfg.trajectory_horizon):
+            waypoint_pos_error_b, waypoint_ori_error_b = subtract_frame_transforms(base_pos_w, base_ori_w, self._desired_pos_traj_w[:, i+1].squeeze(), self._desired_ori_traj_w[:, i+1].squeeze())
+            future_pos_error_b.append(waypoint_pos_error_b) # append (n, 3) tensor
+        future_pos_error_b = torch.stack(future_pos_error_b, dim=1) # stack to (n, horizon, 3) tensor
+
         # Compute the orientation error as a yaw error in the body frame
         # goal_yaw_w = yaw_quat(self._desired_ori_w)
         goal_yaw_w = yaw_quat(goal_ori_w)
@@ -510,7 +521,8 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
             grav_vector_b = torch.zeros(self.num_envs, 0, device=self.device)
         
         # Compute the linear and angular velocities of the end-effector in body frame
-        lin_vel_b = quat_rotate_inverse(base_ori_w, lin_vel_w)
+        lin_vel_error_w = self._pos_traj[1, :, :, 0] - lin_vel_w
+        lin_vel_b = quat_rotate_inverse(base_ori_w, lin_vel_error_w)
         ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_w)
 
         # Compute the joint states
@@ -537,8 +549,9 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
                 wrist_joint_pos,                            # (num_envs, 1)
                 shoulder_joint_vel,                         # (num_envs, 1)
                 wrist_joint_vel,                            # (num_envs, 1)
+                future_pos_error_b.flatten(-2, -1),         # (num_envs, horizon * 3)
             ],
-            dim=-1                                          # (num_envs, 22)
+            dim=-1                                          # (num_envs, 22 + 3*horizon)
         )
 
         
@@ -631,7 +644,8 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         combined_distance = combined_reward
 
         # Velocity error components, used for stabliization tuning
-        lin_vel_b = quat_rotate_inverse(base_ori_w, lin_vel_w)
+        lin_vel_error_w = self._pos_traj[1, :, :, 0] - lin_vel_w
+        lin_vel_b = quat_rotate_inverse(base_ori_w, lin_vel_error_w)
         ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_w)
         # lin_vel_error = torch.linalg.norm(lin_vel_b, dim=-1)
         # ang_vel_error = torch.linalg.norm(ang_vel_b, dim=-1)
