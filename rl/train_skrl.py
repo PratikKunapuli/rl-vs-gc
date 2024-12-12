@@ -73,6 +73,8 @@ import os
 import random
 from datetime import datetime
 
+import envs
+
 import skrl
 from packaging import version
 
@@ -106,7 +108,7 @@ from omni.isaac.lab_tasks.utils.wrappers.skrl import SkrlVecEnvWrapper
 
 # config shortcuts
 algorithm = args_cli.algorithm.lower()
-agent_cfg_entry_point = "skrl_cfg_entry_point" if algorithm in ["ppo"] else f"skrl_{algorithm}_cfg_entry_point"
+agent_cfg_entry_point = "skrl_cfg_entry_point"
 
 
 @hydra_task_config(args_cli.task, agent_cfg_entry_point)
@@ -186,7 +188,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         env = multi_agent_to_single_agent(env)
 
     # wrap around environment for skrl
-    env = SkrlVecEnvWrapper(env, ml_framework=args_cli.ml_framework)  # same as: `wrap_env(env, wrapper="auto")`
+    env = SkrlVecEnvWrapper(env, ml_framework=args_cli.ml_framework, wrapper="isaaclab-single-agent")  # same as: `wrap_env(env, wrapper="auto")`
 
     # configure and instantiate the skrl runner
     # https://skrl.readthedocs.io/en/latest/api/utils/runner.html

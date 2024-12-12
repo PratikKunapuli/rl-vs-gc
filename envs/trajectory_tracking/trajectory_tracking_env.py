@@ -180,9 +180,12 @@ class AerialManipulator0DOFTrajectoryTrackingEnvCfg(AerialManipulatorTrajectoryT
     # env
     num_actions = 4
     num_joints = 0
-    num_observations = 12 # TODO: Need to update this..
+    num_observations = 91 # TODO: Need to update this..
     # 3(vel) + 3(ang vel) + 3(pos) + 9(ori) = 18
     # 3(vel) + 3(ang vel) + 3(pos) + 3(grav vector body frame) = 12
+
+    action_space= gym.spaces.Box(low=-1.0, high=1.0, shape=(4,))
+    observation_space= gym.spaces.Box(low=-np.inf, high=np.inf, shape=(91,))
     
     # robot
     robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
@@ -193,9 +196,12 @@ class AerialManipulator0DOFDebugTrajectoryTrackingEnvCfg(AerialManipulatorTrajec
     # env
     num_actions = 4
     num_joints = 0
-    num_observations = 12 # TODO: Need to update this..
+    num_observations = 91 # TODO: Need to update this..
     # 3(vel) + 3(ang vel) + 3(pos) + 9(ori) = 18
     # 3(vel) + 3(ang vel) + 3(pos) + 3(grav vector body frame) = 12
+
+    action_space= gym.spaces.Box(low=-1.0, high=1.0, shape=(4,))
+    observation_space= gym.spaces.Box(low=-np.inf, high=np.inf, shape=(91,))
     
     # robot
     robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_DEBUG_CFG.replace(prim_path="/World/envs/env_.*/Robot")
