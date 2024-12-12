@@ -100,9 +100,13 @@ class AerialManipulatorTrajectoryTrackingEnvBaseCfg(DirectRLEnvCfg):
     random_shift_trajectory = True
 
     lissajous_amplitudes = [0, 0, 0, 0]
+    lissajous_amplitudes_rand_ranges = [0.0, 0.0, 0.0, 0.0]
     lissajous_frequencies = [0, 0, 0, 0]
+    lissajous_frequencies_rand_ranges = [0.0, 0.0, 0.0, 0.0]
     lissajous_phases = [0, 0, 0, 0]
-    lissajous_offsets = [0, 0, 0, 0]
+    lissajous_phases_rand_ranges = [0.0, 0.0, 0.0, 0.0]
+    lissajous_offsets = [0, 0, 3.0, 0]
+    lissajous_offsets_rand_ranges = [0.0, 0.0, 0.0, 0.0]
 
     polynomial_x_coefficients= [0]
     polynomial_y_coefficients= [0]
@@ -168,6 +172,8 @@ class AerialManipulatorTrajectoryTrackingEnvBaseCfg(DirectRLEnvCfg):
 
     eval_mode = False
     gc_mode = False
+    viz_mode = "triad" # or robot
+    viz_history_length = 100
 
 @configclass
 class AerialManipulator0DOFTrajectoryTrackingEnvCfg(AerialManipulatorTrajectoryTrackingEnvBaseCfg):
@@ -236,10 +242,14 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         # self.frequencies = torch.zeros(self.num_envs, 4, device=self.device)
         # self.phases = torch.zeros(self.num_envs, 4, device=self.device)
         # self.offsets = torch.zeros(self.num_envs, 4, device=self.device)
-        self.lissajous_amplitudes = torch.tensor(self.cfg.lissajous_amplitudes, device=self.device).tile((self.num_envs, 1))
-        self.lissajous_frequencies = torch.tensor(self.cfg.lissajous_frequencies, device=self.device).tile((self.num_envs, 1))
-        self.lissajous_phases = torch.tensor(self.cfg.lissajous_phases, device=self.device).tile((self.num_envs, 1))
-        self.lissajous_offsets = torch.tensor(self.cfg.lissajous_offsets, device=self.device).tile((self.num_envs, 1))
+        self.lissajous_amplitudes = torch.tensor(self.cfg.lissajous_amplitudes, device=self.device).tile((self.num_envs, 1)).float()
+        self.lissajous_amplitudes_rand_ranges = torch.tensor(self.cfg.lissajous_amplitudes_rand_ranges, device=self.device).float()
+        self.lissajous_frequencies = torch.tensor(self.cfg.lissajous_frequencies, device=self.device).tile((self.num_envs, 1)).float()
+        self.lissajous_frequencies_rand_ranges = torch.tensor(self.cfg.lissajous_frequencies_rand_ranges, device=self.device).float()
+        self.lissajous_phases = torch.tensor(self.cfg.lissajous_phases, device=self.device).tile((self.num_envs, 1)).float()
+        self.lissajous_phases_rand_ranges = torch.tensor(self.cfg.lissajous_phases_rand_ranges, device=self.device).float()
+        self.lissajous_offsets = torch.tensor(self.cfg.lissajous_offsets, device=self.device).tile((self.num_envs, 1)).float()
+        self.lissajous_offsets_rand_ranges = torch.tensor(self.cfg.lissajous_offsets_rand_ranges, device=self.device).float()
 
         max_coefficients = max(len(self.cfg.polynomial_x_coefficients), len(self.cfg.polynomial_y_coefficients), len(self.cfg.polynomial_z_coefficients), len(self.cfg.polynomial_yaw_coefficients))
         self.polynomial_coefficients = torch.zeros(self.num_envs, 4, max_coefficients, device=self.device)
@@ -347,8 +357,18 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         self._grav_vector = torch.tensor(self.cfg.sim.gravity, device=self.device).tile((self.num_envs, 1))
 
         # Visualization marker data
-        self._frame_positions = torch.zeros(self.num_envs, 2, 3, device=self.device)
-        self._frame_orientations = torch.zeros(self.num_envs, 2, 4, device=self.device)
+        if self.cfg.viz_mode == "triad" or self.cfg.viz_mode == "frame":
+            self._frame_positions = torch.zeros(self.num_envs, 2, 3, device=self.device)
+            self._frame_orientations = torch.zeros(self.num_envs, 2, 4, device=self.device)
+        elif self.cfg.viz_mode == "robot":
+            self._robot_positions = torch.zeros(self.num_envs, 3, device=self.device)
+            self._robot_orientations = torch.zeros(self.num_envs, 4, device=self.device)
+            self._robot_pos_history = torch.zeros(self.num_envs, self.cfg.viz_history_length, 3, device=self.device)
+            self._robot_ori_history = torch.zeros(self.num_envs, self.cfg.viz_history_length, 4, device=self.device)
+            self._goal_pos_history = torch.zeros(self.num_envs, self.cfg.viz_history_length, 3, device=self.device)
+            self._goal_ori_history = torch.zeros(self.num_envs, self.cfg.viz_history_length, 4, device=self.device)
+        else:
+            raise ValueError("Visualization mode not recognized: ", self.cfg.viz_mode)
 
         self.local_num_envs = self.num_envs
 
@@ -566,6 +586,12 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         # print("[Isaac Env: Observations] EE pos: ", ee_pos_w)
 
         if self.cfg.gc_mode:
+            future_com_pos_w = []
+            for i in range(self.cfg.trajectory_horizon):
+                des_com_pos_w, des_com_ori_w = self.convert_ee_goal_to_com_goal(self._desired_pos_traj_w[:, i+1].squeeze(), self._desired_ori_traj_w[:, i+1].squeeze())
+                future_com_pos_w.append(des_com_pos_w)
+            future_com_pos_w = torch.stack(future_com_pos_w, dim=1)
+
             gc_obs = torch.cat(
                 [
                     quad_pos_w,
@@ -574,6 +600,7 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
                     quad_ang_vel_w,
                     goal_pos_w,
                     yaw_from_quat(goal_ori_w).unsqueeze(1),
+                    future_com_pos_w.flatten(-2, -1) # (num_envs, horizon * 3)
                 ],
                 dim=-1
             )
@@ -785,13 +812,11 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         elif self.cfg.eval_mode:
             self.episode_length_buf[env_ids] = 0
 
-
-        # Rerandomize the random shift if needed
-        if self.cfg.random_shift_trajectory:
-            self._pos_shift[env_ids] = torch.zeros_like(self._pos_shift[env_ids]).uniform_(-self.cfg.goal_pos_range, self.cfg.goal_pos_range)
-            self._yaw_shift[env_ids] = torch.zeros_like(self._yaw_shift[env_ids]).uniform_(-self.cfg.goal_yaw_range, self.cfg.goal_yaw_range)
-        
+        # Update the trajectories for the reset environments
+        self.initialize_trajectories(env_ids)
         self.update_goal_state()
+
+        
 
         # Reset Robot state
         self._robot.reset()
@@ -817,11 +842,38 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
             default_root_state = self._robot.data.default_root_state[env_ids]
             default_root_state[:,2] = 3.0 * torch.ones_like(default_root_state[:, 2])
         default_root_state[:, :3] += self._terrain.env_origins[env_ids]
+
+        # Update viz_histories
+        if self.cfg.viz_mode == "robot":
+            self._robot_pos_history[env_ids] = default_root_state[:, :3].unsqueeze(1).tile(1, self.cfg.viz_history_length, 1)
+            self._robot_ori_history[env_ids] = default_root_state[:, 3:7].unsqueeze(1).tile(1, self.cfg.viz_history_length, 1)
+            self._goal_pos_history[env_ids] = self._desired_pos_w[env_ids].unsqueeze(1).tile(1, self.cfg.viz_history_length, 1)
+            self._goal_ori_history[env_ids] = self._desired_ori_w[env_ids].unsqueeze(1).tile(1, self.cfg.viz_history_length, 1)
         
         # if self.cfg.num_joints > 0:
         #     default_root_state[:, 3:7] = torch.tensor([0.5, -0.5, -0.5, 0.5], device=self.device, requires_grad=False).float().tile((env_ids.size(0), 1))
         self._robot.write_root_pose_to_sim(default_root_state[:, :7], env_ids=env_ids)
         self._robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids=env_ids)
+
+    def initialize_trajectories(self, env_ids):
+        """
+        Initializes the trajectory for the environment ids.
+        """
+        num_envs = env_ids.size(0)
+        random_amplitudes = ((torch.rand(num_envs, 4, device=self.device)) * 2.0 - 1.0) * self.lissajous_amplitudes_rand_ranges
+        random_frequencies = ((torch.rand(num_envs, 4, device=self.device))) * self.lissajous_frequencies_rand_ranges
+        random_phases = ((torch.rand(num_envs, 4, device=self.device)) * 2.0 - 1.0) * self.lissajous_phases_rand_ranges
+        random_offsets = ((torch.rand(num_envs, 4, device=self.device)) * 2.0 - 1.0) * self.lissajous_offsets_rand_ranges
+        
+        self.lissajous_amplitudes[env_ids] = torch.tensor(self.cfg.lissajous_amplitudes, device=self.device).tile((num_envs, 1)).float() + random_amplitudes
+        self.lissajous_frequencies[env_ids] = torch.tensor(self.cfg.lissajous_frequencies, device=self.device).tile((num_envs, 1)).float() + random_frequencies
+        self.lissajous_phases[env_ids] = torch.tensor(self.cfg.lissajous_phases, device=self.device).tile((num_envs, 1)).float() + random_phases
+        self.lissajous_offsets[env_ids] = torch.tensor(self.cfg.lissajous_offsets, device=self.device).tile((num_envs, 1)).float() + random_offsets
+
+        # # Rerandomize the random shift if needed
+        # if self.cfg.random_shift_trajectory:
+        #     self._pos_shift[env_ids] = torch.zeros_like(self._pos_shift[env_ids]).uniform_(-self.cfg.goal_pos_range, self.cfg.goal_pos_range)
+        #     self._yaw_shift[env_ids] = torch.zeros_like(self._yaw_shift[env_ids]).uniform_(-self.cfg.goal_yaw_range, self.cfg.goal_yaw_range)
     
     def get_frame_state_from_task(self, task_body:str) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         if task_body == "root":
@@ -866,6 +918,10 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
             raise ValueError("Invalid goal body: ", goal_body)
 
         return goal_pos_w, goal_ori_w
+    
+    def convert_ee_goal_to_com_goal(self, ee_pos_w: torch.Tensor, ee_ori_w: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        desired_pos, desired_yaw = math_utils.compute_desired_pose_from_transform(ee_pos_w, ee_ori_w, self.com_pos_e, 0)
+        return desired_pos, quat_from_yaw(desired_yaw)
 
     def _setup_scene(self):
         self._robot = Articulation(self.cfg.robot)
@@ -885,12 +941,31 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         # create markers if necessary for the first tome
         if debug_vis:
             if not hasattr(self, "frame_visualizer"):
-                frame_marker_cfg = VisualizationMarkersCfg(prim_path="/Visuals/Markers",
-                                        markers={
-                                        "frame": sim_utils.UsdFileCfg(
-                                            usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/UIElements/frame_prim.usd",
-                                            scale=(0.1, 0.1, 0.1),
-                                        ),})
+                if self.cfg.viz_mode == "triad" or self.cfg.viz_mode == "frame": 
+                    frame_marker_cfg = VisualizationMarkersCfg(prim_path="/Visuals/Markers",
+                                            markers={
+                                            "frame": sim_utils.UsdFileCfg(
+                                                usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/UIElements/frame_prim.usd",
+                                                scale=(0.1, 0.1, 0.1),
+                                            ),})
+                elif self.cfg.viz_mode == "robot":
+                    frame_marker_cfg = VisualizationMarkersCfg(prim_path="/Visuals/Markers",
+                                            markers={
+                                            "robot_mesh": sim_utils.UsdFileCfg(
+                                                usd_path=self.cfg.robot.spawn.usd_path,
+                                                scale=(1.0, 1.0, 1.0),
+                                                visual_material=sim_utils.GlassMdlCfg(glass_color=(0.0, 0.1, 0.0)),
+                                            ),
+                                            "robot_history": sim_utils.SphereCfg(
+                                                radius=0.01,
+                                                visual_material=sim_utils.GlassMdlCfg(glass_color=(0.05, 0.05, 0.05)),
+                                            ),
+                                            "goal_history": sim_utils.SphereCfg(
+                                                radius=0.01,
+                                                visual_material=sim_utils.GlassMdlCfg(glass_color=(0.0, 0.1, 0.0)),
+                                            ),})
+                else:
+                    raise ValueError("Visualization mode not recognized: ", self.cfg.viz_mode)
     
                 self.frame_visualizer = VisualizationMarkers(frame_marker_cfg)
                 # set their visibility to true
@@ -903,12 +978,35 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
     def _debug_vis_callback(self, event):
         # update the markers
         # Update frame positions for debug visualization
-        self._frame_positions[:, 0] = self._robot.data.root_pos_w
-        self._frame_positions[:, 1] = self._desired_pos_w
-        # self._frame_positions[:, 2] = self._robot.data.body_pos_w[:, self._body_id].squeeze(1)
-        # self._frame_positions[:, 2] = com_pos_w
-        self._frame_orientations[:, 0] = self._robot.data.root_quat_w
-        self._frame_orientations[:, 1] = self._desired_ori_w
-        # self._frame_orientations[:, 2] = self._robot.data.body_quat_w[:, self._body_id].squeeze(1)
-        # self._frame_orientations[:, 2] = com_ori_w
-        self.frame_visualizer.visualize(self._frame_positions.flatten(0, 1), self._frame_orientations.flatten(0,1))
+        if self.cfg.viz_mode == "triad" or self.cfg.viz_mode == "frame":
+            self._frame_positions[:, 0] = self._robot.data.root_pos_w
+            self._frame_positions[:, 1] = self._desired_pos_w
+            # self._frame_positions[:, 2] = self._robot.data.body_pos_w[:, self._body_id].squeeze(1)
+            # self._frame_positions[:, 2] = com_pos_w
+            self._frame_orientations[:, 0] = self._robot.data.root_quat_w
+            self._frame_orientations[:, 1] = self._desired_ori_w
+            # self._frame_orientations[:, 2] = self._robot.data.body_quat_w[:, self._body_id].squeeze(1)
+            # self._frame_orientations[:, 2] = com_ori_w
+            self.frame_visualizer.visualize(self._frame_positions.flatten(0, 1), self._frame_orientations.flatten(0,1))
+        elif self.cfg.viz_mode == "robot":
+            self._robot_positions = self._desired_pos_w
+            self._robot_orientations = self._desired_ori_w
+            # self.frame_visualizer.visualize(self._robot_positions, self._robot_orientations, marker_indices=[0]*self.num_envs)
+
+            self._goal_pos_history = self._goal_pos_history.roll(1, dims=1)
+            self._goal_pos_history[:, 0] = self._desired_pos_w
+            self._goal_ori_history = self._goal_ori_history.roll(1, dims=1)
+            self._goal_ori_history[:, 0] = self._desired_ori_w
+            # self.frame_visualizer.visualize(self._goal_pos_history.flatten(0, 1), self._goal_ori_history.flatten(0, 1),  marker_indices=[2]*self.num_envs*10)
+
+            self._robot_pos_history = self._robot_pos_history.roll(1, dims=1)
+            self._robot_pos_history[:, 0] = self._robot.data.root_pos_w
+            self._robot_ori_history = self._robot_ori_history.roll(1, dims=1)
+            self._robot_ori_history[:, 0] = self._robot.data.root_quat_w
+            # self.frame_visualizer.visualize(self._robot_pos_history.flatten(0, 1), self._robot_ori_history.flatten(0, 1),  marker_indices=[1]*self.num_envs*10)
+
+            translation_pos = torch.cat([self._robot_positions, self._robot_pos_history.flatten(0, 1), self._goal_pos_history.flatten(0, 1)], dim=0)
+            translation_ori = torch.cat([self._robot_orientations, self._robot_ori_history.flatten(0, 1), self._goal_ori_history.flatten(0, 1)], dim=0)
+            marker_indices = [0]*self.num_envs + [1]*self.num_envs*self.cfg.viz_history_length + [2]*self.num_envs*self.cfg.viz_history_length
+            self.frame_visualizer.visualize(translation_pos, translation_ori, marker_indices=marker_indices)
+
