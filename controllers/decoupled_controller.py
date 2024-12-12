@@ -6,6 +6,7 @@ import numpy as np
 import omni.isaac.lab.utils.math as isaac_math_utils
 from utils.math_utilities import vee_map, yaw_from_quat, quat_from_yaw, matrix_log
 import utils.flatness_utilities as flat_utils
+import utils.math_utilities as math_utils
 
 def compute_2d_rotation_matrix(thetas: torch.tensor):
     """
@@ -75,7 +76,7 @@ class DecoupledController():
     def __init__(self, num_envs, num_dofs, vehicle_mass, arm_mass, inertia_tensor, pos_offset, ori_offset, print_debug=False, com_pos_w=None, device='cpu',
                   kp_pos_gain_xy=10.0, kp_pos_gain_z=20.0, kd_pos_gain_xy=7.0, kd_pos_gain_z=9.0, 
                   kp_att_gain_xy=400.0, kp_att_gain_z=2.0, kd_att_gain_xy=70.0, kd_att_gain_z=2.0,
-                  tuning_mode=False, use_full_obs=False, skip_precompute=False, vehicle="AM", control_mode="CTBM"):
+                  tuning_mode=False, use_full_obs=False, skip_precompute=False, vehicle="AM", control_mode="CTBM", policy_dt=0.02):
         self.num_envs = num_envs
         self.num_dofs = num_dofs
         self.print_debug = print_debug
@@ -86,6 +87,7 @@ class DecoupledController():
         self.arm_mass = arm_mass
         self.mass = vehicle_mass + arm_mass
         self.com_pos_w = com_pos_w
+        self.policy_dt = policy_dt
 
         self.control_mode = control_mode
 
@@ -226,7 +228,8 @@ class DecoupledController():
         return 2.0 * (command - min_val) / (max_val - min_val) - 1.0
     
     def SE3_Control(self, desired_pos, desired_yaw, 
-                    com_pos, com_ori_quat, com_vel, com_omega, obs):
+                    com_pos, com_ori_quat, com_vel, com_omega, 
+                    ff_vel, ff_acc, obs):
         if self.use_full_obs:
             ee_pos = obs[:, 13:16]
             ee_ori_quat = obs[:, 16:20]
@@ -283,7 +286,7 @@ class DecoupledController():
 
 
         pos_error = com_pos - desired_pos
-        vel_error = com_vel - torch.zeros_like(com_vel)
+        vel_error = com_vel - ff_vel
 
         # pos_error = quad_pos - desired_pos
         # vel_error = quad_vel - torch.zeros_like(quad_vel)
@@ -298,6 +301,7 @@ class DecoupledController():
         # Compute desired Force (batch_size, 3)
         F_des = self.mass * (-self.kp_pos * pos_error + \
                              -self.kd_pos * vel_error + \
+                             ff_acc + \
                             self.gravity.tile(com_pos.shape[0], 1)) # (N, 3)
         
         # print("F_des: ", F_des)
@@ -403,12 +407,25 @@ class DecoupledController():
             batch_size = obs.shape[0]
         else:
             batch_size = obs.shape[0]
+            num_obs = obs.shape[1]
             com_pos = obs[:, :3]
             com_ori_quat = obs[:, 3:7]
             com_vel = obs[:, 7:10]
             com_omega = obs[:, 10:13]
             desired_pos = obs[:, 13:16]
             desired_yaw = obs[:, 16:17]
+
+            if num_obs > 17: # future trajectory is included. 
+                horizon = (num_obs - 17) // 3
+                future_com_pos_w = obs[:, 17:].reshape(batch_size, horizon, 3)
+                feed_forward_velocities = (future_com_pos_w[:, 1:] - future_com_pos_w[:, :-1]) / self.policy_dt
+                feed_forward_accelerations = (feed_forward_velocities[:, 1:] - feed_forward_velocities[:, :-1]) / self.policy_dt
+                ff_vel = feed_forward_velocities[:, 0]
+                ff_acc = feed_forward_accelerations[:, 0]
+            else:
+                ff_vel = torch.zeros(batch_size, 3, device=self.device)
+                ff_acc = torch.zeros(batch_size, 3, device=self.device)
+                
         
         
 
@@ -471,7 +488,7 @@ class DecoupledController():
         desired_joint_angles = self.compute_desired_joint_angles(obs)
 
         
-        collective_thrust, M_des = self.SE3_Control(desired_pos, desired_yaw, com_pos, com_ori_quat, com_vel, com_omega, obs)
+        collective_thrust, M_des = self.SE3_Control(desired_pos, desired_yaw, com_pos, com_ori_quat, com_vel, com_omega, ff_vel, ff_acc, obs)
         # print("M_des pre transform: ", M_des)
         # M_des[:,0] = 0.0
         # M_des[:,1] = 0.0

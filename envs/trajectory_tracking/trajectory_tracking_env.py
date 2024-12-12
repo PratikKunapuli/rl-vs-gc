@@ -428,13 +428,17 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         
     def update_goal_state(self):
         env_ids = (self.episode_length_buf % int(self.cfg.traj_update_dt*self.cfg.policy_rate_hz)== 0).nonzero(as_tuple=False)
-        # print("Env IDs: ", env_ids)
+        # print("Env IDs: ", env_ids, env_ids.squeeze(1))
+        
         if len(env_ids) == 0 or env_ids.size(0) == 0:
             return
+        
 
         current_time = self.episode_length_buf[env_ids]
         future_timesteps = torch.arange(0, 1+self.cfg.trajectory_horizon, device=self.device)
         time = (current_time + future_timesteps.unsqueeze(0)) * self.cfg.traj_update_dt
+
+        # env_ids =  # need to squeeze after getting current time
 
         # Update the desired position and orientation based on the trajectory
         # Traj Util functions return a position and a yaw trajectory as tensors of the following shape:
@@ -471,11 +475,11 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
             yaw_traj[0, :, :] += yaw_shift
 
         # we need to switch the last two dimensions of pos_traj since the _desired_pos_w is of shape (num_envs, horizon, 3) instead of (num_envs, 3, horizon)
-        self._desired_pos_traj_w[env_ids.squeeze()] = (pos_traj[0,env_ids.squeeze()]).transpose(1,2)
-        self._desired_pos_traj_w[env_ids.squeeze(),:, :2] += self._terrain.env_origins[env_ids, :2] # shift the trajectory to the correct position for each environment
+        self._desired_pos_traj_w[env_ids.squeeze(1)] = (pos_traj[0,env_ids.squeeze(1)]).transpose(1,2)
+        self._desired_pos_traj_w[env_ids.squeeze(1),:, :2] += self._terrain.env_origins[env_ids, :2] # shift the trajectory to the correct position for each environment
         # we need to convert from the yaw angle to a quaternion representation
         # print("Yaw Traj: ", yaw_traj[0, 0, :2])
-        self._desired_ori_traj_w[env_ids.squeeze()] = quat_from_yaw(yaw_traj[0,env_ids.squeeze()])
+        self._desired_ori_traj_w[env_ids.squeeze(1)] = quat_from_yaw(yaw_traj[0,env_ids.squeeze(1)])
         # print("desired ori traj: ", self._desired_ori_traj_w[0,:2])
 
         # print("pos traj: ", pos_traj[0, 0, :, :2])
@@ -512,10 +516,13 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         )
 
         future_pos_error_b = []
+        future_ori_error_b = []
         for i in range(self.cfg.trajectory_horizon):
-            waypoint_pos_error_b, waypoint_ori_error_b = subtract_frame_transforms(base_pos_w, base_ori_w, self._desired_pos_traj_w[:, i+1].squeeze(), self._desired_ori_traj_w[:, i+1].squeeze())
+            waypoint_pos_error_b, waypoint_ori_error_b = subtract_frame_transforms(base_pos_w, base_ori_w, self._desired_pos_traj_w[:, i+1].squeeze(1), self._desired_ori_traj_w[:, i+1].squeeze(1))
             future_pos_error_b.append(waypoint_pos_error_b) # append (n, 3) tensor
+            future_ori_error_b.append(waypoint_ori_error_b) # append (n, 4) tensor
         future_pos_error_b = torch.stack(future_pos_error_b, dim=1) # stack to (n, horizon, 3) tensor
+        future_ori_error_b = torch.stack(future_ori_error_b, dim=1) # stack to (n, horizon, 4) tensor
 
         # Compute the orientation error as a yaw error in the body frame
         # goal_yaw_w = yaw_quat(self._desired_ori_w)
@@ -570,8 +577,9 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
                 shoulder_joint_vel,                         # (num_envs, 1)
                 wrist_joint_vel,                            # (num_envs, 1)
                 future_pos_error_b.flatten(-2, -1),         # (num_envs, horizon * 3)
+                future_ori_error_b.flatten(-2, -1)          # (num_envs, horizon * 4)
             ],
-            dim=-1                                          # (num_envs, 22 + 3*horizon)
+            dim=-1                                          # (num_envs, 22 + 7*horizon)
         )
 
         
@@ -588,21 +596,23 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         if self.cfg.gc_mode:
             future_com_pos_w = []
             for i in range(self.cfg.trajectory_horizon):
-                des_com_pos_w, des_com_ori_w = self.convert_ee_goal_to_com_goal(self._desired_pos_traj_w[:, i+1].squeeze(), self._desired_ori_traj_w[:, i+1].squeeze())
+                des_com_pos_w, des_com_ori_w = self.convert_ee_goal_to_com_goal(self._desired_pos_traj_w[:, i+1].squeeze(1), self._desired_ori_traj_w[:, i+1].squeeze(1))
                 future_com_pos_w.append(des_com_pos_w)
             future_com_pos_w = torch.stack(future_com_pos_w, dim=1)
 
+            goal_pos_w, goal_ori_w = self.get_goal_state_from_task("COM")
+
             gc_obs = torch.cat(
                 [
-                    quad_pos_w,
-                    quad_ori_w,
-                    quad_lin_vel_w,
-                    quad_ang_vel_w,
-                    goal_pos_w,
-                    yaw_from_quat(goal_ori_w).unsqueeze(1),
-                    future_com_pos_w.flatten(-2, -1) # (num_envs, horizon * 3)
+                    quad_pos_w,                                 # (num_envs, 3)
+                    quad_ori_w,                                 # (num_envs, 4)
+                    quad_lin_vel_w,                             # (num_envs, 3)
+                    quad_ang_vel_w,                             # (num_envs, 3)
+                    goal_pos_w,                                 # (num_envs, 3)
+                    yaw_from_quat(goal_ori_w).unsqueeze(1),     # (num_envs, 1)
+                    future_com_pos_w.flatten(-2, -1)            # (num_envs, horizon * 3)
                 ],
-                dim=-1
+                dim=-1                                          # (num_envs, 17 + 3*horizon)
             )
         else:
             gc_obs = None

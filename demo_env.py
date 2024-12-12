@@ -116,21 +116,29 @@ def main():
 
     
     if "Traj" in args_cli.task:
-        env_cfg.trajectory_params["x_amp"] = 1.01
-        env_cfg.trajectory_params["y_amp"] = 0.0
-        env_cfg.trajectory_params["z_amp"] = 0.0
-        env_cfg.trajectory_params["z_offset"] = 0.5
-        env_cfg.trajectory_params["yaw_amp"] = 1.0
-        env_cfg.trajectory_params["yaw_freq"] = 1.0
-        env_cfg.traj_update_dt = 0.02
+        # env_cfg.trajectory_params["x_amp"] = 1.01
+        # env_cfg.trajectory_params["y_amp"] = 0.0
+        # env_cfg.trajectory_params["z_amp"] = 0.0
+        # env_cfg.trajectory_params["z_offset"] = 0.5
+        # env_cfg.trajectory_params["yaw_amp"] = 1.0
+        # env_cfg.trajectory_params["yaw_freq"] = 1.0
+        # env_cfg.traj_update_dt = 0.02
+        
 
-        # env_cfg.viewer.eye = (3.0, 3.0, 1.25)
+        env_cfg.viewer.eye = (0.75, 0.75, 0.75)
         # env_cfg.viewer.lookat = (0.0, 0.0, 0.5)
         # env_cfg.viewer.origin_type = "asset_root"
         # env_cfg.viewer.env_index = 0
         # env_cfg.viewer.asset_name = "robot"
 
-        print("Lissajous Params: ", env_cfg.trajectory_params)
+
+        env_cfg.lissajous_amplitudes=[1.0, 0.0, 0.0, 0.0]
+        env_cfg.lissajous_frequencies=[2.0, 0.0, 0.0, 0.0]
+        env_cfg.lissajous_offsets_rand_ranges=[2.0, 2.0, 2.0, 3.14159]
+
+        env_cfg.viz_mode = "robot"
+
+        # print("Lissajous Params: ", env_cfg.trajectory_params)
 
 
     # Turn gravity off
@@ -157,18 +165,19 @@ def main():
 
     # input("Press Enter to continue...")
 
-    gc = DecoupledController(env.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=env.device,
-                                    kp_pos_gain_xy=6.5, kp_pos_gain_z=15.0, kd_pos_gain_xy=4.0, kd_pos_gain_z=9.0,
-                                    kp_att_gain_xy=544, kp_att_gain_z=544, kd_att_gain_xy=46.64, kd_att_gain_z=46.64, 
-                                    skip_precompute=True, vehicle="Crazyflie", control_mode="CTATT", print_debug=True)
+    # Crazyflie
+    # gc = DecoupledController(env.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=env.device,
+    #                                 kp_pos_gain_xy=6.5, kp_pos_gain_z=15.0, kd_pos_gain_xy=4.0, kd_pos_gain_z=9.0,
+    #                                 kp_att_gain_xy=544, kp_att_gain_z=544, kd_att_gain_xy=46.64, kd_att_gain_z=46.64, 
+    #                                 skip_precompute=True, vehicle="Crazyflie", control_mode="CTATT", print_debug=True)
 
     # gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, com_pos_w=env.com_pos_w, device=env.device)
     
     # gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=True, com_pos_w=None, device=env.device,
     #                          use_full_obs=False)
-    # gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=True, com_pos_w=None, device=env.device,
-    #                          kp_pos_gain_xy=43.507, kp_pos_gain_z=24.167, kd_pos_gain_xy=9.129, kd_pos_gain_z=6.081,
-    #                          kp_att_gain_xy=998.777, kp_att_gain_z=18.230, kd_att_gain_xy=47.821, kd_att_gain_z=8.818)
+    gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, com_pos_w=None, device=env.device,
+                             kp_pos_gain_xy=43.507, kp_pos_gain_z=24.167, kd_pos_gain_xy=9.129, kd_pos_gain_z=6.081,
+                             kp_att_gain_xy=998.777, kp_att_gain_z=18.230, kd_att_gain_xy=47.821, kd_att_gain_z=8.818)
     
     # nmpc = NMPC(args_cli.num_envs, (vehicle_mass+arm_mass).detach().cpu().numpy(), inertia.detach().cpu().numpy())
     
