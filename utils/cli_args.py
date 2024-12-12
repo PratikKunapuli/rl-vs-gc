@@ -191,3 +191,22 @@ def update_rsl_rl_cfg(agent_cfg: RslRlOnPolicyRunnerCfg, args_cli: argparse.Name
         agent_cfg.neptune_project = args_cli.log_project_name
 
     return agent_cfg
+
+def add_skrl_args(parser: argparse.ArgumentParser):
+    """Add SKRL arguments to the parser.
+
+    Args:
+        parser: The parser to add the arguments to.
+    """
+    # create a new argument group
+    arg_group = parser.add_argument_group("skrl", description="Arguments for SKRL agent.")
+    # -- experiment arguments
+    arg_group.add_argument("--experiment_name", type=str, required=True, help="Name of the experiment folder where logs will be stored.")
+    arg_group.add_argument("--run_name", type=str, default=None, help="Run name suffix to the log directory.")
+    # -- load arguments
+    arg_group.add_argument("--resume", type=bool, default=None, help="Whether to resume from a checkpoint.")
+    arg_group.add_argument("--load_run", type=str, default=None, help="Name of the run folder to resume from.")
+    arg_group.add_argument("--checkpoint", type=str, default=None, help="Checkpoint file to resume from.")
+    
+    # -- alg arguments
+    arg_group.add_argument("--num_steps_per_env", type=int, default=None, help="Number of steps per environment.")

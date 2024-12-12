@@ -1,4 +1,4 @@
-seed: 42
+seed: 0
 
 # Models are instantiated using skrl's model instantiator utility
 # https://skrl.readthedocs.io/en/latest/api/utils/model_instantiators.html
@@ -11,7 +11,7 @@ models:
     min_log_std: -20.0
     max_log_std: 2.0
     input_shape: "Shape.STATES"
-    hiddens: [64, 64]
+    hiddens: [256, 256, 256]
     hidden_activation: ["elu", "elu", "elu"]
     output_shape: "Shape.ACTIONS"
     output_activation: "tanh"
@@ -19,7 +19,7 @@ models:
   value:  # see skrl.utils.model_instantiators.torch.deterministic_model for parameter details
     clip_actions: False
     input_shape: "Shape.STATES"
-    hiddens: [64, 64]
+    hiddens: [256, 256, 256]
     hidden_activation: ["elu", "elu", "elu"]
     output_shape: "Shape.ONE"
     output_activation: ""
@@ -29,7 +29,7 @@ models:
 # PPO agent configuration (field names are from PPO_DEFAULT_CONFIG)
 # https://skrl.readthedocs.io/en/latest/api/agents/ppo.html
 agent:
-  rollouts: 24
+  rollouts: 64
   learning_epochs: 5
   mini_batches: 4
   discount_factor: 0.99
@@ -54,14 +54,14 @@ agent:
   rewards_shaper_scale: 0.01
   # logging and checkpoint
   experiment:
-    directory: "quadcopter_direct"
+    directory: "trajectory_tracking"
     experiment_name: ""
-    write_interval: 24
-    checkpoint_interval: 240
+    write_interval: 64
+    checkpoint_interval: 3200
 
 
 # Sequential trainer
 # https://skrl.readthedocs.io/en/latest/api/trainers/sequential.html
 trainer:
-  timesteps: 4800
+  timesteps: 48000
   environment_info: "log"
