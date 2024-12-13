@@ -48,10 +48,10 @@ agent:
   learning_rate_scheduler: KLAdaptiveLR
   learning_rate_scheduler_kwargs:
     kl_threshold: 0.016
-  # state_preprocessor: RunningStandardScaler
-  # state_preprocessor_kwargs: null
-  # value_preprocessor: RunningStandardScaler
-  # value_preprocessor_kwargs: null
+  state_preprocessor: RunningStandardScaler
+  state_preprocessor_kwargs: null
+  value_preprocessor: RunningStandardScaler
+  value_preprocessor_kwargs: null
   random_timesteps: 0
   learning_starts: 0
   grad_norm_clip: 1.0

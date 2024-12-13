@@ -111,10 +111,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     if args_cli.ml_framework.startswith("jax"):
         skrl.config.jax.backend = "jax" if args_cli.ml_framework == "jax" else "numpy"
 
-    # parse configuration
-    env_cfg = parse_env_cfg(
-        args_cli.task, device=args_cli.device, num_envs=args_cli.num_envs, use_fabric=not args_cli.disable_fabric
-    )
+    env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
     try:
         experiment_cfg = load_cfg_from_registry(args_cli.task, f"skrl_{algorithm}_cfg_entry_point")
     except ValueError:
@@ -161,6 +158,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     env_cfg.eval_mode = True
     env_cfg.viewer.resolution = (1920, 1080)
     env_cfg.seed = args_cli.seed
+    env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
 
     if os.path.exists(os.path.join(log_dir, "params/env.yaml")):
         with open(os.path.join(log_dir, "params/env.yaml")) as f:
@@ -291,38 +289,38 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         pos_offset = env.position_offset
         ori_offset = env.orientation_offset
         # Hand-tuned gains
-        # agent = DecoupledController(env.num_env, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device)
+        # agent = DecoupledController(args_cli.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device)
         
         
         if "Crazyflie" not in args_cli.task:
             # Optuna-tuned gains for EE-Reward
-            agent = DecoupledController(env.num_env, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
+            agent = DecoupledController(args_cli.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
                                         kp_pos_gain_xy=43.507, kp_pos_gain_z=24.167, kd_pos_gain_xy=9.129, kd_pos_gain_z=6.081,
                                         kp_att_gain_xy=998.777, kp_att_gain_z=18.230, kd_att_gain_xy=47.821, kd_att_gain_z=8.818)
         else:
             # Crazyflie DC
-            agent = DecoupledController(env.num_env, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
+            agent = DecoupledController(args_cli.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
                                         kp_pos_gain_xy=6.5, kp_pos_gain_z=15.0, kd_pos_gain_xy=4.0, kd_pos_gain_z=9.0,
                                         kp_att_gain_xy=544, kp_att_gain_z=544, kd_att_gain_xy=46.64, kd_att_gain_z=46.64, 
                                         skip_precompute=True, vehicle="Crazyflie", control_mode="CTATT", print_debug=False)
             
         # Optuna-tuned gains for EE-LQR Cost (equal pos and yaw weight)
-        # agent = DecoupledController(env.num_env, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
+        # agent = DecoupledController(args_cli.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
         #                             kp_pos_gain_xy=24.675, kp_pos_gain_z=31.101, kd_pos_gain_xy=7.894, kd_pos_gain_z=8.207,
         #                             kp_att_gain_xy=950.228, kp_att_gain_z=10.539, kd_att_gain_xy=39.918, kd_att_gain_z=5.719)
         
         # Optuna-tuned gains for COM-Reward
-        # agent = DecoupledController(env.num_env, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
+        # agent = DecoupledController(args_cli.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
         #                             kp_pos_gain_xy=38.704, kp_pos_gain_z=39.755, kd_pos_gain_xy=10.413, kd_pos_gain_z=13.509,
         #                             kp_att_gain_xy=829.511, kp_att_gain_z=1.095, kd_att_gain_xy=38.383, kd_att_gain_z=4.322)
         
         # Optuna-tuned gains for COM-LQR Cost (equal pos and yaw weight)
-        # agent = DecoupledController(env.num_env, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
+        # agent = DecoupledController(args_cli.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
         #                             kp_pos_gain_xy=49.960, kp_pos_gain_z=23.726, kd_pos_gain_xy=13.218, kd_pos_gain_z=6.878,
         #                             kp_att_gain_xy=775.271, kp_att_gain_z=3.609, kd_att_gain_xy=41.144, kd_att_gain_z=1.903)
         
         # Optuna-tuned gains for COM-LQR Cost (environment has further away goals)
-        # agent = DecoupledController(env.num_env, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
+        # agent = DecoupledController(args_cli.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
         #                             kp_pos_gain_xy=24.172, kp_pos_gain_z=28.362, kd_pos_gain_xy=6.149, kd_pos_gain_z=8.881,
         #                             kp_att_gain_xy=955.034, kp_att_gain_z=14.370, kd_att_gain_xy=36.101, kd_att_gain_z=8.828)
     
@@ -380,7 +378,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                     times.append(time.time() - start)
 
                     if args_cli.baseline:
-                        obs_dict, reward, terminated, truncated, info = envs.step(actions)
+                        obs_dict, reward, terminated, truncated, info = env.step(actions)
                     else:
                         # env stepping
                         obs, reward, terminated, truncated, info = env.step(actions)
