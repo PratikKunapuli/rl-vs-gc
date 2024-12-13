@@ -186,6 +186,7 @@ class AerialManipulator0DOFTrajectoryTrackingEnvCfg(AerialManipulatorTrajectoryT
 
     action_space= gym.spaces.Box(low=-1.0, high=1.0, shape=(4,))
     observation_space= gym.spaces.Box(low=-np.inf, high=np.inf, shape=(91,))
+    state_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(33,))
     
     # robot
     robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
@@ -643,6 +644,7 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
                 ],
                 dim=-1                                          # (num_envs, 18)
             )
+            self._state = full_state
         else:
             full_state = None
 

@@ -395,8 +395,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
     # import code; code.interact(local=locals())
 
     full_state_size = obs_dict["full_state"].shape[1]
-    full_states = torch.zeros((envs.num_envs, 500, full_state_size), dtype=torch.float32).to(device)
-    rewards = torch.zeros((envs.num_envs, 500), dtype=torch.float32).to(device)
+    full_states = torch.zeros((args_cli.num_envs, 500, full_state_size), dtype=torch.float32).to(device)
+    rewards = torch.zeros((args_cli.num_envs, 500), dtype=torch.float32).to(device)
 
 
     steps = 0
