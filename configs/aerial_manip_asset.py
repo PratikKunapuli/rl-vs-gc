@@ -315,6 +315,51 @@ AERIAL_MANIPULATOR_0DOF_DEBUG_CFG = ArticulationCfg(
     },
 )
 
+""" Configuration for the Aerial Manipulator quad base only"""
+AERIAL_MANIPULATOR_QUAD_ONLY_CFG = ArticulationCfg(
+    prim_path="{ENV_REGEX_NS}/Robot",
+    spawn=sim_utils.UsdFileCfg(
+        usd_path=f"{MODELS_PATH}/aerial_manipulator_quad_only.usd",
+        # usd_path=f"{MODELS_PATH}/aerial_manipulator_0dof.usd",
+        # usd_path=f"{MODELS_PATH}/aerial_manipulator_debug.usd",
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(
+            disable_gravity=False,
+            max_depenetration_velocity=10.0,
+            enable_gyroscopic_forces=True,
+        ),
+        articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+            enabled_self_collisions=False,
+            solver_position_iteration_count=4,
+            solver_velocity_iteration_count=0, 
+            sleep_threshold=0.005,
+            stabilization_threshold=0.001,
+        ),
+        copy_from_source=False,
+    ),
+    init_state=ArticulationCfg.InitialStateCfg(
+        pos=(0.0, 0.0, 0.5),
+        # Default joint positions and velocities is 0.0
+        joint_pos={
+            ".*": 0.0,
+        },
+        joint_vel={
+            "prop1": 0.0,
+            "prop2": -0.0,
+            "prop3": 0.0,
+            "prop4": -0.0,
+        },
+    ),
+
+    # Available joints: 
+    actuators={ 
+        "dummy": ImplicitActuatorCfg(
+            joint_names_expr=[".*"],
+            stiffness=0.0,
+            damping=0.0,
+        ),
+    },
+)
+
 """
 
 Ball Catching Assets Below
