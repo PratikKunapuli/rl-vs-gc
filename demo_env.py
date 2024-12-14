@@ -112,7 +112,7 @@ def main():
     # env_cfg.goal_body = "COM"
 
     env_cfg.gc_mode = True
-    env_cfg.control_mode = "CTATT"
+    # env_cfg.control_mode = "CTATT"
 
     
     if "Traj" in args_cli.task:
@@ -132,9 +132,9 @@ def main():
         # env_cfg.viewer.asset_name = "robot"
 
 
-        env_cfg.lissajous_amplitudes=[1.0, 0.0, 0.0, 0.0]
+        env_cfg.lissajous_amplitudes=[0.0, 0.0, 0.0, 0.0]
         env_cfg.lissajous_frequencies=[2.0, 0.0, 0.0, 0.0]
-        env_cfg.lissajous_offsets_rand_ranges=[2.0, 2.0, 2.0, 3.14159]
+        env_cfg.lissajous_offsets_rand_ranges=[1.0, 1.0, 1.0, 1.57]
 
         env_cfg.viz_mode = "robot"
 
@@ -175,10 +175,12 @@ def main():
     
     # gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=True, com_pos_w=None, device=env.device,
     #                          use_full_obs=False)
-    gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, com_pos_w=None, device=env.device,
-                             kp_pos_gain_xy=43.507, kp_pos_gain_z=24.167, kd_pos_gain_xy=9.129, kd_pos_gain_z=6.081,
-                             kp_att_gain_xy=998.777, kp_att_gain_z=18.230, kd_att_gain_xy=47.821, kd_att_gain_z=8.818)
     
+    # gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, com_pos_w=None, device=env.device,
+    #                          kp_pos_gain_xy=43.507, kp_pos_gain_z=24.167, kd_pos_gain_xy=9.129, kd_pos_gain_z=6.081,
+    #                          kp_att_gain_xy=998.777, kp_att_gain_z=18.230, kd_att_gain_xy=47.821, kd_att_gain_z=8.818, skip_precompute=True)
+    gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, com_pos_w=None, device=env.device,
+                            skip_precompute=True)
     # nmpc = NMPC(args_cli.num_envs, (vehicle_mass+arm_mass).detach().cpu().numpy(), inertia.detach().cpu().numpy())
     
     # print("Quad in EE Frame: ", gc.quad_pos_ee_frame)

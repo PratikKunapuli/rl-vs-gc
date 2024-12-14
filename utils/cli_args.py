@@ -209,4 +209,8 @@ def add_skrl_args(parser: argparse.ArgumentParser):
     arg_group.add_argument("--checkpoint", type=str, default=None, help="Checkpoint file to resume from.")
     
     # -- alg arguments
-    arg_group.add_argument("--num_steps_per_env", type=int, default=None, help="Number of steps per environment.")
+    arg_group.add_argument("--num_steps_per_env", type=int, default=64, help="Number of steps per environment.")
+
+    # -- advanced arguments
+    arg_group.add_argument("--model_type", type=str, default="", help="Type of model to use for advanced training with custom policies.")
+    arg_group.add_argument("--ignore_yaw_traj", action="store_true", default=False, help="Whether to use yaw trajectory in the observation.")
