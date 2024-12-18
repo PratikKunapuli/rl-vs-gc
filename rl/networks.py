@@ -50,10 +50,10 @@ class SKRL_Shared_CNN_MLP(GaussianMixin, DeterministicMixin, Model):
 
         self.horizon_length=horizon_length
         self.cnn_output_shape = (8, self.horizon_length-6)
-        self.state_dim = self.observation_space.shape[0] - 7*self.horizon_length
         self.traj_encoded_dim = self.cnn_output_shape[0] * self.cnn_output_shape[1]
         self.use_yaw_traj = use_yaw_traj
-        self.input_channels = 7 if self.use_yaw_traj else 3
+        self.input_channels = 7 if self.use_yaw_traj else 4
+        self.state_dim = self.observation_space.shape[0] - self.input_channels*self.horizon_length
 
         # We want a 1d convolution over the future trajectory points, and then concatenate with the current state
         self.cnn = nn.Sequential(
@@ -68,9 +68,7 @@ class SKRL_Shared_CNN_MLP(GaussianMixin, DeterministicMixin, Model):
         self.net = nn.Sequential(nn.Linear(self.state_dim + self.traj_encoded_dim, 256),
                                  nn.ELU(),
                                  nn.Linear(256, 256),
-                                 nn.ELU(),
-                                 nn.Linear(256, 256),
-                                 nn.ELU())
+                                 nn.ELU(),)
         self.mean_layer = nn.Linear(256, self.num_actions)
         self.log_std_parameter = nn.Parameter(torch.zeros(self.num_actions))
 
@@ -87,13 +85,16 @@ class SKRL_Shared_CNN_MLP(GaussianMixin, DeterministicMixin, Model):
             return
         
         # Last 4*horizon length are ori_traj, then the previous 3*horizon length are the position_traj, then current state
-        ori_traj = inputs["states"][:,-4*self.horizon_length:].view(-1, self.horizon_length, 4)
-        pos_traj = inputs["states"][:,-7*self.horizon_length:-4*self.horizon_length].view(-1, self.horizon_length, 3)
-        current_state = inputs["states"][:,:-7*self.horizon_length]
         if self.use_yaw_traj:
-            traj = torch.cat([pos_traj, ori_traj], dim=-1).permute(0,2,1) # (batch, 7, horizon_length)
+            ori_traj = inputs["states"][:,-4*self.horizon_length:].view(-1, self.horizon_length, 4)
+            pos_traj = inputs["states"][:,-7*self.horizon_length:-4*self.horizon_length].view(-1, self.horizon_length, 3)
+            current_state = inputs["states"][:,:-7*self.horizon_length]
         else:
-            traj = pos_traj.permute(0,2,1)
+            ori_traj = inputs["states"][:,-self.horizon_length:].view(-1, self.horizon_length, 1)
+            pos_traj = inputs["states"][:,-4*self.horizon_length:-self.horizon_length].view(-1, self.horizon_length, 3)
+            current_state = inputs["states"][:,:-4*self.horizon_length]
+            # traj = pos_traj.permute(0,2,1)
+        traj = torch.cat([pos_traj, ori_traj], dim=-1).permute(0,2,1) # (batch, 7, horizon_length) or (batch, 4, horizon_length)
         traj_encoded = self.cnn(traj).view(-1, self.traj_encoded_dim)
         state = torch.cat([current_state, traj_encoded], dim=-1)
         

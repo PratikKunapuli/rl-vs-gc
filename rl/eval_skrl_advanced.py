@@ -205,13 +205,13 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             if "combined_reward_scale" in hydra_cfg:
                 env_cfg.combined_reward_scale = hydra_cfg["combined_reward_scale"]
 
-    if env_cfg.use_yaw_representation:
-        # env_cfg.num_observations += 4
-        env_cfg.num_observations += 1
+    # if env_cfg.use_yaw_representation:
+    #     # env_cfg.num_observations += 4
+    #     env_cfg.num_observations += 1
     
-    if env_cfg.use_full_ori_matrix:
-        # env_cfg.num_observations += 6
-        env_cfg.num_observations += 9
+    # if env_cfg.use_full_ori_matrix:
+    #     # env_cfg.num_observations += 6
+    #     env_cfg.num_observations += 9
 
     if "Traj" in args_cli.task:
         env_cfg.goal_cfg = "rand"
@@ -259,6 +259,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # create isaac environment
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
+    observation_space = env.observation_space
     save_prefix = args_cli.save_prefix
     if args_cli.case_study:
         save_prefix = "case_study_"
@@ -336,22 +337,22 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             env = multi_agent_to_single_agent(env)
 
         # wrap around environment for skrl
+        observation_space = env.observation_space
         env = IsaacLabWrapper(env) # custom wrapper that retains dict observation space
-
         memory = RandomMemory(memory_size=agent_cfg["agent"]["rollouts"], num_envs=env.num_envs, device=device)
 
         # configure and instantiate the skrl runner
         # https://skrl.readthedocs.io/en/latest/api/utils/runner.html
         if args_cli.model_type.lower() == "mlp":
             models = {}
-            models["policy"] = SKRL_Shared_MLP(env.observation_space, env.action_space, device)
+            models["policy"] = SKRL_Shared_MLP(observation_space, env.action_space, device)
             models["value"] = models["policy"]  # same instance: shared model
             print("[INFO] Using MLP model.")
         elif "cnn" in args_cli.model_type.lower():
             horizon_length = env_cfg.trajectory_horizon
             use_yaw_traj = not args_cli.ignore_yaw_traj
             models = {}
-            models["policy"] = SKRL_Shared_CNN_MLP(env.observation_space, env.action_space, device, use_yaw_traj=use_yaw_traj, horizon_length=horizon_length)
+            models["policy"] = SKRL_Shared_CNN_MLP(observation_space, env.action_space, device, use_yaw_traj=use_yaw_traj, horizon_length=horizon_length)
             models["value"] = models["policy"]
             print("[INFO] Using CNN model, with horizon length:", horizon_length)
             print("[INFO] Using yaw trajectory:", use_yaw_traj)
@@ -378,7 +379,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         cfg["rewards_shaper"] = lambda rewards, *args, **kwargs: rewards * agent_cfg["agent"]["rewards_shaper_scale"]
         cfg["time_limit_bootstrap"] = agent_cfg["agent"]["time_limit_bootstrap"]
         cfg["state_preprocessor"] = RunningStandardScaler
-        cfg["state_preprocessor_kwargs"] = {"size": env.observation_space, "device": device}
+        cfg["state_preprocessor_kwargs"] = {"size": observation_space, "device": device}
         # cfg["state_preprocessor_kwargs"] = agent_cfg["agent"]["state_preprocessor_kwargs"]
         cfg["value_preprocessor"] = RunningStandardScaler
         cfg["value_preprocessor_kwargs"] = {"size": 1, "device": device}
@@ -392,7 +393,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         agent = PPO(models=models,
                 memory=memory,
                 cfg=cfg,
-                observation_space=env.observation_space,
+                observation_space=observation_space,
                 action_space=env.action_space,
                 device=device)
 
@@ -401,6 +402,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         # print("state dict keys: ", state_dict.keys())
         agent.load(resume_path)
         agent.set_mode("eval")
+        agent.set_running_mode("eval")
         print("[INFO] Loaded checkpoint.")
 
     # reset environment

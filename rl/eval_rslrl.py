@@ -296,7 +296,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
 
     
     # save_prefix = "ball_catch_side_view_"
-    video_name = save_prefix + "_eval_video" + robot_index_prefix
+    video_name = save_prefix + "_eval_video" + robot_index_prefix + "_viz_" + env_cfg.viz_mode
     if args_cli.baseline:
         video_folder_path = f"{policy_path}"
     else:

@@ -87,7 +87,7 @@ class AerialManipulatorTrajectoryTrackingEnvBaseCfg(DirectRLEnvCfg):
     )
 
     action_space= gym.spaces.Box(low=-1.0, high=1.0, shape=(4,))
-    observation_space= gym.spaces.Box(low=-np.inf, high=np.inf, shape=(12,))
+    observation_space= gym.spaces.Box(low=-np.inf, high=np.inf, shape=(17,))
     state_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(0,))
 
     # scene
@@ -170,6 +170,7 @@ class AerialManipulatorTrajectoryTrackingEnvBaseCfg(DirectRLEnvCfg):
     use_grav_vector = True
     use_full_ori_matrix = True
     use_yaw_representation = False
+    use_yaw_representation_for_trajectory=False
 
     shoulder_joint_active = True
     wrist_joint_active = True
@@ -188,9 +189,9 @@ class AerialManipulator0DOFTrajectoryTrackingEnvCfg(AerialManipulatorTrajectoryT
     # 3(vel) + 3(ang vel) + 3(pos) + 9(ori) = 18
     # 3(vel) + 3(ang vel) + 3(pos) + 3(grav vector body frame) = 12
 
-    action_space= gym.spaces.Box(low=-1.0, high=1.0, shape=(4,))
-    observation_space= gym.spaces.Box(low=-np.inf, high=np.inf, shape=(91,))
-    state_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(33,))
+    # action_space= gym.spaces.Box(low=-1.0, high=1.0, shape=(4,))
+    # observation_space= gym.spaces.Box(low=-np.inf, high=np.inf, shape=(91,))
+    # state_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(33,))
     
     # robot
     robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
@@ -205,8 +206,8 @@ class AerialManipulator0DOFDebugTrajectoryTrackingEnvCfg(AerialManipulatorTrajec
     # 3(vel) + 3(ang vel) + 3(pos) + 9(ori) = 18
     # 3(vel) + 3(ang vel) + 3(pos) + 3(grav vector body frame) = 12
 
-    action_space= gym.spaces.Box(low=-1.0, high=1.0, shape=(4,))
-    observation_space= gym.spaces.Box(low=-np.inf, high=np.inf, shape=(91,))
+    # action_space= gym.spaces.Box(low=-1.0, high=1.0, shape=(4,))
+    # observation_space=gym.spaces.Box(low=-np.inf, high=np.inf, shape=(91,))
     
     # robot
     # robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_DEBUG_CFG.replace(prim_path="/World/envs/env_.*/Robot")
@@ -235,6 +236,10 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
 
     def __init__(self, cfg: AerialManipulatorTrajectoryTrackingEnvBaseCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
+
+        self.action_space= gym.spaces.Box(low=-1.0, high=1.0, shape=(self.cfg.num_actions,))
+        self.observation_space= gym.spaces.Box(low=-np.inf, high=np.inf, shape=(self.cfg.num_observations,))
+        self.state_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(0,))
 
         # Actions / Actuation interfaces
         self._actions = torch.zeros(self.num_envs, self.cfg.num_actions, device=self.device)
@@ -552,6 +557,9 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         future_pos_error_b = torch.stack(future_pos_error_b, dim=1) # stack to (n, horizon, 3) tensor
         future_ori_error_b = torch.stack(future_ori_error_b, dim=1) # stack to (n, horizon, 4) tensor
 
+        if self.cfg.use_yaw_representation_for_trajectory:
+            future_ori_error_b = math_utils.yaw_from_quat(future_ori_error_b).reshape(self.num_envs, self.cfg.trajectory_horizon, 1)
+
         # Compute the orientation error as a yaw error in the body frame
         # goal_yaw_w = yaw_quat(self._desired_ori_w)
         goal_yaw_w = yaw_quat(goal_ori_w)
@@ -623,10 +631,13 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
 
         if self.cfg.gc_mode:
             future_com_pos_w = []
+            future_com_ori_w = []
             for i in range(self.cfg.trajectory_horizon):
                 des_com_pos_w, des_com_ori_w = self.convert_ee_goal_to_com_goal(self._desired_pos_traj_w[:, i+1].squeeze(1), self._desired_ori_traj_w[:, i+1].squeeze(1))
                 future_com_pos_w.append(des_com_pos_w)
+                future_com_ori_w.append(des_com_ori_w)
             future_com_pos_w = torch.stack(future_com_pos_w, dim=1)
+            future_com_ori_w = torch.stack(future_com_ori_w, dim=1)
 
             goal_pos_w, goal_ori_w = self.get_goal_state_from_task("COM")
 
@@ -638,7 +649,8 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
                     quad_ang_vel_w,                             # (num_envs, 3)
                     goal_pos_w,                                 # (num_envs, 3)
                     yaw_from_quat(goal_ori_w).unsqueeze(1),     # (num_envs, 1)
-                    future_com_pos_w.flatten(-2, -1)            # (num_envs, horizon * 3)
+                    future_com_pos_w.flatten(-2, -1),            # (num_envs, horizon * 3)
+                    future_com_ori_w.flatten(-2, -1)            # (num_envs, horizon * 4)
                 ],
                 dim=-1                                          # (num_envs, 17 + 3*horizon)
             )

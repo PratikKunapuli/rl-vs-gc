@@ -179,6 +179,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # create isaac environment
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
+    observation_space = env.observation_space
     # wrap for video recording
     if args_cli.video:
         video_kwargs = {
@@ -209,14 +210,15 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # https://skrl.readthedocs.io/en/latest/api/agents/ppo.html#models
     if args_cli.model_type.lower() == "mlp":
         models = {}
-        models["policy"] = SKRL_Shared_MLP(env.observation_space, env.action_space, device)
+        models["policy"] = SKRL_Shared_MLP(observation_space, env.action_space, device)
         models["value"] = models["policy"]  # same instance: shared model
         print("[INFO] Using MLP model.")
     elif "cnn" in args_cli.model_type.lower():
         horizon_length = env_cfg.trajectory_horizon
         use_yaw_traj = not args_cli.ignore_yaw_traj
+        print("Obs space: ", observation_space)
         models = {}
-        models["policy"] = SKRL_Shared_CNN_MLP(env.observation_space, env.action_space, device, use_yaw_traj=use_yaw_traj, horizon_length=horizon_length)
+        models["policy"] = SKRL_Shared_CNN_MLP(observation_space, env.action_space, device, use_yaw_traj=use_yaw_traj, horizon_length=horizon_length)
         models["value"] = models["policy"]
         print("[INFO] Using CNN model, with horizon length:", horizon_length)
         print("[INFO] Using yaw trajectory:", use_yaw_traj)
@@ -244,7 +246,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     cfg["rewards_shaper"] = lambda rewards, *args, **kwargs: rewards * agent_cfg["agent"]["rewards_shaper_scale"]
     cfg["time_limit_bootstrap"] = agent_cfg["agent"]["time_limit_bootstrap"]
     cfg["state_preprocessor"] = RunningStandardScaler
-    cfg["state_preprocessor_kwargs"] = {"size": env.observation_space, "device": device}
+    cfg["state_preprocessor_kwargs"] = {"size": observation_space, "device": device}
     # cfg["state_preprocessor_kwargs"] = agent_cfg["agent"]["state_preprocessor_kwargs"]
     cfg["value_preprocessor"] = RunningStandardScaler
     cfg["value_preprocessor_kwargs"] = {"size": 1, "device": device}
@@ -258,7 +260,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     agent = PPO(models=models,
             memory=memory,
             cfg=cfg,
-            observation_space=env.observation_space,
+            observation_space=observation_space,
             action_space=env.action_space,
             device=device)
 
