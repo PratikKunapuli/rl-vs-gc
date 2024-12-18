@@ -108,10 +108,10 @@ class AerialManipulatorTrajectoryTrackingEnvBaseCfg(DirectRLEnvCfg):
     lissajous_offsets = [0, 0, 3.0, 0]
     lissajous_offsets_rand_ranges = [0.0, 0.0, 0.0, 0.0]
 
-    polynomial_x_coefficients= [0]
-    polynomial_y_coefficients= [0]
-    polynomial_z_coefficients= [0]
-    polynomial_yaw_coefficients= [0]
+    polynomial_x_coefficients= [0.0, 0.0]
+    polynomial_y_coefficients= [0.0, 0.0]
+    polynomial_z_coefficients= [0.0, 0.0]
+    polynomial_yaw_coefficients= [0.0, 0.0]
 
     # action scaling
     # moment_scale_xy = 1.0
@@ -605,7 +605,7 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
                 shoulder_joint_vel,                         # (num_envs, 1)
                 wrist_joint_vel,                            # (num_envs, 1)
                 future_pos_error_b.flatten(-2, -1),         # (num_envs, horizon * 3)
-                future_ori_error_b.flatten(-2, -1)          # (num_envs, horizon * 4)
+                future_ori_error_b.flatten(-2, -1)          # (num_envs, horizon * 4) if future_ori as quat, else (num_envs, horizon, 1)
             ],
             dim=-1                                          # (num_envs, 22 + 7*horizon)
         )
@@ -900,7 +900,7 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
             # Initialize the robot on the trajectory with the correct velocity
             default_root_state[:, :3] = self._desired_pos_w[env_ids]
             default_root_state[:, 3:7] = self._desired_ori_w[env_ids]
-            # default_root_state[:, 7:10] = self._pos_traj[1, env_ids, :, 0]
+            default_root_state[:, 7:10] = self._pos_traj[1, env_ids, :, 0]
         # default_root_state[:, :3] += self._terrain.env_origins[env_ids]
 
         # Update viz_histories
