@@ -107,41 +107,41 @@ def compute_desired_pose_from_transform(
     pos_transform: torch.Tensor,
     num_joints: int
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    # """
-    # Computes the desired position and yaw from the given transform.
+    """
+    Computes the desired position and yaw from the given transform.
     
-    # Args:
-    #     goal_pos_w (Tensor): Goal positions in world frame (batch_size, 3).
-    #     goal_ori_w (Tensor): Goal orientations as quaternions (batch_size, 4).
-    #     pos_transform (Tensor): Position transforms (batch_size, 3).
-    #     num_joints (int): Number of joints.
+    Args:
+        goal_pos_w (Tensor): Goal positions in world frame (batch_size, 3).
+        goal_ori_w (Tensor): Goal orientations as quaternions (batch_size, 4).
+        pos_transform (Tensor): Position transforms (batch_size, 3).
+        num_joints (int): Number of joints.
 
-    # Returns:
-    #     Tuple[Tensor, Tensor]: Desired positions and yaws.
-    # """
-    # batch_size = goal_ori_w.shape[0]
+    Returns:
+        Tuple[Tensor, Tensor]: Desired positions and yaws.
+    """
+    batch_size = goal_ori_w.shape[0]
 
-    # # Rotate the y-axis vector by the goal orientations
-    # y_axis = torch.tensor([0.0, 1.0, 0.0], device=goal_ori_w.device).unsqueeze(0).expand(batch_size, -1)
-    # b2 = isaac_math_utils.quat_rotate(goal_ori_w, y_axis)
+    # Rotate the y-axis vector by the goal orientations
+    y_axis = torch.tensor([0.0, 1.0, 0.0], device=goal_ori_w.device).unsqueeze(0).expand(batch_size, -1)
+    b2 = isaac_math_utils.quat_rotate(goal_ori_w, y_axis)
 
-    # # Set the z-component to zero if num_joints == 0
-    # if num_joints == 0:
-    #     b2 = b2.clone()  # Avoid modifying the original tensor
-    #     b2[:, 2] = 0.0
+    # Set the z-component to zero if num_joints == 0
+    if num_joints == 0:
+        b2 = b2.clone()  # Avoid modifying the original tensor
+        b2[:, 2] = 0.0
 
-    # b2 = isaac_math_utils.normalize(b2)
+    b2 = isaac_math_utils.normalize(b2)
 
-    # # Compute the desired yaw angle
-    # yaw_desired = torch.atan2(b2[:, 1], b2[:, 0]) - torch.pi / 2
-    # yaw_desired = isaac_math_utils.wrap_to_pi(yaw_desired)
+    # Compute the desired yaw angle
+    yaw_desired = torch.atan2(b2[:, 1], b2[:, 0]) - torch.pi / 2
+    yaw_desired = isaac_math_utils.wrap_to_pi(yaw_desired)
 
-    # # Compute the desired position
-    # pos_transform_norm = torch.linalg.norm(pos_transform, dim=1, keepdim=True)
-    # displacement = pos_transform_norm * (-b2)
-    # pos_desired = goal_pos_w + displacement
-    pos_desired, _ = isaac_math_utils.combine_frame_transforms(goal_pos_w, goal_ori_w, pos_transform)
-    yaw_desired = yaw_from_quat(goal_ori_w)
+    # Compute the desired position
+    pos_transform_norm = torch.linalg.norm(pos_transform, dim=1, keepdim=True)
+    displacement = pos_transform_norm * (-b2)
+    pos_desired = goal_pos_w + displacement
+    # pos_desired, _ = isaac_math_utils.combine_frame_transforms(goal_pos_w, goal_ori_w, pos_transform)
+    # yaw_desired = yaw_from_quat(goal_ori_w)
 
     return pos_desired, yaw_desired
 

@@ -114,7 +114,7 @@ def eval_polynomial_curve(t: torch.Tensor, coeffs: torch.Tensor, derivatives: in
     for i in range(derivatives + 1):
         coeff_factors = factorial_coeffs[i, :].view(1, 1, -1, 1)  # Shape: (1, 1, degree + 1, 1)
         valid_coeffs = coeffs * coeff_factors
-        derivative = (valid_coeffs[:, :, i:, :] * t_powers[:, i:, :]).sum(dim=2)  # Sum along degree axis
+        derivative = (valid_coeffs[:, :, i:, :] * t_powers[:, i:, :].unsqueeze(1)).sum(dim=2)  # Sum along degree axis
         results.append(derivative)
 
     # Stack results into a single tensor
