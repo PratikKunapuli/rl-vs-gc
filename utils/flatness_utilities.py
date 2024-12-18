@@ -244,7 +244,7 @@ def getRotationDotFromShape(s: torch.Tensor, psi: torch.Tensor, s_dot: torch.Ten
     return torch.bmm(H2_dot(s, s_dot), H1(psi)) + torch.bmm(H2(s), H1_dot(psi, psi_dot))
 
 @torch.jit.script
-def getRotationDDotFromShape(s, s_dot, s_ddot, psi, psi_dot, psi_ddot):
+def getRotationDDotFromShape(s: torch.Tensor, s_dot: torch.Tensor, s_ddot: torch.Tensor, psi: torch.Tensor, psi_dot: torch.Tensor, psi_ddot: torch.Tensor) -> torch.Tensor:
     """
     Computes R_ddot for a batch of inputs.
 
@@ -385,3 +385,28 @@ def getRotationDDotFromShape(s, s_dot, s_ddot, psi, psi_dot, psi_ddot):
     R_ddot[:, 2, 2] = s3_ddot
 
     return R_ddot
+
+@torch.jit.script
+def computeShapeDerivativesFromForce(F_des: torch.Tensor, x_dddot: torch.Tensor, x_ddddot:torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Function to compute the desired shape of the Lee Geometric controller and 2 derivatives of the desired shape
+
+    args:
+        F_des: The desired force computed with PD gains. Shape is (N, 3)
+        x_dddot: The reference acceleration. Shape is (N, 3)
+        x_ddddot: The reference jerk. Shape is (N, 3)
+    returns:
+        s_des: The desired shape. Shape is (N, 3)
+        s_dot_des: The desired shape derivative. Shape is (N, 3)
+        s_ddot_des: The desired shape second derivative. Shape is (N, 3)
+    """
+
+    id_3 = torch.eye(3, device=F_des.device).unsqueeze(0).repeat(F_des.shape[0], 1, 1)
+    denom = torch.linalg.norm(F_des, dim=1, keepdim=True)
+    s_des = isaac_math_utils.normalize(F_des)
+    s_dot_des = (torch.bmm(id_3 - s_des.unsqueeze(-1) * s_des.unsqueeze(1), x_dddot.unsqueeze(-1))).squeeze(-1) / denom
+    num1 = (torch.bmm(id_3 - s_des.unsqueeze(-1) * s_des.unsqueeze(1), x_ddddot.unsqueeze(-1))).squeeze(-1)
+    num2 = torch.bmm(2*s_dot_des.unsqueeze(-1)*s_des.unsqueeze(1) + s_des.unsqueeze(-1)*s_dot_des.unsqueeze(1), x_dddot.unsqueeze(-1)).squeeze(-1)
+    s_ddot_des = (num1 - num2)/ denom
+
+    return s_des, s_dot_des, s_ddot_des

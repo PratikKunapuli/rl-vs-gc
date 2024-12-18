@@ -76,7 +76,8 @@ class DecoupledController():
     def __init__(self, num_envs, num_dofs, vehicle_mass, arm_mass, inertia_tensor, pos_offset, ori_offset, print_debug=False, com_pos_w=None, device='cpu',
                   kp_pos_gain_xy=10.0, kp_pos_gain_z=20.0, kd_pos_gain_xy=7.0, kd_pos_gain_z=9.0, 
                   kp_att_gain_xy=400.0, kp_att_gain_z=2.0, kd_att_gain_xy=70.0, kd_att_gain_z=2.0,
-                  tuning_mode=False, use_full_obs=False, skip_precompute=False, vehicle="AM", control_mode="CTBM", policy_dt=0.02):
+                  tuning_mode=False, use_full_obs=False, skip_precompute=False, vehicle="AM", control_mode="CTBM", policy_dt=0.02,
+                  feed_forward=False):
         self.num_envs = num_envs
         self.num_dofs = num_dofs
         self.print_debug = print_debug
@@ -88,6 +89,7 @@ class DecoupledController():
         self.mass = vehicle_mass + arm_mass
         self.com_pos_w = com_pos_w
         self.policy_dt = policy_dt
+        self.feed_forward = feed_forward
 
         self.control_mode = control_mode
 
@@ -227,9 +229,42 @@ class DecoupledController():
         """
         return 2.0 * (command - min_val) / (max_val - min_val) - 1.0
     
+    def compute_ff_terms(self, obs):
+        # first 17 terms are part of state, then horizon*3 future positions, then horizon*4 future quaternions
+        batch_size = obs.shape[0]
+        num_obs = obs.shape[1]
+        horizon = (num_obs - 17) // 3
+        futures = obs[:, -7*horizon:]
+
+        future_com_pos_w = futures[:, :3*horizon].reshape(batch_size, horizon, 3)
+        feed_forward_velocities = (future_com_pos_w[:, 1:] - future_com_pos_w[:, :-1]) / self.policy_dt
+        feed_forward_accelerations = (feed_forward_velocities[:, 1:] - feed_forward_velocities[:, :-1]) / self.policy_dt
+        feed_forward_jerks = (feed_forward_accelerations[:, 1:] - feed_forward_accelerations[:, :-1]) / self.policy_dt
+        feed_forward_snaps = (feed_forward_jerks[:, 1:] - feed_forward_jerks[:, :-1]) / self.policy_dt
+        ff_vel = feed_forward_velocities[:, 0]
+        ff_acc = feed_forward_accelerations[:, 0]
+        ff_jerk = feed_forward_jerks[:, 0]
+        ff_snap = feed_forward_snaps[:, 0]
+
+        future_com_ori_w = futures[:, 3*horizon:].reshape(batch_size, horizon, 4)
+        feed_forward_yaws = yaw_from_quat(future_com_ori_w)
+        feed_forward_yaws_dot = (feed_forward_yaws[:, 1:] - feed_forward_yaws[:, :-1]) / self.policy_dt
+        feed_forward_yaws_ddot = (feed_forward_yaws_dot[:, 1:] - feed_forward_yaws_dot[:, :-1]) / self.policy_dt
+        ff_yaw = feed_forward_yaws[:, 0]
+        ff_yaw_dot = feed_forward_yaws_dot[:, 0]
+        ff_yaw_ddot = feed_forward_yaws_ddot[:, 0]
+
+
+        denom = torch.linalg.norm(ff_acc + self.gravity.tile(batch_size, 1), dim=1).unsqueeze(1)
+        s_des = (ff_acc + self.gravity.tile(batch_size, 1)) / denom
+        s_des_dot = torch.bmm((torch.eye(3, device=self.device).tile(batch_size, 1)- s_des.unsqueeze(2) @ s_des.unsqueeze(1)), ff_jerk.unsqueeze(2)).squeeze(2) / denom
+        s_des_ddot = torch.bmm((torch.eye(3, device=self.device).tile(batch_size, 1)- s_des.unsqueeze(2) @ s_des.unsqueeze(1)), ff_snap.unsqueeze(2)).squeeze(2) - torch.bmm(2*torch.bmm(s_des_dot.unsqueeze(2), s_des.unsqueeze(1)).squeeze(2) + torch.bmm(s_des.unsqueeze(2), s_des_dot.unsqueeze(1)), ff_jerk.unsqueeze(2)) / denom
+    
+        return ff_vel, ff_acc, s_des, s_des_dot, s_des_ddot, ff_yaw, ff_yaw_dot, ff_yaw_ddot
+
     def SE3_Control(self, desired_pos, desired_yaw, 
                     com_pos, com_ori_quat, com_vel, com_omega, 
-                    ff_vel, ff_acc, obs):
+                    obs):
         if self.use_full_obs:
             ee_pos = obs[:, 13:16]
             ee_ori_quat = obs[:, 16:20]
@@ -247,6 +282,12 @@ class DecoupledController():
             com_ori_quat = obs[:, 3:7]
             com_vel = obs[:, 7:10]
             com_omega = obs[:, 10:13].to(self.device)
+
+        if self.feed_forward:
+            ff_vel, ff_acc, s_des, s_des_dot, s_des_ddot, ff_yaw, ff_yaw_dot, ff_yaw_ddot = self.compute_ff_terms(obs)
+        else:
+            ff_vel = torch.zeros_like(ff_vel)
+            ff_acc = torch.zeros_like(ff_acc)
 
 
         # desired_yaw = 2 * torch.arctan2(desired_ori[:, 3], desired_ori[:, 0])
@@ -415,16 +456,16 @@ class DecoupledController():
             desired_pos = obs[:, 13:16]
             desired_yaw = obs[:, 16:17]
 
-            if num_obs > 17: # future trajectory is included. 
-                horizon = (num_obs - 17) // 3
-                future_com_pos_w = obs[:, 17:].reshape(batch_size, horizon, 3)
-                feed_forward_velocities = (future_com_pos_w[:, 1:] - future_com_pos_w[:, :-1]) / self.policy_dt
-                feed_forward_accelerations = (feed_forward_velocities[:, 1:] - feed_forward_velocities[:, :-1]) / self.policy_dt
-                ff_vel = feed_forward_velocities[:, 0]
-                ff_acc = feed_forward_accelerations[:, 0]
-            else:
-                ff_vel = torch.zeros(batch_size, 3, device=self.device)
-                ff_acc = torch.zeros(batch_size, 3, device=self.device)
+            # if num_obs > 17: # future trajectory is included. 
+            #     horizon = (num_obs - 17) // 3
+            #     future_com_pos_w = obs[:, 17:].reshape(batch_size, horizon, 3)
+            #     feed_forward_velocities = (future_com_pos_w[:, 1:] - future_com_pos_w[:, :-1]) / self.policy_dt
+            #     feed_forward_accelerations = (feed_forward_velocities[:, 1:] - feed_forward_velocities[:, :-1]) / self.policy_dt
+            #     ff_vel = feed_forward_velocities[:, 0]
+            #     ff_acc = feed_forward_accelerations[:, 0]
+            # else:
+            #     ff_vel = torch.zeros(batch_size, 3, device=self.device)
+            #     ff_acc = torch.zeros(batch_size, 3, device=self.device)
                 
         
         
@@ -488,7 +529,7 @@ class DecoupledController():
         desired_joint_angles = self.compute_desired_joint_angles(obs)
 
         
-        collective_thrust, M_des = self.SE3_Control(desired_pos, desired_yaw, com_pos, com_ori_quat, com_vel, com_omega, ff_vel, ff_acc, obs)
+        collective_thrust, M_des = self.SE3_Control(desired_pos, desired_yaw, com_pos, com_ori_quat, com_vel, com_omega, obs)
         # print("M_des pre transform: ", M_des)
         # M_des[:,0] = 0.0
         # M_des[:,1] = 0.0
