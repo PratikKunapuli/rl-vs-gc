@@ -134,7 +134,9 @@ def main():
 
         env_cfg.lissajous_amplitudes=[0.0, 0.0, 0.0, 0.0]
         env_cfg.lissajous_frequencies=[2.0, 0.0, 0.0, 0.0]
-        env_cfg.lissajous_offsets_rand_ranges=[1.0, 1.0, 1.0, 1.57]
+        # env_cfg.lissajous_offsets_rand_ranges=[1.0, 1.0, 1.0, 1.57]
+        env_cfg.init_pos_ranges=[0.5, 0.5, 0.5]
+        env_cfg.init_cfg = "rand"       
 
         env_cfg.viz_mode = "robot"
 
@@ -176,11 +178,16 @@ def main():
     # gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=True, com_pos_w=None, device=env.device,
     #                          use_full_obs=False)
     
-    # gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, com_pos_w=None, device=env.device,
-    #                          kp_pos_gain_xy=43.507, kp_pos_gain_z=24.167, kd_pos_gain_xy=9.129, kd_pos_gain_z=6.081,
-    #                          kp_att_gain_xy=998.777, kp_att_gain_z=18.230, kd_att_gain_xy=47.821, kd_att_gain_z=8.818, skip_precompute=True)
     gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, com_pos_w=None, device=env.device,
-                            skip_precompute=True)
+                             kp_pos_gain_xy=43.507, kp_pos_gain_z=24.167, kd_pos_gain_xy=9.129, kd_pos_gain_z=6.081,
+                             kp_att_gain_xy=998.777, kp_att_gain_z=18.230, kd_att_gain_xy=47.821, kd_att_gain_z=8.818,
+                             feed_forward=False)
+    # gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, com_pos_w=None, device=env.device,
+    #                         skip_precompute=True)
+    
+    # gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, com_pos_w=None, device=env.device,
+    #                                     kp_pos_gain_xy=43.507, kp_pos_gain_z=24.167, kd_pos_gain_xy=9.129, kd_pos_gain_z=6.081,
+    #                                     kp_att_gain_xy=998.777, kp_att_gain_z=18.230, kd_att_gain_xy=47.821, kd_att_gain_z=8.818)
     # nmpc = NMPC(args_cli.num_envs, (vehicle_mass+arm_mass).detach().cpu().numpy(), inertia.detach().cpu().numpy())
     
     # print("Quad in EE Frame: ", gc.quad_pos_ee_frame)
@@ -192,7 +199,7 @@ def main():
         "step_trigger": lambda step: step == 0,
         # "episode_trigger": lambda episode: episode == 0,
         "video_length": 501,
-        "name_prefix": "crazyflie_srt_ctatt"
+        "name_prefix": "flatness_tuning"
     }
     env = gym.wrappers.RecordVideo(env, **video_kwargs)
 
@@ -200,6 +207,7 @@ def main():
     obs_dict, info = env.reset()
 
     gc_obs = obs_dict["gc"]
+    # print("Init GC Obs: ", gc_obs)
     # init_states = np.zeros((args_cli.num_envs, 18, 1))
     # goals = np.zeros((args_cli.num_envs, 12, 1))
     # init_states[:,:3,0] = gc_obs[:,:3].detach().cpu().numpy()
@@ -219,7 +227,7 @@ def main():
     quad_omega_list = []
     ee_pos_list = []
     
-    # import code; code.interact(local=locals())
+    import code; code.interact(local=locals())
     
     while simulation_app.is_running():
         while done_count < 1:

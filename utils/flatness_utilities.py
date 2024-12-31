@@ -80,6 +80,28 @@ def H2(s: torch.Tensor) -> torch.Tensor:
                         -s[:, 0], -s[:, 1], s[:, 2]), dim=1).view(-1, 3, 3)
 
 @torch.jit.script
+def H2_inv(R: torch.Tensor) -> torch.Tensor:
+    """
+    Compute the shape s from the rotation matrix R. This should be the inverse of H2.
+
+    Args:
+        R (torch.Tensor): The rotation matrix R, of shape N, 3, 3.
+    Returns:
+        torch.Tensor: The shape s, of shape N, 3.
+    """
+    s1 = R[:, 0, 2]  # R[0, 2]
+    s2 = R[:, 1, 2]  # R[1, 2]
+    s3 = R[:, 2, 2]  # R[2, 2]
+
+    # Combine into shape vector s
+    s = torch.stack((s1, s2, s3), dim=-1)  # Shape (N, 3)
+
+    # Ensure s is normalized
+    s = isaac_math_utils.normalize(s)
+
+    return s
+
+@torch.jit.script
 def H1_dot(psi: torch.Tensor, psi_dot: torch.Tensor) -> torch.Tensor:
     """
     Compute the time derivative of H1 w.r.t. psi, given psi_dot.
@@ -197,6 +219,22 @@ def H2_dot(s: torch.Tensor, s_dot: torch.Tensor) -> torch.Tensor:
                         H2_dot_10, H2_dot_11, H2_dot_12,
                         H2_dot_20, H2_dot_21, H2_dot_22), dim=1).view(-1, 3, 3)
 
+def getShapeFromRotationAndYaw(R: torch.Tensor, psi: torch.Tensor) -> torch.Tensor:
+    """
+    Compute the shape from the Rotation matrix R and the yaw angle psi.
+    R = H2(s) * H1(psi)
+    H2(s) = R @ H1(psi).T
+    s = H2_inv(R @ H1(psi).T)
+
+    Args:
+        R (torch.Tensor): The rotation matrix R, of shape N, 3, 3.
+        psi (torch.Tensor): The yaw of the quadrotor, of shape N, 1.
+    Returns:
+        torch.Tensor: The shape s, of shape N, 3.
+    """
+    H2 = torch.bmm(R, H1(psi).transpose(-2, -1))
+    return H2_inv(H2)
+
 @torch.jit.script
 def getRotationFromShape(s: torch.Tensor, psi: torch.Tensor) -> torch.Tensor:
     """
@@ -228,15 +266,15 @@ def getAttitudeFromRotationAndYaw(R: torch.Tensor, psi: torch.Tensor) -> torch.T
     return torch.stack((x_des, y_des, psi), dim=1)
 
 @torch.jit.script
-def getRotationDotFromShape(s: torch.Tensor, psi: torch.Tensor, s_dot: torch.Tensor, psi_dot: torch.Tensor) -> torch.Tensor:
+def getRotationDotFromShape(s: torch.Tensor, s_dot: torch.Tensor, psi: torch.Tensor, psi_dot: torch.Tensor) -> torch.Tensor:
     """
     Compute the time derivative of the rotation matrix R w.r.t. time, given s_dot and psi_dot.
     R_dot = dR/dt = H2_dot(s) * H1(psi) + H2(s) * H1_dot(psi) * psi_dot
 
     Args:
         s (torch.Tensor): The projection of the unit sphere S^2 onto the plane R^3, of shape N, 3.
-        psi (torch.Tensor): The orientation of the quadrotor, of shape N, 1.
         s_dot (torch.Tensor): The time derivative of s, of shape N, 3.
+        psi (torch.Tensor): The orientation of the quadrotor, of shape N, 1.
         psi_dot (torch.Tensor): The angular velocity of the quadrotor, of shape N, 1.
     Returns:
         torch.Tensor: The time derivative of the rotation matrix R w.r.t. time, of shape N, 3, 3.

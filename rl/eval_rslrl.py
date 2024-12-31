@@ -320,21 +320,28 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         arm_offset = envs.arm_offset
         pos_offset = envs.position_offset
         ori_offset = envs.orientation_offset
+
+        if "Traj" in args_cli.task:
+            feed_forward = True
+        else:
+            feed_forward = False
+
         # Hand-tuned gains
         # agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=device)
         
         
         if "Crazyflie" not in args_cli.task:
             # Optuna-tuned gains for EE-Reward
+            use_feed_forward = "Traj" in args_cli.task
             agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=device,
                                         kp_pos_gain_xy=43.507, kp_pos_gain_z=24.167, kd_pos_gain_xy=9.129, kd_pos_gain_z=6.081,
-                                        kp_att_gain_xy=998.777, kp_att_gain_z=18.230, kd_att_gain_xy=47.821, kd_att_gain_z=8.818)
+                                        kp_att_gain_xy=998.777, kp_att_gain_z=18.230, kd_att_gain_xy=47.821, kd_att_gain_z=8.818, feed_forward=use_feed_forward)
         else:
             # Crazyflie DC
             agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=device,
                                         kp_pos_gain_xy=6.5, kp_pos_gain_z=15.0, kd_pos_gain_xy=4.0, kd_pos_gain_z=9.0,
                                         kp_att_gain_xy=544, kp_att_gain_z=544, kd_att_gain_xy=46.64, kd_att_gain_z=46.64, 
-                                        skip_precompute=True, vehicle="Crazyflie", control_mode="CTATT", print_debug=False)
+                                        skip_precompute=True, vehicle="Crazyflie", control_mode="CTATT", print_debug=False, feed_forward=feed_forward)
             
         # Optuna-tuned gains for EE-LQR Cost (equal pos and yaw weight)
         # agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=device,

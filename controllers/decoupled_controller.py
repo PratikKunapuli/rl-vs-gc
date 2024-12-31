@@ -233,9 +233,10 @@ class DecoupledController():
         # first 17 terms are part of state, then horizon*3 future positions, then horizon*4 future quaternions
         batch_size = obs.shape[0]
         num_obs = obs.shape[1]
-        horizon = (num_obs - 17) // 3
+        horizon = (num_obs - 17) // 7 # 3 for position and 4 for quaternion
         futures = obs[:, -7*horizon:]
 
+        # Position Feed Forwards
         future_com_pos_w = futures[:, :3*horizon].reshape(batch_size, horizon, 3)
         feed_forward_velocities = (future_com_pos_w[:, 1:] - future_com_pos_w[:, :-1]) / self.policy_dt
         feed_forward_accelerations = (feed_forward_velocities[:, 1:] - feed_forward_velocities[:, :-1]) / self.policy_dt
@@ -246,6 +247,7 @@ class DecoupledController():
         ff_jerk = feed_forward_jerks[:, 0]
         ff_snap = feed_forward_snaps[:, 0]
 
+        # Yaw Feed Forwards
         future_com_ori_w = futures[:, 3*horizon:].reshape(batch_size, horizon, 4)
         feed_forward_yaws = yaw_from_quat(future_com_ori_w)
         feed_forward_yaws_dot = (feed_forward_yaws[:, 1:] - feed_forward_yaws[:, :-1]) / self.policy_dt
@@ -253,14 +255,16 @@ class DecoupledController():
         ff_yaw = feed_forward_yaws[:, 0]
         ff_yaw_dot = feed_forward_yaws_dot[:, 0]
         ff_yaw_ddot = feed_forward_yaws_ddot[:, 0]
-
-
-        denom = torch.linalg.norm(ff_acc + self.gravity.tile(batch_size, 1), dim=1).unsqueeze(1)
-        s_des = (ff_acc + self.gravity.tile(batch_size, 1)) / denom
-        s_des_dot = torch.bmm((torch.eye(3, device=self.device).tile(batch_size, 1)- s_des.unsqueeze(2) @ s_des.unsqueeze(1)), ff_jerk.unsqueeze(2)).squeeze(2) / denom
-        s_des_ddot = torch.bmm((torch.eye(3, device=self.device).tile(batch_size, 1)- s_des.unsqueeze(2) @ s_des.unsqueeze(1)), ff_snap.unsqueeze(2)).squeeze(2) - torch.bmm(2*torch.bmm(s_des_dot.unsqueeze(2), s_des.unsqueeze(1)).squeeze(2) + torch.bmm(s_des.unsqueeze(2), s_des_dot.unsqueeze(1)), ff_jerk.unsqueeze(2)) / denom
     
-        return ff_vel, ff_acc, s_des, s_des_dot, s_des_ddot, ff_yaw, ff_yaw_dot, ff_yaw_ddot
+        return ff_vel, ff_acc, ff_jerk, ff_snap, ff_yaw, ff_yaw_dot, ff_yaw_ddot
+
+    def SE3_Control_FF(self, desired_pos, desired_yaw,
+                    com_pos, com_ori_quat, com_vel, com_omega,
+                    obs):
+        ff_vel, ff_acc, ff_jerk, ff_snap, ff_yaw, ff_yaw_dot, ff_yaw_ddot = self.compute_ff_terms(obs)
+        
+
+
 
     def SE3_Control(self, desired_pos, desired_yaw, 
                     com_pos, com_ori_quat, com_vel, com_omega, 
@@ -283,103 +287,140 @@ class DecoupledController():
             com_vel = obs[:, 7:10]
             com_omega = obs[:, 10:13].to(self.device)
 
+        batch_size = obs.shape[0]
+
         if self.feed_forward:
-            ff_vel, ff_acc, s_des, s_des_dot, s_des_ddot, ff_yaw, ff_yaw_dot, ff_yaw_ddot = self.compute_ff_terms(obs)
+            ff_vel, ff_acc, ff_jerk, ff_snap, ff_yaw, ff_yaw_dot, ff_yaw_ddot = self.compute_ff_terms(obs)
+            quad_omega = isaac_math_utils.quat_rotate(isaac_math_utils.quat_conjugate(com_ori_quat), com_omega) # Rotate into body frame
+            gravity_vec = self.gravity.tile(com_pos.shape[0], 1) # (N, 3)
+            Id_3 = torch.eye(3, device=self.device).unsqueeze(0).tile(com_pos.shape[0], 1, 1) # (N, 3, 3)
+        
+            x_ddot_des = -self.kp_pos*(com_pos - desired_pos) - self.kd_pos*(com_vel - ff_vel) + ff_acc # (N, 3)
+            R_actual = isaac_math_utils.matrix_from_quat(com_ori_quat)
+            yaw_actual = yaw_from_quat(com_ori_quat)
+            s_actual = flat_utils.getShapeFromRotationAndYaw(R_actual, yaw_actual) #(N, 3)
+
+            collective_thrust = self.mass * (s_actual.unsqueeze(-1).transpose(-2, -1) @ (x_ddot_des.unsqueeze(-1) + gravity_vec.unsqueeze(-1))).squeeze(-1)
+
+            if self.print_debug:
+                print("Gravity vec (ge3): ", gravity_vec)
+                print("s_actual: ", s_actual)
+                print("x_ddot_des: ", x_ddot_des)
+                print("sT (x_ddot_des + gravity): ", (s_actual.unsqueeze(-1).transpose(-2, -1) @ (x_ddot_des.unsqueeze(-1) + gravity_vec.unsqueeze(-1))).squeeze(-1))
+            # print("s @ (x_ddot_des + gravity): ", (s_actual.unsqueeze(-1) @ (x_ddot_des.unsqueeze(-1) + gravity_vec.unsqueeze(-1))).squeeze(-1))
+
+            # Project x_ddot_des + gravity onto the s_actual direction. 
+            # Use the vector projection formula but make it batched
+            # projected = s <dot> (x_ddot_des + gravity) / ||s||^2 * (x_ddot_des + gravity)
+            # s, x_ddot_des, gravity are all (N, 3) vectors
+            projected_x_ddot_des = (s_actual.unsqueeze(-1).transpose(-2, -1) @ (x_ddot_des.unsqueeze(-1) + gravity_vec.unsqueeze(-1))).squeeze(-1) / torch.linalg.norm(s_actual, dim=1).unsqueeze(1) * s_actual
+
+
+
+
+            # Compute desired accelerations and derivatives
+            # x_ddot = -gravity_vec + (s_actual.unsqueeze(-1).transpose(-2, -1) @ (x_ddot_des.unsqueeze(-1) + gravity_vec.unsqueeze(-1))).squeeze(-1)
+            x_ddot = -gravity_vec + projected_x_ddot_des
+            x_dddot_des = -self.kp_pos*(com_vel - ff_vel) - self.kd_pos*(x_ddot - ff_acc) + ff_jerk
+            x_dddot = x_dddot_des # TODO: Check if this is accurate
+            x_ddddot_des = -self.kp_pos*(x_ddot - ff_acc) - self.kd_pos*(x_dddot - ff_jerk) + ff_snap
+            x_ddddot = x_ddddot_des # TODO: Check if this is accurate
+
+            if self.print_debug:
+                print("Projected x_ddot_des: ", projected_x_ddot_des)
+                print("X_ddot_des: ", x_ddot_des)
+                print("X_ddot: ", x_ddot)
+
+            # Compute desired shapes and derivatives
+            denom = torch.linalg.norm(x_ddot_des + gravity_vec, dim=1).unsqueeze(1)
+            s_des = (x_ddot_des + gravity_vec) / denom # (N, 3)
+            if self.print_debug:
+                print("S_des: ", s_des)
+            s_dot_des = (torch.bmm(Id_3 - s_des.unsqueeze(-1) * s_des.unsqueeze(1), x_dddot.unsqueeze(-1))).squeeze(-1) / denom # (N, 3) # TODO: Check if this should be s_actual or s_des
+            num1 = torch.bmm(Id_3 - s_des.unsqueeze(-1) * s_des.unsqueeze(1), x_ddddot.unsqueeze(-1)).squeeze(-1) # TODO: Check if this should be s_actual or s_des
+            num2 = torch.bmm(2*s_dot_des.unsqueeze(-1)*s_des.unsqueeze(1) + s_des.unsqueeze(-1)*s_dot_des.unsqueeze(1), x_dddot.unsqueeze(-1)).squeeze(-1) # TODO: Check if this should be s_actual or s_des
+            s_ddot_des = (num1 - num2) / denom
+
+            # Compute desired rotations and derivatives
+            R_des = flat_utils.getRotationFromShape(s_des, ff_yaw) # (N, 3, 3)
+            R_dot_des = flat_utils.getRotationDotFromShape(s_des, s_dot_des, ff_yaw, ff_yaw_dot) # (N, 3, 3)
+            R_ddot_des = flat_utils.getRotationDDotFromShape(s_des, s_dot_des, s_ddot_des, ff_yaw, ff_yaw_dot, ff_yaw_ddot) # (N, 3, 3)
+
+            # Compute feed forward omega
+            omega_hat_des = R_actual.transpose(-2, -1) @ R_dot_des # (N, 3, 3)
+            omega_dot_hat_des = R_actual.transpose(-2, -1) @ R_ddot_des  - torch.bmm(omega_hat_des, omega_hat_des) # (N, 3, 3)
+            omega_des = vee_map(omega_hat_des) # (N, 3) [Body Frame]
+            omega_dot_des = vee_map(omega_dot_hat_des) # (N, 3) [Body Frame]
         else:
-            ff_vel = torch.zeros_like(ff_vel)
-            ff_acc = torch.zeros_like(ff_acc)
+            ff_vel = torch.zeros_like(com_vel)
+            ff_acc = torch.zeros_like(com_vel)
+            com_omega = isaac_math_utils.quat_rotate(isaac_math_utils.quat_conjugate(com_ori_quat), com_omega)
 
-
-        # desired_yaw = 2 * torch.arctan2(desired_ori[:, 3], desired_ori[:, 0])
-        # desired_yaw = yaw_from_quat(desired_yaw)
-        # print("Desired Yaw: ", desired_yaw)
-        # _, _, desired_yaw  = isaac_math_utils.euler_xyz_from_quat(desired_ori)
-
-        # print("Quad ori: ", quad_ori_quat)  
-
-        # quad_yaw = yaw_from_quat(quad_ori_quat)
-        # com_yaw = yaw_from_quat(com_ori_quat)
-        
-        
-        # print("Quad yaw: ", quad_yaw)
-        # print("Quad yaw: ", 2 * torch.arctan2(quad_ori_quat[:, 3], quad_ori_quat[:, 0]))
-
-        # Rotate omega into body frame from world frame
-        # quad_omega = isaac_math_utils.quat_rotate(isaac_math_utils.quat_conjugate(quad_ori_quat), quad_omega)
-        com_omega = isaac_math_utils.quat_rotate(isaac_math_utils.quat_conjugate(com_ori_quat), com_omega)
-
-        # com_pos, com_ori = isaac_math_utils.combine_frame_transforms(ee_pos, ee_ori_quat, self.com_pos_ee_frame, self.com_ori_ee_frame)
-
-        # com_pos, com_vel = get_point_state_from_ee_transform_w(ee_pos, ee_ori_quat, ee_vel, ee_omega, self.com_pos_ee_frame)
-        # quad_pos_computed, quad_vel_computed = get_point_state_from_ee_transform_w(ee_pos, ee_ori_quat, ee_vel, ee_omega, self.quad_pos_ee_frame)
-
-        # print("COM pos: ", com_pos)
-        # print("EE pos: ", ee_pos)
-        # print("Quad Pos (isaac) : ", quad_pos)
-        # print("Quad Pos computed: ", quad_pos_computed)
-
-        # print("COM Vel: ", com_vel)
-        # print("Quad Vel (isaac) : ", quad_vel)
-        # print("Quad Vel computed: ", quad_vel_computed)
-        # print("Quad vel computed (refactor): ", ee_vel + torch.cross(ee_omega, self.quad_pos_ee_frame, dim=1))
-        # com_pos = quad_pos
-        # com_vel = quad_vel
-
-
-        pos_error = com_pos - desired_pos
-        vel_error = com_vel - ff_vel
-
-        # pos_error = quad_pos - desired_pos
-        # vel_error = quad_vel - torch.zeros_like(quad_vel)
-
-        # pos_error = quad_pos_computed - desired_pos
-        # vel_error = quad_vel_computed - torch.zeros_like(quad_vel_computed)
-
-        if self.print_debug:
-            print("[SE3] Pos Error norm: ", torch.linalg.norm(pos_error,dim=1))
-        # print("Vel Error: ", vel_error)
-
-        # Compute desired Force (batch_size, 3)
-        F_des = self.mass * (-self.kp_pos * pos_error + \
+            pos_error = com_pos - desired_pos
+            vel_error = com_vel - ff_vel
+            F_des = self.mass * (-self.kp_pos * pos_error + \
                              -self.kd_pos * vel_error + \
                              ff_acc + \
                             self.gravity.tile(com_pos.shape[0], 1)) # (N, 3)
         
-        # print("F_des: ", F_des)
+            if self.print_debug:
+                print("[SE3] Pos Error norm: ", torch.linalg.norm(pos_error,dim=1))
         
-        batch_size = com_pos.shape[0]
-        # quad_ori_matrix = isaac_math_utils.matrix_from_quat(quad_ori_quat) # (batch_size, 3, 3)
-        quad_ori_matrix = isaac_math_utils.matrix_from_quat(com_ori_quat) # (batch_size, 3, 3)
-        quad_omega = com_omega # (batch_size, 3)
-        quad_b3 = quad_ori_matrix[:, :, 2] # (batch_size, 3)
-        # print("b3: ", quad_b3)
-        # collective_thrust = torch.bmm(F_des.view(batch_size, 1, 3), quad_b3.view(batch_size, 3, 1)).squeeze(2)
-        collective_thrust = (F_des * quad_b3).sum(dim=-1)
-        # print("Collective Thrust: ", collective_thrust)
+            # print("F_des: ", F_des)
+            
+            batch_size = com_pos.shape[0]
+            # quad_ori_matrix = isaac_math_utils.matrix_from_quat(quad_ori_quat) # (batch_size, 3, 3)
+            quad_ori_matrix = isaac_math_utils.matrix_from_quat(com_ori_quat) # (batch_size, 3, 3)
+            R_actual = quad_ori_matrix
+            quad_omega = com_omega # (batch_size, 3)
+            quad_b3 = quad_ori_matrix[:, :, 2] # (batch_size, 3)
+            # print("b3: ", quad_b3)
+            # collective_thrust = torch.bmm(F_des.view(batch_size, 1, 3), quad_b3.view(batch_size, 3, 1)).squeeze(2)
+            collective_thrust = (F_des * quad_b3).sum(dim=-1)
+            # print("Collective Thrust: ", collective_thrust)
 
-        # Compute the desired orientation
-        b3_des = isaac_math_utils.normalize(F_des)
-        yaw_des = desired_yaw.view(batch_size,1) # (N,)
-        c1_des = torch.stack([torch.cos(yaw_des), torch.sin(yaw_des), torch.zeros(self.num_envs, 1, device=self.device)],dim=1).view(batch_size, 3) # (N, 3)
-        # print("c1_des: ", c1_des)
-        b2_des = torch.cross(b3_des, c1_des, dim=1)
-        b2_des = isaac_math_utils.normalize(b2_des)
-        b1_des = torch.cross(b2_des, b3_des, dim=1)
-        R_des = torch.stack([b1_des, b2_des, b3_des], dim=2) # (batch_size, 3, 3)
+            # Compute the desired orientation
+            b3_des = isaac_math_utils.normalize(F_des)
+            yaw_des = desired_yaw.view(batch_size,1) # (N,)
+            c1_des = torch.stack([torch.cos(yaw_des), torch.sin(yaw_des), torch.zeros(self.num_envs, 1, device=self.device)],dim=1).view(batch_size, 3) # (N, 3)
+            # print("c1_des: ", c1_des)
+            b2_des = torch.cross(b3_des, c1_des, dim=1)
+            b2_des = isaac_math_utils.normalize(b2_des)
+            b1_des = torch.cross(b2_des, b3_des, dim=1)
+            R_des = torch.stack([b1_des, b2_des, b3_des], dim=2) # (batch_size, 3, 3)
 
+            omega_des = torch.zeros_like(quad_omega, device=self.device) # Omega des is 0. (batch_size, 3)
+            omega_dot_des = torch.zeros_like(quad_omega, device=self.device) # Omega des is 0. (batch_size, 3)
+
+
+
+        if self.print_debug:
+            print("Pos Error: ", com_pos - desired_pos)
+            print("Vel Error: ", com_vel - ff_vel)
+            print("Yaw error: ", math_utils.yaw_from_quat(com_ori_quat) - desired_yaw)
+            print("Collective Thrust: ", collective_thrust)
+            print("R_des: ", R_des)
+            print("omega_des: ", omega_des)
+            print("omega_dot_des: ", omega_dot_des)
+
+        # import code; code.interact(local=locals())
+        
+        # print("Vel Error: ", vel_error)
+
+        # Compute desired Force (batch_size, 3)
 
         # Compute orientation error
-        S_err = 0.5 * (torch.bmm(R_des.transpose(-2, -1), quad_ori_matrix) - torch.bmm(quad_ori_matrix.transpose(-2, -1), R_des)) # (batch_size, 3, 3)
+        S_err = 0.5 * (torch.bmm(R_des.transpose(-2, -1), R_actual) - torch.bmm(R_actual.transpose(-2, -1), R_des)) # (batch_size, 3, 3)
         att_err = vee_map(S_err) # (batch_size, 3)
         if torch.any(torch.isnan(att_err)):
             print("Nan detected in attitude error!", att_err)
             att_err = torch.zeros_like(att_err, device=self.device)
-        omega_err = quad_omega - torch.zeros_like(quad_omega, device=self.device) # Omega des is 0. (batch_size, 3)
+        omega_err = quad_omega - omega_des # Omega des is 0. (batch_size, 3)
         
         # Compute desired moments
         # M = I @ (-kp_att * att_err - kd_att * omega_err) + omega x I @ omega
         inertia = self.inertia_tensor.unsqueeze(0).tile(batch_size, 1, 1).to(self.device)
-        att_pd = -self.kp_att * att_err - self.kd_att * omega_err
+        att_pd = -self.kp_att * att_err - self.kd_att * omega_err + omega_dot_des
         I_omega = torch.bmm(inertia.view(batch_size, 3, 3), quad_omega.unsqueeze(2)).squeeze(2).to(self.device)
 
         M_des = torch.bmm(inertia.view(batch_size, 3, 3), att_pd.unsqueeze(2)).squeeze(2) + \

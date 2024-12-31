@@ -17,9 +17,7 @@ class SKRL_Shared_MLP(GaussianMixin, DeterministicMixin, Model):
         self.net = nn.Sequential(nn.Linear(self.num_observations, 256),
                                  nn.ELU(),
                                  nn.Linear(256, 256),
-                                 nn.ELU(),
-                                 nn.Linear(256, 256),
-                                 nn.ELU())
+                                 nn.ELU(),)
 
         self.mean_layer = nn.Linear(256, self.num_actions)
         self.log_std_parameter = nn.Parameter(torch.zeros(self.num_actions))
