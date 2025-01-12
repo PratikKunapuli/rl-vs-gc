@@ -77,7 +77,7 @@ class DecoupledController():
                   kp_pos_gain_xy=10.0, kp_pos_gain_z=20.0, kd_pos_gain_xy=7.0, kd_pos_gain_z=9.0, 
                   kp_att_gain_xy=400.0, kp_att_gain_z=2.0, kd_att_gain_xy=70.0, kd_att_gain_z=2.0,
                   tuning_mode=False, use_full_obs=False, skip_precompute=False, vehicle="AM", control_mode="CTBM", policy_dt=0.02,
-                  feed_forward=False):
+                  feed_forward=False, disable_gravity=False):
         self.num_envs = num_envs
         self.num_dofs = num_dofs
         self.print_debug = print_debug
@@ -118,7 +118,8 @@ class DecoupledController():
         self.initial_yaw_offset = torch.tensor([[0.7071, 0, 0, -0.7071]], device=self.device)
 
         self.gravity = torch.tensor([0.0, 0.0, 9.81], device=self.device)
-        # self.gravity = torch.tensor([0.0, 0.0, 0.0], device=self.device)
+        if disable_gravity:
+            self.gravity = torch.tensor([0.0, 0.0, 0.0], device=self.device)
 
         # Tested defaults gains
         # self.kp_pos = torch.tensor([10.0, 10.0, 20.0], device=self.device)
@@ -137,6 +138,14 @@ class DecoupledController():
 
         # self.kp_att = torch.tensor([400.0, 200.0, 2.0], device=self.device) 
         # self.kd_att = torch.tensor([50.0, 200.0, 2.0], device=self.device)
+
+        self.s_buffer = []
+        self.s_des_buffer = []
+        self.s_dot_buffer = []
+        self.s_dot_des_buffer = []
+        self.ref_pos_buffer = []
+        self.pos_buffer = []
+
 
         if not skip_precompute:
             self.precompute_transforms()
@@ -242,6 +251,7 @@ class DecoupledController():
         feed_forward_accelerations = (feed_forward_velocities[:, 1:] - feed_forward_velocities[:, :-1]) / self.policy_dt
         feed_forward_jerks = (feed_forward_accelerations[:, 1:] - feed_forward_accelerations[:, :-1]) / self.policy_dt
         feed_forward_snaps = (feed_forward_jerks[:, 1:] - feed_forward_jerks[:, :-1]) / self.policy_dt
+        ff_pos = future_com_pos_w[:, 0]
         ff_vel = feed_forward_velocities[:, 0]
         ff_acc = feed_forward_accelerations[:, 0]
         ff_jerk = feed_forward_jerks[:, 0]
@@ -250,13 +260,18 @@ class DecoupledController():
         # Yaw Feed Forwards
         future_com_ori_w = futures[:, 3*horizon:].reshape(batch_size, horizon, 4)
         feed_forward_yaws = yaw_from_quat(future_com_ori_w)
-        feed_forward_yaws_dot = (feed_forward_yaws[:, 1:] - feed_forward_yaws[:, :-1]) / self.policy_dt
+        # feed_forward_yaws_dot = (feed_forward_yaws[:, 1:] - feed_forward_yaws[:, :-1]) / self.policy_dt
+        feed_forward_yaws_dot = ((feed_forward_yaws[:, 1:] - feed_forward_yaws[:, :-1] + 3*torch.pi) % (2*torch.pi) - torch.pi) / self.policy_dt
+        # print("Feed Forward Yaws: ", feed_forward_yaws[0,0])
+        # print("Feed Forward Yaws Dot: ", feed_forward_yaws_dot[0,0])
+        # print("Smoothed: ", smoothed[0,0])
+
         feed_forward_yaws_ddot = (feed_forward_yaws_dot[:, 1:] - feed_forward_yaws_dot[:, :-1]) / self.policy_dt
         ff_yaw = feed_forward_yaws[:, 0]
         ff_yaw_dot = feed_forward_yaws_dot[:, 0]
         ff_yaw_ddot = feed_forward_yaws_ddot[:, 0]
     
-        return ff_vel, ff_acc, ff_jerk, ff_snap, ff_yaw, ff_yaw_dot, ff_yaw_ddot
+        return ff_pos, ff_vel, ff_acc, ff_jerk, ff_snap, ff_yaw, ff_yaw_dot, ff_yaw_ddot
 
     def SE3_Control_FF(self, desired_pos, desired_yaw,
                     com_pos, com_ori_quat, com_vel, com_omega,
@@ -290,7 +305,11 @@ class DecoupledController():
         batch_size = obs.shape[0]
 
         if self.feed_forward:
-            ff_vel, ff_acc, ff_jerk, ff_snap, ff_yaw, ff_yaw_dot, ff_yaw_ddot = self.compute_ff_terms(obs)
+            desired_pos, ff_vel, ff_acc, ff_jerk, ff_snap, ff_yaw, ff_yaw_dot, ff_yaw_ddot = self.compute_ff_terms(obs)
+            self.ref_pos_buffer.append(desired_pos)
+            self.pos_buffer.append(com_pos)
+
+            # print("Input and Traj close: ", torch.allclose(input_des_pos, desired_pos, atol=1e-5))
             quad_omega = isaac_math_utils.quat_rotate(isaac_math_utils.quat_conjugate(com_ori_quat), com_omega) # Rotate into body frame
             gravity_vec = self.gravity.tile(com_pos.shape[0], 1) # (N, 3)
             Id_3 = torch.eye(3, device=self.device).unsqueeze(0).tile(com_pos.shape[0], 1, 1) # (N, 3, 3)
@@ -299,6 +318,7 @@ class DecoupledController():
             R_actual = isaac_math_utils.matrix_from_quat(com_ori_quat)
             yaw_actual = yaw_from_quat(com_ori_quat)
             s_actual = flat_utils.getShapeFromRotationAndYaw(R_actual, yaw_actual) #(N, 3)
+            self.s_buffer.append(s_actual)
 
             collective_thrust = self.mass * (s_actual.unsqueeze(-1).transpose(-2, -1) @ (x_ddot_des.unsqueeze(-1) + gravity_vec.unsqueeze(-1))).squeeze(-1)
 
@@ -322,9 +342,27 @@ class DecoupledController():
             # x_ddot = -gravity_vec + (s_actual.unsqueeze(-1).transpose(-2, -1) @ (x_ddot_des.unsqueeze(-1) + gravity_vec.unsqueeze(-1))).squeeze(-1)
             x_ddot = -gravity_vec + projected_x_ddot_des
             x_dddot_des = -self.kp_pos*(com_vel - ff_vel) - self.kd_pos*(x_ddot - ff_acc) + ff_jerk
-            x_dddot = x_dddot_des # TODO: Check if this is accurate
+            
+            # x_dddot = s_dot.T(x_ddot_des + ge3) + sT(x_dddot_des)
+            # s_dot comes from the hat_map(R^T @ omega) last column
+            s_dot = torch.bmm(R_actual, math_utils.hat_map(quad_omega))[:,:,-1].view(batch_size, 3)
+            self.s_dot_buffer.append(s_dot)
+            if self.print_debug:
+                print("s_dot: ", s_dot.shape)
+                print("x_ddot_des: ", x_ddot_des.shape)
+                print("x_ddot: ", x_ddot.shape)
+                print("x_dddot_des: ", x_dddot_des.shape)
+                print("s_actual: ", s_actual.shape)
+                print("gravity_vec: ", gravity_vec.shape)
+            # s_dot is (N,3), then (N,3,1), then (N,1,3) @ (N,3,1) = (N,1,1) -> (N)
+            # I want x_dddot to be (N,3) by the end. 
+            x_dddot = (s_dot.unsqueeze(-1).transpose(-2, -1) @ (x_ddot_des.unsqueeze(-1) + gravity_vec.unsqueeze(-1))).squeeze(-1) * s_dot + (s_actual.unsqueeze(-1).transpose(-2, -1) @ x_dddot_des.unsqueeze(-1)).squeeze(-1) * s_actual
             x_ddddot_des = -self.kp_pos*(x_ddot - ff_acc) - self.kd_pos*(x_dddot - ff_jerk) + ff_snap
-            x_ddddot = x_ddddot_des # TODO: Check if this is accurate
+            
+            if self.print_debug:
+                print("X_dddot: ", x_dddot.shape)
+                print("X_ddddot_des: ", x_ddddot_des.shape)
+
 
             if self.print_debug:
                 print("Projected x_ddot_des: ", projected_x_ddot_des)
@@ -334,11 +372,13 @@ class DecoupledController():
             # Compute desired shapes and derivatives
             denom = torch.linalg.norm(x_ddot_des + gravity_vec, dim=1).unsqueeze(1)
             s_des = (x_ddot_des + gravity_vec) / denom # (N, 3)
+            self.s_des_buffer.append(s_des)
             if self.print_debug:
                 print("S_des: ", s_des)
-            s_dot_des = (torch.bmm(Id_3 - s_des.unsqueeze(-1) * s_des.unsqueeze(1), x_dddot.unsqueeze(-1))).squeeze(-1) / denom # (N, 3) # TODO: Check if this should be s_actual or s_des
-            num1 = torch.bmm(Id_3 - s_des.unsqueeze(-1) * s_des.unsqueeze(1), x_ddddot.unsqueeze(-1)).squeeze(-1) # TODO: Check if this should be s_actual or s_des
-            num2 = torch.bmm(2*s_dot_des.unsqueeze(-1)*s_des.unsqueeze(1) + s_des.unsqueeze(-1)*s_dot_des.unsqueeze(1), x_dddot.unsqueeze(-1)).squeeze(-1) # TODO: Check if this should be s_actual or s_des
+            s_dot_des = (torch.bmm(Id_3 - s_des.unsqueeze(-1) * s_des.unsqueeze(1), x_dddot_des.unsqueeze(-1))).squeeze(-1) / denom # (N, 3) # TODO: Check if this should be s_actual or s_des
+            self.s_dot_des_buffer.append(s_dot_des)
+            num1 = torch.bmm(Id_3 - s_des.unsqueeze(-1) * s_des.unsqueeze(1), x_ddddot_des.unsqueeze(-1)).squeeze(-1) # TODO: Check if this should be s_actual or s_des
+            num2 = torch.bmm(2*s_dot_des.unsqueeze(-1)*s_des.unsqueeze(1) + s_des.unsqueeze(-1)*s_dot_des.unsqueeze(1), x_dddot_des.unsqueeze(-1)).squeeze(-1) # TODO: Check if this should be s_actual or s_des
             s_ddot_des = (num1 - num2) / denom
 
             # Compute desired rotations and derivatives
@@ -351,6 +391,17 @@ class DecoupledController():
             omega_dot_hat_des = R_actual.transpose(-2, -1) @ R_ddot_des  - torch.bmm(omega_hat_des, omega_hat_des) # (N, 3, 3)
             omega_des = vee_map(omega_hat_des) # (N, 3) [Body Frame]
             omega_dot_des = vee_map(omega_dot_hat_des) # (N, 3) [Body Frame]
+            if self.print_debug:
+                print("R actual: ", R_actual.shape)
+                print("R des: ", R_des.shape)
+                print("quad_omega_hat: ", math_utils.hat_map(quad_omega).shape)
+                print("omega_des: ", omega_des.shape)
+                print("omega_dot_des: ", omega_dot_des.shape)
+
+            ff_part_1 = torch.bmm(torch.bmm(torch.bmm(math_utils.hat_map(quad_omega), R_actual.transpose(-2, -1)), R_des), omega_des.unsqueeze(-1)).squeeze(-1) # (N, 3)
+            ff_part_2 = torch.bmm(torch.bmm(R_actual.transpose(-2, -1), R_des), omega_dot_des.unsqueeze(-1)).squeeze(-1) # (N, 3)
+            feed_forward_angular_acceleration = ff_part_1 - ff_part_2
+            # print("Feed Forward Angular Acceleration: ", feed_forward_angular_acceleration)
         else:
             ff_vel = torch.zeros_like(com_vel)
             ff_acc = torch.zeros_like(com_vel)
@@ -391,6 +442,7 @@ class DecoupledController():
 
             omega_des = torch.zeros_like(quad_omega, device=self.device) # Omega des is 0. (batch_size, 3)
             omega_dot_des = torch.zeros_like(quad_omega, device=self.device) # Omega des is 0. (batch_size, 3)
+            feed_forward_angular_acceleration = torch.zeros_like(quad_omega, device=self.device) # Omega des is 0. (batch_size, 3)
 
 
 
@@ -420,11 +472,12 @@ class DecoupledController():
         # Compute desired moments
         # M = I @ (-kp_att * att_err - kd_att * omega_err) + omega x I @ omega
         inertia = self.inertia_tensor.unsqueeze(0).tile(batch_size, 1, 1).to(self.device)
-        att_pd = -self.kp_att * att_err - self.kd_att * omega_err + omega_dot_des
+        att_pd = -self.kp_att * att_err - self.kd_att * omega_err 
         I_omega = torch.bmm(inertia.view(batch_size, 3, 3), quad_omega.unsqueeze(2)).squeeze(2).to(self.device)
 
         M_des = torch.bmm(inertia.view(batch_size, 3, 3), att_pd.unsqueeze(2)).squeeze(2) + \
-                torch.cross(quad_omega, I_omega, dim=1) 
+                torch.cross(quad_omega, I_omega, dim=1) - \
+                torch.bmm(inertia.view(batch_size, 3, 3), feed_forward_angular_acceleration.unsqueeze(2)).squeeze(2)
         
         if self.control_mode == "CTBM":
             return collective_thrust, M_des
@@ -598,3 +651,25 @@ class DecoupledController():
         # import code; code.interact(local=locals())
 
         return torch.stack([u1, u2, u3, u4], dim=1).view(batch_size, 4)
+
+    def log_buffers(self):
+        self.s_buffer = torch.stack(self.s_buffer, dim=0)
+        self.s_dot_buffer = torch.stack(self.s_dot_buffer, dim=0)
+        self.s_des_buffer = torch.stack(self.s_des_buffer, dim=0)
+        self.s_dot_des_buffer = torch.stack(self.s_dot_des_buffer, dim=0)
+        self.ref_pos_buffer = torch.stack(self.ref_pos_buffer, dim=0)
+        self.pos_buffer = torch.stack(self.pos_buffer, dim=0)
+
+        self.s_buffer = self.s_buffer.cpu().detach()
+        self.s_dot_buffer = self.s_dot_buffer.cpu().detach()
+        self.s_des_buffer = self.s_des_buffer.cpu().detach()
+        self.s_dot_des_buffer = self.s_dot_des_buffer.cpu().detach()
+        self.ref_pos_buffer = self.ref_pos_buffer.cpu().detach()
+        self.pos_buffer = self.pos_buffer.cpu().detach()
+
+        torch.save(self.s_buffer, "s_buffer.pt")
+        torch.save(self.s_dot_buffer, "s_dot_buffer.pt")
+        torch.save(self.s_des_buffer, "s_des_buffer.pt")
+        torch.save(self.s_dot_des_buffer, "s_dot_des_buffer.pt")
+        torch.save(self.ref_pos_buffer, "ref_pos_buffer.pt")
+        torch.save(self.pos_buffer, "pos_buffer.pt")

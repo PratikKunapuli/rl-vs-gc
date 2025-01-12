@@ -128,33 +128,23 @@ def H1_dot(psi: torch.Tensor, psi_dot: torch.Tensor) -> torch.Tensor:
 
 
 @torch.jit.script
-def H2_dot(s: torch.Tensor, s_dot: torch.Tensor) -> torch.Tensor:
+def getPartialH2_PartialS(s: torch.Tensor) -> torch.Tensor:
     """
-    Compute the time derivative of H2 w.r.t. s, given s_dot.
-    H2_dot = sum_i dH2/ds_i * s_dot_i
-
+    Return the partial derivative of H2 w.r.t. s.
     Args:
-        s (torch.Tensor): The projection of the unit sphere S^2 onto the plane R^3, of shape N, 3.
-        s_dot (torch.Tensor): The time derivative of s, of shape N, 3.
+        s (torch.Tensor): The shape s, of shape N, 3.
     Returns:
-        torch.Tensor: The time derivative of H2 w.r.t. s, of shape N, 3, 3.
+        torch.Tensor: The partial derivative of H2 w.r.t. s, of shape N, 3, 3, 3.
     """
-    # We assume s is already normalized. If s changes over time, ensure s_dot is consistent.
     # Extract components
     s = isaac_math_utils.normalize(s)
     sx = s[:,0]
     sy = s[:,1]
     sz = s[:,2]
-    sx_dot = s_dot[:,0]
-    sy_dot = s_dot[:,1]
-    sz_dot = s_dot[:,2]
-    
+
     D = 1 + sz
     D2 = D**2
-    
-    # Partial derivatives for each element of H2
-    # For convenience, we'll compute all partials and then combine them:
-    
+
     # H2[0,0]
     dH2_00_sx = -2*sx/D
     dH2_00_sy = torch.zeros_like(sx)
@@ -199,25 +189,40 @@ def H2_dot(s: torch.Tensor, s_dot: torch.Tensor) -> torch.Tensor:
     dH2_22_sx = torch.zeros_like(sx)
     dH2_22_sy = torch.zeros_like(sx)
     dH2_22_sz = torch.ones_like(sx)
-    
-    # Combine partial derivatives with s_dot
-    # For each element: H2_dot[i,j] = sum_over_k (dH2[i,j]/ds_k * s_dot_k)
-    
-    H2_dot_00 = dH2_00_sx*sx_dot + dH2_00_sy*sy_dot + dH2_00_sz*sz_dot
-    H2_dot_01 = dH2_01_sx*sx_dot + dH2_01_sy*sy_dot + dH2_01_sz*sz_dot
-    H2_dot_02 = dH2_02_sx*sx_dot + dH2_02_sy*sy_dot + dH2_02_sz*sz_dot
-    
-    H2_dot_10 = dH2_10_sx*sx_dot + dH2_10_sy*sy_dot + dH2_10_sz*sz_dot
-    H2_dot_11 = dH2_11_sx*sx_dot + dH2_11_sy*sy_dot + dH2_11_sz*sz_dot
-    H2_dot_12 = dH2_12_sx*sx_dot + dH2_12_sy*sy_dot + dH2_12_sz*sz_dot
-    
-    H2_dot_20 = dH2_20_sx*sx_dot + dH2_20_sy*sy_dot + dH2_20_sz*sz_dot
-    H2_dot_21 = dH2_21_sx*sx_dot + dH2_21_sy*sy_dot + dH2_21_sz*sz_dot
-    H2_dot_22 = dH2_22_sx*sx_dot + dH2_22_sy*sy_dot + dH2_22_sz*sz_dot
-    
-    return torch.stack((H2_dot_00, H2_dot_01, H2_dot_02,
-                        H2_dot_10, H2_dot_11, H2_dot_12,
-                        H2_dot_20, H2_dot_21, H2_dot_22), dim=1).view(-1, 3, 3)
+
+    return torch.stack((torch.stack((dH2_00_sx, dH2_00_sy, dH2_00_sz), dim=1),
+                        torch.stack((dH2_01_sx, dH2_01_sy, dH2_01_sz), dim=1),
+                        torch.stack((dH2_02_sx, dH2_02_sy, dH2_02_sz), dim=1),
+                        torch.stack((dH2_10_sx, dH2_10_sy, dH2_10_sz), dim=1),
+                        torch.stack((dH2_11_sx, dH2_11_sy, dH2_11_sz), dim=1),
+                        torch.stack((dH2_12_sx, dH2_12_sy, dH2_12_sz), dim=1),
+                        torch.stack((dH2_20_sx, dH2_20_sy, dH2_20_sz), dim=1),
+                        torch.stack((dH2_21_sx, dH2_21_sy, dH2_21_sz), dim=1),
+                        torch.stack((dH2_22_sx, dH2_22_sy, dH2_22_sz), dim=1)), dim=1).view(-1, 3, 3, 3)
+
+@torch.jit.script
+def H2_dot(s: torch.Tensor, s_dot: torch.Tensor) -> torch.Tensor:
+    """
+    Compute the actual H2_dot matrix given s and s_dot.
+    H2_dot = dH2/ds * s_dot
+
+    Args:
+        s (torch.Tensor): The projection of the unit sphere S^2 onto the plane R^3, of shape N, 3.
+        s_dot (torch.Tensor): The time derivative of s, of shape N, 3.
+    Returns:
+        torch.Tensor: The time derivative of H2 w.r.t. s, of shape N, 3, 3.
+    """
+    # We assume s is already normalized. If s changes over time, ensure s_dot is consistent.
+    # Extract components
+    s = isaac_math_utils.normalize(s)
+    dH2_s = getPartialH2_PartialS(s) # Shape (N, 3, 3, 3)
+
+    # Now we want to take every element of dH2/ds and multiply it by the corresponding element of s_dot
+    # This is equivalent to a matrix multiplication
+    H2_dot = torch.einsum('nijk,nj->nik', dH2_s, s_dot)
+
+    return H2_dot
+
 
 def getShapeFromRotationAndYaw(R: torch.Tensor, psi: torch.Tensor) -> torch.Tensor:
     """
