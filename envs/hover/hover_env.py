@@ -22,6 +22,7 @@ import numpy as np
 
 # Local imports
 from configs.aerial_manip_asset import AERIAL_MANIPULATOR_2DOF_CFG, AERIAL_MANIPULATOR_1DOF_CFG, AERIAL_MANIPULATOR_1DOF_WRIST_CFG, AERIAL_MANIPULATOR_0DOF_CFG, AERIAL_MANIPULATOR_0DOF_DEBUG_CFG
+from configs.aerial_manip_asset import AERIAL_MANIPULATOR_0DOF_SMALL_ARM_COM_V_CFG, AERIAL_MANIPULATOR_0DOF_SMALL_ARM_COM_MIDDLE_CFG, AERIAL_MANIPULATOR_0DOF_SMALL_ARM_COM_EE_CFG
 from utils.math_utilities import yaw_from_quat, yaw_error_from_quats, quat_from_yaw, compute_desired_pose_from_transform
 
 class AerialManipulatorEnvWindow(BaseEnvWindow):
@@ -236,6 +237,36 @@ class AerialManipulator0DOFDebugHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
     
     # robot
     robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_DEBUG_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+
+@configclass
+class AerialManipulator0DOFSmallArmCOMVehicleHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
+    # env
+    num_actions = 4
+    num_joints = 0
+    num_observations = 12 # TODO: Need to update this..
+    
+    # robot
+    robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_SMALL_ARM_COM_V_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+
+@configclass
+class AerialManipulator0DOFSmallArmCOMMiddleHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
+    # env
+    num_actions = 4
+    num_joints = 0
+    num_observations = 12 # TODO: Need to update this..
+    
+    # robot
+    robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_SMALL_ARM_COM_MIDDLE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+
+@configclass
+class AerialManipulator0DOFSmallArmCOMEndEffectorHoverEnvCfg(AerialManipulatorHoverEnvBaseCfg):
+    # env
+    num_actions = 4
+    num_joints = 0
+    num_observations = 12 # TODO: Need to update this..
+    
+    # robot
+    robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_SMALL_ARM_COM_EE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
 
 
 @configclass

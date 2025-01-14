@@ -8,14 +8,14 @@ parser = argparse.ArgumentParser(description="Run demo with Isaac Sim")
 parser.add_argument("--video", action="store_true", help="Record video")
 parser.add_argument("--video_length", type=int, default=200, help="Length of the recorded video (in steps).")
 parser.add_argument("--video_interval", type=int, default=100, help="Interval between video recordings (in steps).")
-parser.add_argument("--cpu", action="store_true", default=False, help="Use CPU pipeline.")
 parser.add_argument(
     "--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations."
 )
 parser.add_argument("--num_envs", type=int, default=1, help="Number of environments to simulate.")
 parser.add_argument("--task", type=str, default="Isaac-AerialManipulator-0DOF-Debug-Hover-v0", help="Name of the task.")
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
-parser.add_argument("--max_iterations", type=int, default=None, help="RL Policy training iterations.")
+AppLauncher.add_app_launcher_args(parser)
+
 
 args_cli = parser.parse_args()
 
@@ -38,7 +38,7 @@ import envs
 import envs.hover
 # from AerialManipulation.envs.hover import hover_env
 
-from rl.policies import DecoupledController
+from controllers.decoupled_controller import DecoupledController
 
 import optuna
 
@@ -55,14 +55,16 @@ env_cfg.policy_rate_hz = 50
 env_cfg.sim.dt = 1/env_cfg.sim_rate_hz
 env_cfg.decimation = env_cfg.sim_rate_hz // env_cfg.policy_rate_hz
 env_cfg.sim.render_interval = env_cfg.decimation
-env_cfg.eval_mode = True
-# env_cfg.task_body = "COM"
+env_cfg.gc_mode = True
+env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
+env_cfg.task_body = "COM"
+env_cfg.goal_body = "COM"
 
 # Reward shaping
-env_cfg.pos_distance_reward_scale = 0.0
-env_cfg.pos_error_reward_scale = -2.0
-env_cfg.yaw_error = -2.0
-env_cfg.yaw_smooth_transition_scale = 0.0
+# env_cfg.pos_distance_reward_scale = 0.0
+# env_cfg.pos_error_reward_scale = -2.0
+# env_cfg.yaw_error = -2.0
+# env_cfg.yaw_smooth_transition_scale = 0.0
 
 
 
@@ -101,8 +103,10 @@ def eval_trial(trial):
 
     while steps < 500:
         obs_tensor = obs_dict["policy"]
-        full_state = obs_dict["full_state"]
-        action_gc = gc.get_action(full_state)
+        # full_state = obs_dict["full_state"]
+        # action_gc = gc.get_action(full_state)
+        gc_obs = obs_dict["gc"]
+        action_gc = gc.get_action(gc_obs)
 
         action = action_gc.to(obs_tensor.device)
 
@@ -129,9 +133,9 @@ def eval_trial(trial):
 
 def main():
     study = optuna.create_study(direction="maximize",
-                                study_name="gc_tuning_reward_EE_LQR", storage="mysql://root@localhost/gctuning_reward_COM", load_if_exists=True,
+                                study_name=args_cli.task, storage="sqlite:///database_gc_tuning.sqlite3", load_if_exists=True,
     )
-    study.optimize(eval_trial, n_trials=100)
+    study.optimize(eval_trial, n_trials=500)
     
     print("Number of finished trials: ", len(study.trials))
 
