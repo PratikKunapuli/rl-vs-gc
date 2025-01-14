@@ -63,6 +63,11 @@ cd AerialManipulation
 pip install -e .
 ```
 
+Install MySQL only for creating a local database with GC tuniung
+```bash
+sudo apt-get install mysql-server
+```
+
 # Demos
 Two demonstration files are available to investigate the model/physics. 
 

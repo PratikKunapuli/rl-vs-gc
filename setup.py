@@ -10,6 +10,7 @@ setup(
         'ruamel.yaml',
         'seaborn',
         'matplotlib',
-        'warp-lang'
+        'warp-lang',
+        'optuna',
     ],
 )
