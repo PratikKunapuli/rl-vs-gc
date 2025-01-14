@@ -54,6 +54,7 @@ import yaml
 import gymnasium as gym
 import envs
 from controllers.decoupled_controller import DecoupledController
+from controllers.gc_params import gc_params_dict
 
 
 from rsl_rl.runners import OnPolicyRunner
@@ -118,14 +119,16 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
             env_cfg.reward_task_body = "endeffector"
             env_cfg.reward_goal_body = "endeffector"
 
-            policy_path = "./baseline_cf_0dof/"
+            # policy_path = "./baseline_cf_0dof/"
         else:
             env_cfg.task_body = "COM"
             env_cfg.goal_body = "COM"
             env_cfg.reward_task_body = "root"
             env_cfg.reward_goal_body = "root"
 
-            policy_path = "./baseline_0dof_ee_reward_tune/"
+            # policy_path = "./baseline_0dof_ee_reward_tune/"
+        
+        policy_path = gc_params_dict[args_cli.task]["log_dir"]
             
 
         # env_cfg.yaw_distance_reward_scale = 5.0
@@ -296,7 +299,12 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
 
     
     # save_prefix = "ball_catch_side_view_"
-    video_name = save_prefix + "_eval_video" + robot_index_prefix + "_viz_" + env_cfg.viz_mode
+    if "Traj" in args_cli.task:
+        viz_mode = env_cfg.viz_mode
+    else:
+        viz_mode = ""
+        
+    video_name = save_prefix + "_eval_video" + robot_index_prefix + "_viz_" + viz_mode
     if args_cli.baseline:
         video_folder_path = f"{policy_path}"
     else:
@@ -333,9 +341,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         if "Crazyflie" not in args_cli.task:
             # Optuna-tuned gains for EE-Reward
             use_feed_forward = "Traj" in args_cli.task
+            control_params_dict = gc_params_dict[args_cli.task]["controller_params"]
             agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=device,
-                                        kp_pos_gain_xy=43.507, kp_pos_gain_z=24.167, kd_pos_gain_xy=9.129, kd_pos_gain_z=6.081,
-                                        kp_att_gain_xy=998.777, kp_att_gain_z=18.230, kd_att_gain_xy=47.821, kd_att_gain_z=8.818, feed_forward=use_feed_forward)
+                                        feed_forward=use_feed_forward, **control_params_dict)
         else:
             # Crazyflie DC
             agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=device,
