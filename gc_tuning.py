@@ -1,5 +1,6 @@
 # Launch Sim window
 import argparse
+import sys
 # from isaacsim import SimulationApp
 from omni.isaac.lab.app import AppLauncher
 
@@ -17,7 +18,8 @@ parser.add_argument("--seed", type=int, default=None, help="Seed used for the en
 AppLauncher.add_app_launcher_args(parser)
 
 
-args_cli = parser.parse_args()
+# args_cli = parser.parse_args()
+args_cli, hydra_args = parser.parse_known_args()
 
 
 # simulation_app = SimulationApp(vars(args_cli))
@@ -26,9 +28,14 @@ args_cli = parser.parse_args()
 args_cli.headless=True
 # args_cli.enable_cameras=True
 args_cli.enable_cameras=False
+
+sys.argv = [sys.argv[0]] + hydra_args
 # Launch app
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
+
+from omni.isaac.lab.envs import DirectRLEnvCfg, ManagerBasedRLEnvCfg
+from omni.isaac.lab_tasks.utils.hydra import hydra_task_config
 
 from omni.isaac.lab_tasks.utils import parse_env_cfg
 import gymnasium as gym
@@ -42,33 +49,8 @@ from controllers.decoupled_controller import DecoupledController
 
 import optuna
 
+use_integral_terms = True
 
-master_env_cfg = parse_env_cfg(args_cli.task, num_envs= args_cli.num_envs, use_fabric=not args_cli.disable_fabric)
-env_cfg = master_env_cfg.copy()
-
-env_cfg.goal_cfg = "rand" 
-
-
-
-env_cfg.sim_rate_hz = 100
-env_cfg.policy_rate_hz = 50
-env_cfg.sim.dt = 1/env_cfg.sim_rate_hz
-env_cfg.decimation = env_cfg.sim_rate_hz // env_cfg.policy_rate_hz
-env_cfg.sim.render_interval = env_cfg.decimation
-env_cfg.gc_mode = True
-env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
-env_cfg.task_body = "COM"
-env_cfg.goal_body = "COM"
-
-# Reward shaping
-# env_cfg.pos_distance_reward_scale = 0.0
-# env_cfg.pos_error_reward_scale = -2.0
-# env_cfg.yaw_error = -2.0
-# env_cfg.yaw_smooth_transition_scale = 0.0
-
-
-
-env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
 
 def eval_trial(trial):
     obs_dict, info = env.reset()
@@ -93,13 +75,32 @@ def eval_trial(trial):
     ori_kd_gain_xy = trial.suggest_float("ori_kd_gain_xy", 0.0, 200.0)
     ori_kd_gain_z = trial.suggest_float("ori_kd_gain_z", 0.0, 10.0)
 
+    if use_integral_terms:
+        pos_ki_gain_xy = trial.suggest_float("pos_ki_gain_xy", 0.0, 20.0)
+        pos_ki_gain_z = trial.suggest_float("pos_ki_gain_z", 0.0, 20.0)
+        ori_ki_gain_xy = trial.suggest_float("ori_ki_gain_xy", 0.0, 200.0)
+        ori_ki_gain_z = trial.suggest_float("ori_ki_gain_z", 0.0, 10.0)
+
     rewards = torch.zeros(args_cli.num_envs, device=env.device)
 
 
-    gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, com_pos_w=None, device=env.device,
-                             kp_pos_gain_xy=pos_kp_gain_xy, kp_pos_gain_z=pos_kp_gain_z, kd_pos_gain_xy=pos_kd_gain_xy, kd_pos_gain_z=pos_kd_gain_z,
-                             kp_att_gain_xy=ori_kp_gain_xy, kp_att_gain_z=ori_kp_gain_z, kd_att_gain_xy=ori_kd_gain_xy, kd_att_gain_z=ori_kd_gain_z,
-                             tuning_mode=False)
+    if "Traj" in args_cli.task:
+        if not use_integral_terms:
+            gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, com_pos_w=None, device=env.device,
+                                    kp_pos_gain_xy=pos_kp_gain_xy, kp_pos_gain_z=pos_kp_gain_z, kd_pos_gain_xy=pos_kd_gain_xy, kd_pos_gain_z=pos_kd_gain_z,
+                                    kp_att_gain_xy=ori_kp_gain_xy, kp_att_gain_z=ori_kp_gain_z, kd_att_gain_xy=ori_kd_gain_xy, kd_att_gain_z=ori_kd_gain_z,
+                                    tuning_mode=False, feed_forward=True)
+        else:
+            gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, com_pos_w=None, device=env.device,
+                                    kp_pos_gain_xy=pos_kp_gain_xy, kp_pos_gain_z=pos_kp_gain_z, kd_pos_gain_xy=pos_kd_gain_xy, kd_pos_gain_z=pos_kd_gain_z,
+                                    kp_att_gain_xy=ori_kp_gain_xy, kp_att_gain_z=ori_kp_gain_z, kd_att_gain_xy=ori_kd_gain_xy, kd_att_gain_z=ori_kd_gain_z,
+                                    ki_pos_gain_xy=pos_ki_gain_xy, ki_pos_gain_z=pos_ki_gain_z, ki_att_gain_xy=ori_ki_gain_xy, ki_att_gain_z=ori_ki_gain_z,
+                                    tuning_mode=False, feed_forward=False, use_integral=True)
+    else:
+        gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, com_pos_w=None, device=env.device,
+                                kp_pos_gain_xy=pos_kp_gain_xy, kp_pos_gain_z=pos_kp_gain_z, kd_pos_gain_xy=pos_kd_gain_xy, kd_pos_gain_z=pos_kd_gain_z,
+                                kp_att_gain_xy=ori_kp_gain_xy, kp_att_gain_z=ori_kp_gain_z, kd_att_gain_xy=ori_kd_gain_xy, kd_att_gain_z=ori_kd_gain_z,
+                                tuning_mode=False)
 
     while steps < 500:
         obs_tensor = obs_dict["policy"]
@@ -123,6 +124,11 @@ def eval_trial(trial):
         # quad_omega = full_state[:, 10:13]
 
         obs_dict, reward, terminated, truncated, info = env.step(action)
+
+        if use_integral_terms:
+            reset_mask = torch.logical_or(terminated, truncated)
+            gc.reset_integral_terms(reset_mask)
+
         rewards += reward
         terminated_count += terminated.sum().item()
         steps += 1
@@ -131,11 +137,45 @@ def eval_trial(trial):
 
     return avg_reward
 
-def main():
+@hydra_task_config(args_cli.task, "rsl_rl_cfg_entry_point")
+def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg):
+    # master_env_cfg = parse_env_cfg(args_cli.task, num_envs= args_cli.num_envs, use_fabric=not args_cli.disable_fabric)
+    # env_cfg = master_env_cfg.copy()
+
+    env_cfg.goal_cfg = "rand" 
+
+
+    env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
+    env_cfg.sim_rate_hz = 100
+    env_cfg.policy_rate_hz = 50
+    env_cfg.sim.dt = 1/env_cfg.sim_rate_hz
+    env_cfg.decimation = env_cfg.sim_rate_hz // env_cfg.policy_rate_hz
+    env_cfg.sim.render_interval = env_cfg.decimation
+    env_cfg.gc_mode = True
+    env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
+    env_cfg.task_body = "COM"
+    env_cfg.goal_body = "COM"
+
+    # Reward shaping
+    env_cfg.pos_radius = 0.1
+    # env_cfg.pos_distance_reward_scale = 0.0
+    # env_cfg.pos_error_reward_scale = -2.0
+    # env_cfg.yaw_error = -2.0
+    # env_cfg.yaw_smooth_transition_scale = 0.0
+
+
+    global env
+    env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
+
+    study_name = "Position Radius 0.1: " + args_cli.task
+
+    if use_integral_terms:
+        study_name += " Integral Terms"
+    
     study = optuna.create_study(direction="maximize",
-                                study_name=args_cli.task, storage="sqlite:///database_gc_tuning.sqlite3", load_if_exists=True,
+                                study_name=study_name, storage="sqlite:///database_gc_tuning.sqlite3", load_if_exists=True,
     )
-    study.optimize(eval_trial, n_trials=500)
+    study.optimize(eval_trial, n_trials=250)
     
     print("Number of finished trials: ", len(study.trials))
 

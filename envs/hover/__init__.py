@@ -105,7 +105,7 @@ gym.register(
 )
 
 gym.register(
-    id="Isaac-AerialManipulator-0DOF-SmallArmCOM-V-Hover-v0",
+    id="Isaac-AerialManipulator-0DOF-SmallArmCOM-Vehicle-Hover-v0",
     entry_point = "envs.hover.hover_env:AerialManipulatorHoverEnv",
     disable_env_checker=True,
     kwargs={

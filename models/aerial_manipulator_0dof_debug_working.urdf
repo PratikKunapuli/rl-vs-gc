@@ -6,6 +6,52 @@
       <!-- <mass value="0.2"/> -->
   </inertial>
  </link>
+
+  <link name="gripper">
+    <inertial>
+      <!-- <mass value="0.2"/> -->
+    </inertial>
+    <visual>
+      <origin xyz="0 0 -.0207" rpy="0 0 0" />
+      <geometry>
+        <box size=".04 .022 .01" />
+      </geometry>
+      <material name="carbon">
+        <color rgba="0.2 0.2 0.2 1.0"/>
+      </material>
+    </visual>
+    <!-- Servo -->
+    <visual>
+      <origin xyz="0 0 -0.0357" rpy="0 0 0" />
+      <geometry>
+        <box size=".03 .015 .02" />
+      </geometry>
+      <material name="tmotor">
+        <color rgba="0.4 0.4 0.4 1.0"/>
+      </material>
+    </visual>
+    <!-- Finger -->
+    <visual>
+      <origin xyz=".018 0 -.0007" rpy="0 0 0" />
+      <geometry>
+        <box size=".004 .022 .03" />
+      </geometry>
+      <material name="tip">
+        <color rgba="0.7 0.3 0.3 1.0"/>
+      </material>
+    </visual>
+    <!-- Finger -->
+    <visual>
+      <origin xyz="-.018 0 -.0007" rpy="0 0 0" />
+      <geometry>
+        <box size=".004 .022 .03" />
+      </geometry>
+      <material name="tip">
+        <color rgba="0.7 0.3 0.3 1.0"/>
+      </material>
+    </visual>
+  </link>
+
  <link name="vehicle">
     <inertial>
       <!-- <mass value="1.0"/> -->

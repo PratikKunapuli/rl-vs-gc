@@ -76,8 +76,9 @@ class DecoupledController():
     def __init__(self, num_envs, num_dofs, vehicle_mass, arm_mass, inertia_tensor, pos_offset, ori_offset, print_debug=False, com_pos_w=None, device='cpu',
                   kp_pos_gain_xy=10.0, kp_pos_gain_z=20.0, kd_pos_gain_xy=7.0, kd_pos_gain_z=9.0, 
                   kp_att_gain_xy=400.0, kp_att_gain_z=2.0, kd_att_gain_xy=70.0, kd_att_gain_z=2.0,
+                  ki_pos_gain_xy=0.0, ki_pos_gain_z=0.0, ki_att_gain_xy=0.0, ki_att_gain_z=0.0,
                   tuning_mode=False, use_full_obs=False, skip_precompute=False, vehicle="AM", control_mode="CTBM", policy_dt=0.02,
-                  feed_forward=False, disable_gravity=False, **kwargs):
+                  feed_forward=False, use_integral = False, disable_gravity=False, **kwargs):
         self.num_envs = num_envs
         self.num_dofs = num_dofs
         self.print_debug = print_debug
@@ -90,6 +91,7 @@ class DecoupledController():
         self.com_pos_w = com_pos_w
         self.policy_dt = policy_dt
         self.feed_forward = feed_forward
+        self.use_integral = use_integral
 
         self.control_mode = control_mode
 
@@ -102,6 +104,7 @@ class DecoupledController():
         if vehicle == "AM":
             self.moment_scale_xy = 0.5
             self.moment_scale_z = 0.025 #0.025 # 0.1
+            # self.moment_scale_z = 0.5 #0.025 # 0.1
             self.thrust_to_weight = 3.0
         else:
             #Crazyflie
@@ -131,6 +134,11 @@ class DecoupledController():
         self.kd_pos = torch.tensor([kd_pos_gain_xy, kd_pos_gain_xy, kd_pos_gain_z], device=self.device)
         self.kp_att = torch.tensor([kp_att_gain_xy, kp_att_gain_xy, kp_att_gain_z], device=self.device)
         self.kd_att = torch.tensor([kd_att_gain_xy, kd_att_gain_xy, kd_att_gain_z], device=self.device)
+        self.ki_pos = torch.tensor([ki_pos_gain_xy, ki_pos_gain_xy, ki_pos_gain_z], device=self.device)
+        self.ki_att = torch.tensor([ki_att_gain_xy, ki_att_gain_xy, ki_att_gain_z], device=self.device)
+
+        self.pos_error_integral = torch.zeros(num_envs, 3, device=self.device)
+        self.att_error_integral = torch.zeros(num_envs, 3, device=self.device)
 
 
         # self.kp_pos = torch.tensor([7.5, 15.0, 20.0], device=self.device)
@@ -149,6 +157,11 @@ class DecoupledController():
 
         if not skip_precompute:
             self.precompute_transforms()
+    
+    def reset_integral_terms(self, env_mask):
+        reset_envs = env_mask.nonzero(as_tuple=False).squeeze(1)
+        self.pos_error_integral[reset_envs] = torch.zeros(env_mask.sum(), 3, device=self.device)
+        self.att_error_integral[reset_envs] = torch.zeros(env_mask.sum(), 3, device=self.device)
 
     def precompute_transforms(self):
         quad_pos_w = self.position_offset
@@ -401,8 +414,17 @@ class DecoupledController():
 
             pos_error = com_pos - desired_pos
             vel_error = com_vel - ff_vel
+
+            self.pos_error_integral += pos_error * self.policy_dt
+
+            if self.use_integral:
+                pos_error_integral = self.pos_error_integral
+            else:
+                pos_error_integral = torch.zeros_like(self.pos_error_integral)
+
             F_des = self.mass * (-self.kp_pos * pos_error + \
                              -self.kd_pos * vel_error + \
+                                -self.ki_pos * pos_error_integral + \
                              ff_acc + \
                             self.gravity.tile(com_pos.shape[0], 1)) # (N, 3)
         
@@ -456,15 +478,21 @@ class DecoupledController():
         # Compute orientation error
         S_err = 0.5 * (torch.bmm(R_des.transpose(-2, -1), R_actual) - torch.bmm(R_actual.transpose(-2, -1), R_des)) # (batch_size, 3, 3)
         att_err = vee_map(S_err) # (batch_size, 3)
+        self.att_error_integral += att_err * self.policy_dt
         if torch.any(torch.isnan(att_err)):
             print("Nan detected in attitude error!", att_err)
             att_err = torch.zeros_like(att_err, device=self.device)
         omega_err = quad_omega - omega_des # Omega des is 0. (batch_size, 3)
         
+        if self.use_integral:
+            att_err_integral = self.att_error_integral
+        else:
+            att_err_integral = torch.zeros_like(self.att_error_integral)
+
         # Compute desired moments
         # M = I @ (-kp_att * att_err - kd_att * omega_err) + omega x I @ omega
         inertia = self.inertia_tensor.unsqueeze(0).tile(batch_size, 1, 1).to(self.device)
-        att_pd = -self.kp_att * att_err - self.kd_att * omega_err 
+        att_pd = -self.kp_att * att_err - self.kd_att * omega_err  - self.ki_att * att_err_integral
         I_omega = torch.bmm(inertia.view(batch_size, 3, 3), quad_omega.unsqueeze(2)).squeeze(2).to(self.device)
 
         M_des = torch.bmm(inertia.view(batch_size, 3, 3), att_pd.unsqueeze(2)).squeeze(2) + \

@@ -244,6 +244,7 @@ class AerialManipulator0DOFSmallArmCOMVehicleHoverEnvCfg(AerialManipulatorHoverE
     num_actions = 4
     num_joints = 0
     num_observations = 12 # TODO: Need to update this..
+    # moment_scale_z = 0.5 # 0.025 # 0.1
     
     # robot
     robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_SMALL_ARM_COM_V_CFG.replace(prim_path="/World/envs/env_.*/Robot")

@@ -20,6 +20,7 @@ parser.add_argument("--seed", type=int, default=0, help="Seed used for the envir
 parser.add_argument("--goal_task", type=str, default="rand", help="Goal task for the environment.")
 parser.add_argument("--frame", type=str, default="root", help="Frame of the task.")
 parser.add_argument("--baseline", type=bool, default=False, help="Use baseline policy.")
+parser.add_argument("--use_integral_terms", type=bool, default=False, help="Use integral terms in the controller.")
 parser.add_argument("--case_study", type=bool, default=False, help="Use case study policy.")
 parser.add_argument("--save_prefix", type=str, default="", help="Prefix for saving files.")
 parser.add_argument("--follow_robot", type=int, default=-1, help="Follow robot index.")
@@ -127,8 +128,12 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
             env_cfg.reward_goal_body = "root"
 
             # policy_path = "./baseline_0dof_ee_reward_tune/"
-        
-        policy_path = gc_params_dict[args_cli.task]["log_dir"]
+
+        task_name = args_cli.task            
+        if args_cli.use_integral_terms:
+            task_name = args_cli.task + "-Integral"
+            
+        policy_path = gc_params_dict[task_name]["log_dir"]
             
 
         # env_cfg.yaw_distance_reward_scale = 5.0
@@ -340,10 +345,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         
         if "Crazyflie" not in args_cli.task:
             # Optuna-tuned gains for EE-Reward
-            use_feed_forward = "Traj" in args_cli.task
-            control_params_dict = gc_params_dict[args_cli.task]["controller_params"]
+            # use_feed_forward = "Traj" in args_cli.task and "Integral" not in args_cli.task
+            control_params_dict = gc_params_dict[task_name]["controller_params"]
             agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=device,
-                                        feed_forward=use_feed_forward, **control_params_dict)
+                                        **control_params_dict)
         else:
             # Crazyflie DC
             agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=device,

@@ -24,6 +24,8 @@ from pxr import Usd, UsdShade, Gf
 import gymnasium as gym
 import numpy as np
 from configs.aerial_manip_asset import AERIAL_MANIPULATOR_0DOF_CFG, AERIAL_MANIPULATOR_0DOF_DEBUG_CFG, AERIAL_MANIPULATOR_QUAD_ONLY_CFG
+from configs.aerial_manip_asset import AERIAL_MANIPULATOR_0DOF_LONG_ARM_COM_MIDDLE_CFG
+from configs.aerial_manip_asset import AERIAL_MANIPULATOR_0DOF_SMALL_ARM_COM_V_CFG, AERIAL_MANIPULATOR_0DOF_SMALL_ARM_COM_MIDDLE_CFG, AERIAL_MANIPULATOR_0DOF_SMALL_ARM_COM_EE_CFG
 from utils.math_utilities import yaw_from_quat, yaw_error_from_quats, quat_from_yaw
 from utils.trajectory_utilities import eval_sinusoid
 import utils.trajectory_utilities as traj_utils
@@ -112,6 +114,7 @@ class AerialManipulatorTrajectoryTrackingEnvBaseCfg(DirectRLEnvCfg):
     polynomial_y_coefficients= [0.0, 0.0]
     polynomial_z_coefficients= [0.0, 0.0]
     polynomial_yaw_coefficients= [0.0, 0.0]
+    polynomial_yaw_rand_ranges = [0.0, 0.0]
 
     # action scaling
     # moment_scale_xy = 1.0
@@ -170,7 +173,8 @@ class AerialManipulatorTrajectoryTrackingEnvBaseCfg(DirectRLEnvCfg):
     use_grav_vector = True
     use_full_ori_matrix = True
     use_yaw_representation = False
-    use_yaw_representation_for_trajectory=False
+    use_yaw_representation_for_trajectory=True
+    use_ang_vel_from_trajectory=False
 
     shoulder_joint_active = True
     wrist_joint_active = True
@@ -195,7 +199,55 @@ class AerialManipulator0DOFTrajectoryTrackingEnvCfg(AerialManipulatorTrajectoryT
     
     # robot
     robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+
+@configclass
+class AerialManipulator0DOFLongArmTrajectoryTrackingEnvCfg(AerialManipulatorTrajectoryTrackingEnvBaseCfg):
+    # env
+    num_actions = 4
+    num_joints = 0
+    num_observations = 91 # TODO: Need to update this..
+    # 3(vel) + 3(ang vel) + 3(pos) + 9(ori) = 18
+    # 3(vel) + 3(ang vel) + 3(pos) + 3(grav vector body frame) = 12
     
+    # robot
+    robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_LONG_ARM_COM_MIDDLE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+
+@configclass
+class AerialManipulator0DOFSmallArmCOMVehicleTrajectoryTrackingEnvCfg(AerialManipulatorTrajectoryTrackingEnvBaseCfg):
+    # env
+    num_actions = 4
+    num_joints = 0
+    num_observations = 91 # TODO: Need to update this..
+    # 3(vel) + 3(ang vel) + 3(pos) + 9(ori) = 18
+    # 3(vel) + 3(ang vel) + 3(pos) + 3(grav vector body frame) = 12
+    
+    # robot
+    robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_SMALL_ARM_COM_V_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+
+@configclass
+class AerialManipulator0DOFSmallArmCOMMiddleTrajectoryTrackingEnvCfg(AerialManipulatorTrajectoryTrackingEnvBaseCfg):
+    # env
+    num_actions = 4
+    num_joints = 0
+    num_observations = 91 # TODO: Need to update this..
+    # 3(vel) + 3(ang vel) + 3(pos) + 9(ori) = 18
+    # 3(vel) + 3(ang vel) + 3(pos) + 3(grav vector body frame) = 12
+    
+    # robot
+    robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_SMALL_ARM_COM_MIDDLE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+    
+@configclass
+class AerialManipulator0DOFSmallArmCOMEndEffectorTrajectoryTrackingEnvCfg(AerialManipulatorTrajectoryTrackingEnvBaseCfg):
+    # env
+    num_actions = 4
+    num_joints = 0
+    num_observations = 91 # TODO: Need to update this..
+    # 3(vel) + 3(ang vel) + 3(pos) + 9(ori) = 18
+    # 3(vel) + 3(ang vel) + 3(pos) + 3(grav vector body frame) = 12
+    
+    # robot
+    robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_SMALL_ARM_COM_EE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+
 
 @configclass
 class AerialManipulator0DOFDebugTrajectoryTrackingEnvCfg(AerialManipulatorTrajectoryTrackingEnvBaseCfg):
@@ -210,8 +262,8 @@ class AerialManipulator0DOFDebugTrajectoryTrackingEnvCfg(AerialManipulatorTrajec
     # observation_space=gym.spaces.Box(low=-np.inf, high=np.inf, shape=(91,))
     
     # robot
-    # robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_DEBUG_CFG.replace(prim_path="/World/envs/env_.*/Robot")
-    robot: ArticulationCfg = AERIAL_MANIPULATOR_QUAD_ONLY_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+    robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_DEBUG_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+    # robot: ArticulationCfg = AERIAL_MANIPULATOR_QUAD_ONLY_CFG.replace(prim_path="/World/envs/env_.*/Robot")
 
     # robot.collision_group = 0
     # robot.spawn.physics_material = sim_utils.RigidBodyMaterialCfg(
@@ -275,6 +327,7 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         self.polynomial_coefficients[:, 1, :len(self.cfg.polynomial_y_coefficients)] = torch.tensor(self.cfg.polynomial_y_coefficients, device=self.device).tile((self.num_envs, 1))
         self.polynomial_coefficients[:, 2, :len(self.cfg.polynomial_z_coefficients)] = torch.tensor(self.cfg.polynomial_z_coefficients, device=self.device).tile((self.num_envs, 1))
         self.polynomial_coefficients[:, 3, :len(self.cfg.polynomial_yaw_coefficients)] = torch.tensor(self.cfg.polynomial_yaw_coefficients, device=self.device).tile((self.num_envs, 1))
+        self.polynomial_yaw_rand_ranges = torch.tensor(self.cfg.polynomial_yaw_rand_ranges, device=self.device).float()
 
         # Time(needed for trajectory tracking)
         self._time = torch.zeros(self.num_envs, 1, device=self.device)
@@ -551,14 +604,22 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         future_pos_error_b = []
         future_ori_error_b = []
         for i in range(self.cfg.trajectory_horizon):
-            waypoint_pos_error_b, waypoint_ori_error_b = subtract_frame_transforms(base_pos_w, base_ori_w, self._desired_pos_traj_w[:, i+1].squeeze(1), self._desired_ori_traj_w[:, i+1].squeeze(1))
+            goal_pos_traj_w, goal_ori_traj_w = self.convert_ee_goal_from_task(self._desired_pos_traj_w[:, i+1].squeeze(1), self._desired_ori_traj_w[:, i+1].squeeze(1), self.cfg.goal_body)
+
+            waypoint_pos_error_b, waypoint_ori_error_b = subtract_frame_transforms(base_pos_w, base_ori_w, goal_pos_traj_w, goal_ori_traj_w)
             future_pos_error_b.append(waypoint_pos_error_b) # append (n, 3) tensor
             future_ori_error_b.append(waypoint_ori_error_b) # append (n, 4) tensor
-        future_pos_error_b = torch.stack(future_pos_error_b, dim=1) # stack to (n, horizon, 3) tensor
-        future_ori_error_b = torch.stack(future_ori_error_b, dim=1) # stack to (n, horizon, 4) tensor
+        if len(future_pos_error_b) > 0:
+            future_pos_error_b = torch.stack(future_pos_error_b, dim=1) # stack to (n, horizon, 3) tensor
+            future_ori_error_b = torch.stack(future_ori_error_b, dim=1) # stack to (n, horizon, 4) tensor
 
-        if self.cfg.use_yaw_representation_for_trajectory:
-            future_ori_error_b = math_utils.yaw_from_quat(future_ori_error_b).reshape(self.num_envs, self.cfg.trajectory_horizon, 1)
+            if self.cfg.use_yaw_representation_for_trajectory:
+                future_ori_error_b = math_utils.yaw_from_quat(future_ori_error_b).reshape(self.num_envs, self.cfg.trajectory_horizon, 1)
+        else:
+            future_pos_error_b = torch.zeros(self.num_envs, self.cfg.trajectory_horizon, 3, device=self.device)
+            future_ori_error_b = torch.zeros(self.num_envs, self.cfg.trajectory_horizon, 4, device=self.device)
+
+        
 
         # Compute the orientation error as a yaw error in the body frame
         # goal_yaw_w = yaw_quat(self._desired_ori_w)
@@ -586,8 +647,13 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         # Compute the linear and angular velocities of the end-effector in body frame
         lin_vel_error_w = self._pos_traj[1, :, :, 0] - lin_vel_w
         lin_vel_b = quat_rotate_inverse(base_ori_w, lin_vel_error_w)
-        ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_w)
-
+        if self.cfg.use_ang_vel_from_trajectory:
+            ang_vel_des = torch.zeros_like(ang_vel_w)
+            ang_vel_des[:,2] = self._yaw_traj[1, :, 0]
+            ang_vel_error_w = ang_vel_des - ang_vel_w
+            ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_error_w)
+        else:
+            ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_w)
         # Compute the joint states
         shoulder_joint_pos = torch.zeros(self.num_envs, 0, device=self.device)
         shoulder_joint_vel = torch.zeros(self.num_envs, 0, device=self.device)
@@ -613,7 +679,7 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
                 shoulder_joint_vel,                         # (num_envs, 1)
                 wrist_joint_vel,                            # (num_envs, 1)
                 future_pos_error_b.flatten(-2, -1),         # (num_envs, horizon * 3)
-                future_ori_error_b.flatten(-2, -1)          # (num_envs, horizon * 4) if future_ori as quat, else (num_envs, horizon, 1)
+                future_ori_error_b.flatten(-2, -1)          # (num_envs, horizon * 4) if use_yaw_representation_for_trajectory, else (num_envs, horizon, 1)
             ],
             dim=-1                                          # (num_envs, 22 + 7*horizon)
         )
@@ -633,7 +699,7 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
             future_com_pos_w = []
             future_com_ori_w = []
             for i in range(self.cfg.trajectory_horizon):
-                des_com_pos_w, des_com_ori_w = self.convert_ee_goal_to_com_goal(self._desired_pos_traj_w[:, i+1].squeeze(1), self._desired_ori_traj_w[:, i+1].squeeze(1))
+                des_com_pos_w, des_com_ori_w = self.convert_ee_goal_to_com_goal(self._desired_pos_traj_w[:, i].squeeze(1), self._desired_ori_traj_w[:, i].squeeze(1))
                 future_com_pos_w.append(des_com_pos_w)
                 future_com_ori_w.append(des_com_ori_w)
             future_com_pos_w = torch.stack(future_com_pos_w, dim=1)
@@ -724,7 +790,13 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         # Velocity error components, used for stabliization tuning
         lin_vel_error_w = self._pos_traj[1, :, :, 0] - lin_vel_w
         lin_vel_b = quat_rotate_inverse(base_ori_w, lin_vel_error_w)
-        ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_w)
+        if self.cfg.use_ang_vel_from_trajectory:
+            ang_vel_des = torch.zeros_like(ang_vel_w)
+            ang_vel_des[:,2] = self._yaw_traj[1, :, 0]
+            ang_vel_error_w = ang_vel_des - ang_vel_w
+            ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_error_w)
+        else:
+            ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_w)
         # lin_vel_error = torch.linalg.norm(lin_vel_b, dim=-1)
         # ang_vel_error = torch.linalg.norm(ang_vel_b, dim=-1)
         # lin_vel_error = torch.sum(torch.square(lin_vel_b), dim=1)
@@ -901,12 +973,10 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
             # default_root_state[:, 3:7] = math_utils.quat_from_yaw(traj_yaw_start)
             # default_root_state[:, 7:10] = traj_vel_start
             # default_root_state[:, 10:13] = torch.zeros_like(traj_vel_start)
-
-
         elif self.cfg.init_cfg == "fixed":
             default_root_state = self._robot.data.default_root_state[env_ids]
-            default_root_state[:, :3] = torch.tensor([0.0, 0.0, 0.5], device=self.device, requires_grad=False).float().tile((env_ids.size(0), 1))
-            default_root_state[:, 3:7] = torch.tensor([0.7071068, 0.0, 0.0, 0.7071068], device=self.device, requires_grad=False).float().tile((env_ids.size(0), 1))
+            default_root_state[:, 2] = 3.0
+            # default_root_state[:, 3:7] = self._desired_ori_w[env_ids]
         else:
             default_root_state = self._robot.data.default_root_state[env_ids]
             # Initialize the robot on the trajectory with the correct velocity
@@ -932,10 +1002,15 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         Initializes the trajectory for the environment ids.
         """
         num_envs = env_ids.size(0)
+
+        # Randomize Lissajous parameters
         random_amplitudes = ((torch.rand(num_envs, 4, device=self.device)) * 2.0 - 1.0) * self.lissajous_amplitudes_rand_ranges
         random_frequencies = ((torch.rand(num_envs, 4, device=self.device))) * self.lissajous_frequencies_rand_ranges
         random_phases = ((torch.rand(num_envs, 4, device=self.device)) * 2.0 - 1.0) * self.lissajous_phases_rand_ranges
         random_offsets = ((torch.rand(num_envs, 4, device=self.device)) * 2.0 - 1.0) * self.lissajous_offsets_rand_ranges
+
+        # Randomize polynomial parameters
+        random_poly_yaw = ((torch.rand(num_envs, len(self.cfg.polynomial_yaw_rand_ranges), device=self.device)) * 2.0 - 1.0) * self.polynomial_yaw_rand_ranges
 
         terrain_offsets = torch.zeros_like(random_offsets, device=self.device)
         terrain_offsets[:, :2] = self._terrain.env_origins[env_ids, :2]
@@ -945,6 +1020,7 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         self.lissajous_phases[env_ids] = torch.tensor(self.cfg.lissajous_phases, device=self.device).tile((num_envs, 1)).float() + random_phases
         self.lissajous_offsets[env_ids] = torch.tensor(self.cfg.lissajous_offsets, device=self.device).tile((num_envs, 1)).float() + random_offsets + terrain_offsets
 
+        self.polynomial_coefficients[env_ids, 3] = torch.tensor(self.cfg.polynomial_yaw_coefficients, device=self.device).tile((num_envs, 1)).float() + random_poly_yaw
         # # Rerandomize the random shift if needed
         # if self.cfg.random_shift_trajectory:
         #     self._pos_shift[env_ids] = torch.zeros_like(self._pos_shift[env_ids]).uniform_(-self.cfg.goal_pos_range, self.cfg.goal_pos_range)
@@ -993,6 +1069,22 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
             raise ValueError("Invalid goal body: ", goal_body)
 
         return goal_pos_w, goal_ori_w
+    
+    def convert_ee_goal_from_task(self, ee_pos_w, ee_ori_w, task_body:str) -> tuple[torch.Tensor, torch.Tensor]:
+        if task_body == "root":
+            desired_pos, desired_ori = ee_pos_w, ee_ori_w
+        elif task_body == "endeffector":
+            desired_pos, desired_ori = ee_pos_w, ee_ori_w
+        elif task_body == "vehicle":
+            desired_pos, desired_yaw = math_utils.compute_desired_pose_from_transform(ee_pos_w, ee_ori_w, self._robot.data.body_pos_w[:, self._body_id].squeeze(1), 0)
+            desired_ori = quat_from_yaw(desired_yaw)
+        elif task_body == "COM":
+            desired_pos, desired_yaw = math_utils.compute_desired_pose_from_transform(ee_pos_w, ee_ori_w, self.com_pos_e, 0)
+            desired_ori = quat_from_yaw(desired_yaw)
+        else:
+            raise ValueError("Invalid task body: ", task_body)
+
+        return desired_pos, desired_ori
     
     def convert_ee_goal_to_com_goal(self, ee_pos_w: torch.Tensor, ee_ori_w: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         desired_pos, desired_yaw = math_utils.compute_desired_pose_from_transform(ee_pos_w, ee_ori_w, self.com_pos_e, 0)

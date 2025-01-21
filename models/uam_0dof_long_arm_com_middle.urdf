@@ -56,7 +56,7 @@
   <link name="arm">
     <!-- Wrist Motor -->
     <visual>
-      <origin xyz="0 0 -0.115" rpy="0 0 0" />
+      <origin xyz="0 0 -0.31499999999999995" rpy="0 0 0" />
       <geometry>
         <cylinder radius=".0142" length="0.022"/>
       </geometry>
@@ -64,9 +64,9 @@
     </visual>
     <!-- Carbon Fiber Tube -->
     <visual>
-      <origin xyz="0 0 -0.0407" rpy="0 0 0" />
+      <origin xyz="0 0 -0.13999999999999996" rpy="0 0 0" />
       <geometry>
-        <cylinder radius=".0075" length="0.115"/>
+        <cylinder radius=".0075" length="0.31499999999999995"/>
       </geometry>
       <material name="carbon">
         <color rgba="0.2 0.2 0.2 1.0"/>
@@ -312,7 +312,7 @@
   <inertial>
       <mass value="0.8"/> <!-- 0.706028   83527633 -->
       <inertia ixx="0.003063" ixy="0.000004" ixz="0.000000" iyy="0.001720" iyz="0.000028" izz="0.004585"/>
-      <origin rpy="0 0 0" xyz="0.0 0.0 0.0"/>
+      <origin rpy="0 0 0" xyz="0.0 0.04 0.0"/>
     </inertial>
   </link>
 
@@ -334,7 +334,7 @@
   <joint name="vehicle_attachment" type="fixed" dont_collapse="true">
     <parent link="arm"/>
     <child link="virtualvehicle"/>
-    <origin rpy="1.57079632679 1.57079632679 0" xyz="0 0 -0.15"/>
+    <origin rpy="1.57079632679 1.57079632679 0" xyz="0 0 -0.35"/>
   </joint>
 
   <joint name="vehicle_yaw_fix" type="fixed" dont_collapse="true">
@@ -346,7 +346,7 @@
   <joint name="com_placement" type="fixed" dont_collapse="true">
     <parent link="endeffector"/>
     <child link="COM"/>
-    <origin rpy="0 0 0" xyz="0 -0.2 0"/>
+    <origin rpy="0 0 0" xyz="0 -0.36 0"/>
   </joint>
 
 

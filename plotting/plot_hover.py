@@ -40,19 +40,24 @@ error_legend_elements = [
                     # Line2D([0], [0], marker='o', color='tab:blue', label='RL')
                 ]
 
-# violin_legend_elements = [
-#                     Patch(facecolor=params["violin_color_1"], edgecolor=params["violin_color_1"], fill=True, label='Settling Time'),
-#                     Patch(facecolor=params["violin_color_2"], edgecolor=params["violin_color_2"], fill=True, label='RMSE'),
-#                     Patch(facecolor='none', edgecolor='none', fill=False, label=''),
-#                     # Line2D([0], [0], marker='o', color='tab:blue', label='RL')
-#                 ]
+violin_legend_elements_v1 = [
+                    Patch(facecolor=params["violin_color_1"], edgecolor=params["violin_color_1"], fill=True, label='Settling Time'),
+                    Patch(facecolor=params["violin_color_2"], edgecolor=params["violin_color_2"], fill=True, label='RMSE'),
+                    Patch(facecolor='none', edgecolor='none', fill=False, label=''),
+                    # Line2D([0], [0], marker='o', color='tab:blue', label='RL')
+                ]
 
-violin_legend_elements = [
+violin_legend_elements_v2 = [
                     Patch(facecolor=params["violin_color_1"], edgecolor=params["violin_color_1"], fill=True, label='Position'),
                     Patch(facecolor=params["violin_color_2"], edgecolor=params["violin_color_2"], fill=True, label='Yaw'),
                     Patch(facecolor='none', edgecolor='none', fill=False, label=''),
                     # Line2D([0], [0], marker='o', color='tab:blue', label='RL')
-                ]  
+                ] 
+
+violin_legend_elements_COM_ablation = [
+                    Patch(facecolor=params["violin_color_1"], edgecolor=params["violin_color_1"], fill=True, label='RL-EE'),
+                    Patch(facecolor=params["violin_color_2"], edgecolor=params["violin_color_2"], fill=True, label='GC'),
+] 
 
 @torch.no_grad()
 def get_quantiles_error(data, quantiles):
@@ -229,10 +234,215 @@ def plot_violin_rmse_settling_time(axs=None):
 
     # fig.legend(handles=legend_elements, loc='lower center', ncol=3, bbox_to_anchor=(0.5, -0.05))
     # plt.tight_layout()
+def plot_COM_ablation():
+    gc_com_v_base_path = "../rl/baseline_0dof_small_arm_com_v_tuned/"
+    gc_com_middle_base_path = "../rl/baseline_0dof_small_arm_com_middle_tuned/"
+    gc_com_ee_base_path = "../rl/baseline_0dof_small_arm_com_ee_tuned/"
+    rl_com_v_base_path = "../rl/logs/rsl_rl/COM_Ablation_Hover/2025-01-15_08-21-13_COM_V/"
+    rl_com_middle_base_path = "../rl/logs/rsl_rl/COM_Ablation_Hover/2025-01-15_08-43-17_COM_Middle/"
+    rl_com_ee_base_path = "../rl/logs/rsl_rl/COM_Ablation_Hover/2025-01-15_08-21-42_COM_EE/"
+
+    gc_com_v_data = torch.load(os.path.join(gc_com_v_base_path, "Hover_eval_full_states.pt"), weights_only=True)
+    gc_com_middle_data = torch.load(os.path.join(gc_com_middle_base_path, "Hover_eval_full_states.pt"), weights_only=True)
+    gc_com_ee_data = torch.load(os.path.join(gc_com_ee_base_path, "Hover_eval_full_states.pt"), weights_only=True)
+    rl_com_v_data = torch.load(os.path.join(rl_com_v_base_path, "Hover_eval_full_states.pt"), weights_only=True)
+    rl_com_middle_data = torch.load(os.path.join(rl_com_middle_base_path, "Hover_eval_full_states.pt"), weights_only=True)
+    rl_com_ee_data = torch.load(os.path.join(rl_com_ee_base_path, "Hover_eval_full_states.pt"), weights_only=True)
+
+    gc_com_v_pos_error, gc_com_v_yaw_error = get_errors(gc_com_v_data)
+    gc_com_middle_pos_error, gc_com_middle_yaw_error = get_errors(gc_com_middle_data)
+    gc_com_ee_pos_error, gc_com_ee_yaw_error = get_errors(gc_com_ee_data)
+    rl_com_v_pos_error, rl_com_v_yaw_error = get_errors(rl_com_v_data)
+    rl_com_middle_pos_error, rl_com_middle_yaw_error = get_errors(rl_com_middle_data)
+    rl_com_ee_pos_error, rl_com_ee_yaw_error = get_errors(rl_com_ee_data)
+
+    gc_com_v_pos_rmse = torch.sqrt(torch.mean(gc_com_v_pos_error**2, dim=1)).cpu()
+    gc_com_middle_pos_rmse = torch.sqrt(torch.mean(gc_com_middle_pos_error**2, dim=1)).cpu()
+    gc_com_ee_pos_rmse = torch.sqrt(torch.mean(gc_com_ee_pos_error**2, dim=1)).cpu()
+    gc_com_v_yaw_rmse = torch.sqrt(torch.mean(gc_com_v_yaw_error**2, dim=1)).cpu()
+    gc_com_middle_yaw_rmse = torch.sqrt(torch.mean(gc_com_middle_yaw_error**2, dim=1)).cpu()
+    gc_com_ee_yaw_rmse = torch.sqrt(torch.mean(gc_com_ee_yaw_error**2, dim=1)).cpu()
+    
+    rl_com_v_pos_rmse = torch.sqrt(torch.mean(rl_com_v_pos_error**2, dim=1)).cpu()
+    rl_com_middle_pos_rmse = torch.sqrt(torch.mean(rl_com_middle_pos_error**2, dim=1)).cpu()
+    rl_com_ee_pos_rmse = torch.sqrt(torch.mean(rl_com_ee_pos_error**2, dim=1)).cpu()
+    rl_com_v_yaw_rmse = torch.sqrt(torch.mean(rl_com_v_yaw_error**2, dim=1)).cpu()
+    rl_com_middle_yaw_rmse = torch.sqrt(torch.mean(rl_com_middle_yaw_error**2, dim=1)).cpu()
+    rl_com_ee_yaw_rmse = torch.sqrt(torch.mean(rl_com_ee_yaw_error**2, dim=1)).cpu()
+
+    N_gc = gc_com_v_data.shape[0]
+    N_rl = rl_com_v_data.shape[0]
+    T = gc_com_v_data.shape[1]-1
+
+    gc_data = pd.DataFrame({
+        "Position RMSE": torch.cat([gc_com_v_pos_rmse, gc_com_middle_pos_rmse, gc_com_ee_pos_rmse, rl_com_v_pos_rmse, rl_com_middle_pos_rmse, rl_com_ee_pos_rmse]),
+        "Yaw RMSE": torch.cat([gc_com_v_yaw_rmse, gc_com_middle_yaw_rmse, gc_com_ee_yaw_rmse, rl_com_v_yaw_rmse, rl_com_middle_yaw_rmse, rl_com_ee_yaw_rmse]),
+        "COM Location": (["Vehicle"] * N_gc + ["Middle"] * N_gc + ["End-Effector"] * N_gc + ["Vehicle"] * N_rl + ["Middle"] * N_rl + ["End-Effector"] * N_rl),
+        "Controller": (["GC"] *3*N_gc + ["RL-EE"] * 3*N_rl),
+    })
+
+    fig = plt.figure(layout="constrained", dpi=300)
+    axd = fig.subplot_mosaic(
+        """
+        AB
+        """
+    )
+    axs = [axd["A"], axd["B"]]
+    sns.violinplot(data=gc_data, x="COM Location", y="Position RMSE", inner="quart", hue="Controller", split=True, palette=[params['violin_color_2'], params['violin_color_1']], legend=False, ax=axs[0])
+    axs[0].set_ylabel("Position RMSE (m)")
+    sns.violinplot(data=gc_data, x="COM Location", y="Yaw RMSE", inner="quart", hue="Controller", split=True, palette=[params['violin_color_2'], params['violin_color_1']], legend=False, ax=axs[1])
+    axs[1].set_ylabel("Yaw RMSE (rad)")
+
+    fig.legend(handles=violin_legend_elements_COM_ablation, loc='lower center', ncol=2, bbox_to_anchor=(0.5, -0.05))
+    plt.savefig("COM_ablation_hover_violin.png", bbox_inches='tight', dpi=500, format='png')
+
+    rl_com_v_pos_quantiles, rl_com_v_yaw_quantiles = get_quantiles_error(rl_com_v_data, [0.25, 0.5, 0.75])
+    rl_com_middle_pos_quantiles, rl_com_middle_yaw_quantiles = get_quantiles_error(rl_com_middle_data, [0.25, 0.5, 0.75])
+    rl_com_ee_pos_quantiles, rl_com_ee_yaw_quantiles = get_quantiles_error(rl_com_ee_data, [0.25, 0.5, 0.75])
+    gc_com_v_pos_quantiles, gc_com_v_yaw_quantiles = get_quantiles_error(gc_com_v_data, [0.25, 0.5, 0.75])
+    gc_com_middle_pos_quantiles, gc_com_middle_yaw_quantiles = get_quantiles_error(gc_com_middle_data, [0.25, 0.5, 0.75])
+    gc_com_ee_pos_quantiles, gc_com_ee_yaw_quantiles = get_quantiles_error(gc_com_ee_data, [0.25, 0.5, 0.75])
 
 
-if __name__ == "__main__":
-    fig = plt.figure(layout="constrained", dpi=300, figsize=(7, 5))
+    x_axis = np.arange(T) * 0.02
+    plot_clip_time=4
+    fig = plt.figure(layout="constrained", dpi=300)
+    axd = fig.subplot_mosaic(
+        """
+        AB
+        CD
+        EF
+        """
+    )
+    axs = [axd["A"], axd["B"], axd["C"], axd["D"], axd["E"], axd["F"]]
+    sns.lineplot(x=x_axis, y=rl_com_v_pos_quantiles[1], ax=axs[0], label="RL-EE", color=params["rl_ee_color"], legend=False)
+    sns.lineplot(x=x_axis, y=gc_com_v_pos_quantiles[1], ax=axs[0], label="GC", color=params["gc_color"], legend=False)
+    axs[0].fill_between(x_axis, rl_com_v_pos_quantiles[0], rl_com_v_pos_quantiles[2], alpha=0.2, color=params["rl_ee_color"])
+    axs[0].fill_between(x_axis, gc_com_v_pos_quantiles[0], gc_com_v_pos_quantiles[2], alpha=0.2, color=params["gc_color"])
+    axs[0].set_ylabel("COM-V\nPosition Error (m)")
+    plt.setp(axs[0].get_xticklabels(), visible=False) # hide x axis ticks for top plot
+    axs[0].set_xlim(0, plot_clip_time)
+    sns.lineplot(x=x_axis, y=rl_com_v_yaw_quantiles[1], ax=axs[1], label="RL-EE", color=params["rl_ee_color"], legend=False)
+    sns.lineplot(x=x_axis, y=gc_com_v_yaw_quantiles[1], ax=axs[1], label="GC", color=params["gc_color"], legend=False)
+    axs[1].fill_between(x_axis, rl_com_v_yaw_quantiles[0], rl_com_v_yaw_quantiles[2], alpha=0.2, color=params["rl_ee_color"])
+    axs[1].fill_between(x_axis, gc_com_v_yaw_quantiles[0], gc_com_v_yaw_quantiles[2], alpha=0.2, color=params["gc_color"])
+    axs[1].set_ylabel("Yaw Error (rad)")
+    axs[1].set_xlim(0, plot_clip_time)
+    plt.setp(axs[1].get_xticklabels(), visible=False) # hide x axis ticks for top plot
+    # axs[1].yaxis.set_label_position("right")
+    # axs[1].yaxis.tick_right()
+    sns.lineplot(x=x_axis, y=rl_com_middle_pos_quantiles[1], ax=axs[2], label="RL-EE", color=params["rl_ee_color"], legend=False)
+    sns.lineplot(x=x_axis, y=gc_com_middle_pos_quantiles[1], ax=axs[2], label="GC", color=params["gc_color"], legend=False)
+    axs[2].fill_between(x_axis, rl_com_middle_pos_quantiles[0], rl_com_middle_pos_quantiles[2], alpha=0.2, color=params["rl_ee_color"])
+    axs[2].fill_between(x_axis, gc_com_middle_pos_quantiles[0], gc_com_middle_pos_quantiles[2], alpha=0.2, color=params["gc_color"])
+    axs[2].set_ylabel("COM-Middle\nPosition Error (m)")
+    plt.setp(axs[2].get_xticklabels(), visible=False) # hide x axis ticks for top plot
+    axs[2].set_xlim(0, plot_clip_time)
+    sns.lineplot(x=x_axis, y=rl_com_middle_yaw_quantiles[1], ax=axs[3], label="RL-EE", color=params["rl_ee_color"], legend=False)
+    sns.lineplot(x=x_axis, y=gc_com_middle_yaw_quantiles[1], ax=axs[3], label="GC", color=params["gc_color"], legend=False)
+    axs[3].fill_between(x_axis, rl_com_middle_yaw_quantiles[0], rl_com_middle_yaw_quantiles[2], alpha=0.2, color=params["rl_ee_color"])
+    axs[3].fill_between(x_axis, gc_com_middle_yaw_quantiles[0], gc_com_middle_yaw_quantiles[2], alpha=0.2, color=params["gc_color"])
+    axs[3].set_ylabel("Yaw Error (rad)")
+    axs[3].set_xlim(0, plot_clip_time)
+    plt.setp(axs[3].get_xticklabels(), visible=False) # hide x axis ticks for top plot
+    # axs[1].yaxis.set_label_position("right")
+    # axs[1].yaxis.tick_right()
+    sns.lineplot(x=x_axis, y=rl_com_ee_pos_quantiles[1], ax=axs[4], label="RL-EE", color=params["rl_ee_color"], legend=False)
+    sns.lineplot(x=x_axis, y=gc_com_ee_pos_quantiles[1], ax=axs[4], label="GC", color=params["gc_color"], legend=False)
+    axs[4].fill_between(x_axis, rl_com_ee_pos_quantiles[0], rl_com_ee_pos_quantiles[2], alpha=0.2, color=params["rl_ee_color"])
+    axs[4].fill_between(x_axis, gc_com_ee_pos_quantiles[0], gc_com_ee_pos_quantiles[2], alpha=0.2, color=params["gc_color"])
+    axs[4].set_ylabel("COM-EE\nPosition Error (m)")
+    axs[4].set_xlim(0, plot_clip_time)
+    axs[4].set_xlabel("Time (s)")
+    sns.lineplot(x=x_axis, y=rl_com_ee_yaw_quantiles[1], ax=axs[5], label="RL-EE", color=params["rl_ee_color"], legend=False)
+    sns.lineplot(x=x_axis, y=gc_com_ee_yaw_quantiles[1], ax=axs[5], label="GC", color=params["gc_color"], legend=False)
+    axs[5].fill_between(x_axis, rl_com_ee_yaw_quantiles[0], rl_com_ee_yaw_quantiles[2], alpha=0.2, color=params["rl_ee_color"])
+    axs[5].fill_between(x_axis, gc_com_ee_yaw_quantiles[0], gc_com_ee_yaw_quantiles[2], alpha=0.2, color=params["gc_color"])
+    axs[5].set_ylabel("Yaw Error (rad)")
+    axs[5].set_xlim(0, plot_clip_time)
+    axs[5].set_xlabel("Time (s)")
+
+    fig.legend(handles=error_legend_elements, loc='lower center', ncol=3, bbox_to_anchor=(0.5, -0.05))
+    plt.savefig("COM_ablation_hover_error.png", bbox_inches='tight', dpi=500, format='png')
+
+def plot_rewards():
+    rl_ee_path = os.path.join(rl_ee_base_path, "eval_rewards.pt")
+    rl_com_path = os.path.join(rl_com_base_path, "eval_rewards.pt")
+    gc_path = os.path.join(gc_base_path, "hover_eval_rewards.pt")
+
+    rl_ee_rewards_raw = torch.load(rl_ee_path, weights_only=True).cpu()
+    rl_com_rewards_raw = torch.load(rl_com_path, weights_only=True).cpu()
+    gc_rewards_raw = torch.load(gc_path, weights_only=True).cpu()
+
+    N = rl_ee_rewards_raw.shape[0]
+    T = rl_ee_rewards_raw.shape[1]
+
+    max_reward = 15.0
+    min_reward = torch.min(torch.cat([rl_ee_rewards_raw, rl_com_rewards_raw, gc_rewards_raw])).item()
+    
+    # normalize rewards
+    rl_ee_rewards = (rl_ee_rewards_raw - min_reward) / (max_reward - min_reward)
+    rl_com_rewards = (rl_com_rewards_raw - min_reward) / (max_reward - min_reward)
+    gc_rewards = (gc_rewards_raw - min_reward) / (max_reward - min_reward)
+
+    quantiles = torch.tensor([0.25, 0.5, 0.75], device=rl_ee_rewards.device)
+    rl_ee_quantiles = torch.quantile(rl_ee_rewards, quantiles, dim=0).cpu()
+    rl_com_quantiles = torch.quantile(rl_com_rewards, quantiles, dim=0).cpu()
+    gc_quantiles = torch.quantile(gc_rewards, quantiles, dim=0).cpu()
+
+    x_axis = np.arange(T) * 0.02
+    plot_clip_time = 4
+    fig, ax = plt.subplots(1, 1, figsize=(3.5, 3.5), dpi=300)
+    sns.lineplot(x=x_axis, y=rl_ee_quantiles[1], ax=ax, label="RL-EE", color=params["rl_ee_color"], legend=False)
+    sns.lineplot(x=x_axis, y=rl_com_quantiles[1], ax=ax, label="RL-COM", color=params["rl_com_color"], legend=False)
+    sns.lineplot(x=x_axis, y=gc_quantiles[1], ax=ax, label="GC", color=params["gc_color"], legend=False)
+    ax.fill_between(x_axis, rl_ee_quantiles[0], rl_ee_quantiles[2], alpha=0.2, color=params["rl_ee_color"])
+    ax.fill_between(x_axis, rl_com_quantiles[0], rl_com_quantiles[2], alpha=0.2, color=params["rl_com_color"])
+    ax.fill_between(x_axis, gc_quantiles[0], gc_quantiles[2], alpha=0.2, color=params["gc_color"])
+    ax.set_ylabel("Normalized Reward")
+    ax.set_xlim(0, plot_clip_time)
+    ax.set_xlabel("Time (s)")
+    fig.legend(handles=error_legend_elements, loc='lower center', ncol=3, bbox_to_anchor=(0.5, -0.05))
+    plt.savefig("hover_rewards.png", bbox_inches='tight', dpi=500, format='png')
+
+    rl_ee_avg_reward = torch.mean(rl_ee_rewards, dim=1).cpu()
+    rl_com_avg_reward = torch.mean(rl_com_rewards, dim=1).cpu()
+    gc_avg_reward = torch.mean(gc_rewards, dim=1).cpu()
+
+    data = pd.DataFrame({
+        "Average Reward": torch.cat([rl_ee_avg_reward, rl_com_avg_reward, gc_avg_reward]),
+        "Method": (["RL-EE"] * N + ["RL-COM"] * N + ["GC"] * N)
+    })
+
+    # Make bar plot with error bars
+    fig, ax = plt.subplots(1, 1, figsize=(3.5, 3.5), dpi=300)
+    sns.barplot(data=data, x="Method", y="Average Reward", errorbar="sd", hue="Method", palette=[params["rl_ee_color"], params["rl_com_color"], params["gc_color"]], ax=ax)
+    ax.set_ylabel("Average Normalized Reward")
+    ax.set_ylim(0.9, 1.0)
+    plt.savefig("hover_avg_rewards.png", bbox_inches='tight', dpi=500, format='png')
+
+    rl_ee_accumulated_reward = torch.sum(rl_ee_rewards_raw, dim=1).cpu() / (T*max_reward)
+    rl_com_accumulated_reward = torch.sum(rl_com_rewards_raw, dim=1).cpu()  / (T*max_reward)
+    gc_accumulated_reward = torch.sum(gc_rewards_raw, dim=1).cpu()  / (T*max_reward)
+
+    data = pd.DataFrame({
+        "Accumulated Reward": torch.cat([rl_ee_accumulated_reward, rl_com_accumulated_reward, gc_accumulated_reward]),
+        "Method": (["RL-EE"] * N + ["RL-COM"] * N + ["GC"] * N)
+    })
+
+    # Make bar plot with error bars
+    fig, ax = plt.subplots(1, 1, figsize=(3.5, 3.5), dpi=300)
+    sns.barplot(data=data, x="Method", y="Accumulated Reward", errorbar="sd", hue="Method", palette=[params["rl_ee_color"], params["rl_com_color"], params["gc_color"]], ax=ax)
+    ax.set_ylabel("Accumulated Normalized Reward")
+    ax.set_ylim(0.9, 1.0)
+    plt.savefig("hover_accumulated_rewards.png", bbox_inches='tight', dpi=500, format='png')
+
+
+
+
+
+def gen_combined_layout():
+    fig = plt.figure(layout="constrained", dpi=300, figsize=(7, 4))
     axd = fig.subplot_mosaic(
         """
         ACD
@@ -242,8 +452,33 @@ if __name__ == "__main__":
     plot_error_pos_yaw([axd["A"], axd["B"]])
     plot_violin_rmse_settling_time([axd["C"], axd["D"]])
     # legend_elements = error_legend_elements + violin_legend_elements
-    legend_elements = list(itertools.chain.from_iterable(zip(error_legend_elements, violin_legend_elements)))
+    # legend_elements = list(itertools.chain.from_iterable(zip(error_legend_elements, violin_legend_elements_v1)))
+    legend_elements = list(itertools.chain.from_iterable(zip(error_legend_elements, violin_legend_elements_v2)))
     fig.legend(handles=legend_elements, loc='lower center', ncol=3, bbox_to_anchor=(0.5, -0.15))
-    plt.suptitle("V2: Grouped by Metric")
+    # plt.suptitle("V1: Grouped by Pos/Yaw")
+    # plt.suptitle("V2: Grouped by Metric")
     plt.savefig("hover_error_violin_v2.png", bbox_inches='tight', dpi=500, format='png')
     plt.savefig("hover_error_violin_v2.pdf", bbox_inches='tight', dpi=500, format='pdf')
+
+def gen_error_plot_only():
+    fig = plt.figure(layout="constrained", dpi=300, figsize=(3.5, 4))
+    axd = fig.subplot_mosaic(
+        """
+        A
+        B
+        """
+    )
+    plot_error_pos_yaw([axd["A"], axd["B"]])
+    legend_elements = error_legend_elements
+    fig.legend(handles=legend_elements, loc='lower center', ncol=3, bbox_to_anchor=(0.5, -0.15))
+    plt.savefig("hover_error_plot.png", bbox_inches='tight', dpi=500, format='png')
+    plt.savefig("hover_error_plot.pdf", bbox_inches='tight', dpi=500, format='pdf')
+
+
+if __name__ == "__main__":
+    # gen_combined_layout()
+    # gen_error_plot_only()
+    
+    # plot_COM_ablation()
+    plot_rewards()
+    # plt.show()
