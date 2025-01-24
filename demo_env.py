@@ -132,11 +132,17 @@ def main():
         # env_cfg.viewer.asset_name = "robot"
 
 
-        env_cfg.lissajous_amplitudes=[0.0, 0.0, 0.0, 0.0]
-        env_cfg.lissajous_frequencies=[2.0, 0.0, 0.0, 0.0]
+        env_cfg.lissajous_amplitudes=[1.0, 1.0, 0.0, 0.0]
+        # env_cfg.lissajous_frequencies=[1.570796, 1.570796, 0.0, 0.0]
+        env_cfg.lissajous_frequencies=[3.141593, 3.141593, 0.0, 0.0]
+        env_cfg.lissajous_phases=[0.0, 1.570796, 0.0, 0.0]
         # env_cfg.lissajous_offsets_rand_ranges=[1.0, 1.0, 1.0, 1.57]
-        env_cfg.init_pos_ranges=[0.5, 0.5, 0.5]
+        env_cfg.init_pos_ranges=[0.2, 0.2, 0.2]
+        env_cfg.polynomial_yaw_coefficients=[-3.141593, -3.141593]
+        env_cfg.trajectory_type="combined"
+        # env_cfg.init_pos_ranges=[0.0, 0.0, 0.0]
         env_cfg.init_cfg = "rand"       
+        # env_cfg.init_cfg = "fixed"       
 
         env_cfg.viz_mode = "robot"
 
@@ -181,7 +187,7 @@ def main():
     gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, com_pos_w=None, device=env.device,
                              kp_pos_gain_xy=43.507, kp_pos_gain_z=24.167, kd_pos_gain_xy=9.129, kd_pos_gain_z=6.081,
                              kp_att_gain_xy=998.777, kp_att_gain_z=18.230, kd_att_gain_xy=47.821, kd_att_gain_z=8.818,
-                             feed_forward=False)
+                             feed_forward=True)
     # gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, com_pos_w=None, device=env.device,
     #                         skip_precompute=True)
     
@@ -246,6 +252,7 @@ def main():
             # action_gc = gc.get_action(full_state)
             obs = obs_dict["gc"]
             action_gc = gc.get_action(obs)
+            # action_gc[:,0] = -1.0 # no thrust
             print("Action GC: ", action_gc)
 
             print("Pos: ", obs[:,:3])
@@ -298,6 +305,7 @@ def main():
         # print("Catch percentage: ", info['log']['Episode Reward/catch'].item() / (args_cli.num_envs * 5.0))
 
         print("Done!")
+        # gc.log_buffers()
         # import numpy as np
         # ee_pos = np.array(ee_pos_list).squeeze()
         # print("EE Pos: ", ee_pos.shape)

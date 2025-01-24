@@ -49,7 +49,7 @@ from controllers.decoupled_controller import DecoupledController
 
 import optuna
 
-use_integral_terms = True
+use_integral_terms = False
 
 
 def eval_trial(trial):

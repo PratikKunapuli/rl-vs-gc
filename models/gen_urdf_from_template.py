@@ -16,13 +16,27 @@ catch_ee_geom = "<visual> \
       </geometry> \
     </collision>"
 
-arm_length = 0.35
+# uam_0dof_com_middle
+# arm_length = 0.15
+# arm_length_geom = arm_length - 0.035
+# arm_origin_geom = (arm_length_geom - 0.035) / 2
+# com_from_vehicle = 0.04
+# com_from_ee = (arm_length + 0.05) - com_from_vehicle
+
+# uam_0dof_long_arm_com_middle
+# arm_length = 0.35
+# arm_length_geom = arm_length - 0.035
+# arm_origin_geom = (arm_length_geom - 0.035) / 2
+# com_from_vehicle = 0.04
+# com_from_ee = (arm_length + 0.05) - com_from_vehicle
+
+arm_length = 0.15
 arm_length_geom = arm_length - 0.035
 arm_origin_geom = (arm_length_geom - 0.035) / 2
 com_from_vehicle = 0.04
 com_from_ee = (arm_length + 0.05) - com_from_vehicle
-add_catch_geom = False
-output_name = "uam_0dof_long_arm_com_middle.urdf"
+add_catch_geom = True
+output_name = "uam_0dof_com_middle_catching.urdf"
 
 
 

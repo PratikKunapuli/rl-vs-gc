@@ -167,4 +167,19 @@ gc_params_dict = {
             "kd_att_gain_z": 46.64,
         },
     },
+
+
+    "Isaac-AerialManipulator-0DOF-BallCatch-v0": {
+        "log_dir": "./baseline_0dof_ee_reward_tune/",
+        "controller_params": {
+            "kp_pos_gain_xy": 43.507,
+            "kp_pos_gain_z": 24.167,
+            "kd_pos_gain_xy": 9.129,
+            "kd_pos_gain_z": 6.081,
+            "kp_att_gain_xy": 998.777,
+            "kp_att_gain_z": 18.230,
+            "kd_att_gain_xy": 47.821,
+            "kd_att_gain_z": 8.818,
+        },
+    }
 }

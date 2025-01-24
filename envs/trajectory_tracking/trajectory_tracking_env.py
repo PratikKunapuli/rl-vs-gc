@@ -522,6 +522,7 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
 
         current_time = self.episode_length_buf[env_ids]
         future_timesteps = torch.arange(0, 1+self.cfg.trajectory_horizon, device=self.device)
+        # future_timesteps = torch.arange(0, 1+self.cfg.trajectory_horizon, device=self.device)
         time = (current_time + future_timesteps.unsqueeze(0)) * self.cfg.traj_update_dt
 
         # env_ids =  # need to squeeze after getting current time
@@ -546,6 +547,10 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
             pos_poly, yaw_poly = traj_utils.eval_polynomial_curve(time, self.polynomial_coefficients, derivatives=4)
             pos_traj = pos_lissajous + pos_poly
             yaw_traj = yaw_lissajous + yaw_poly
+
+            # print("Poly coefficients: ", self.polynomial_coefficients[0, :, :])
+            # print("Pos Poly: ", pos_poly[:2, 0, :, 0])
+            # print("Yaw poly: ", yaw_poly[:2, 0, 0])
         else:
             raise NotImplementedError("Trajectory type not implemented")
     
@@ -561,6 +566,7 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
             yaw_traj[0, :, :] += yaw_shift
 
         # we need to switch the last two dimensions of pos_traj since the _desired_pos_w is of shape (num_envs, horizon, 3) instead of (num_envs, 3, horizon)
+        # print(self._desired_pos_traj_w.shape, pos_traj[0,env_ids.squeeze(1)].shape)
         self._desired_pos_traj_w[env_ids.squeeze(1)] = (pos_traj[0,env_ids.squeeze(1)]).transpose(1,2)
         # self._desired_pos_traj_w[env_ids.squeeze(1),:, :2] += self._terrain.env_origins[env_ids, :2] # shift the trajectory to the correct position for each environment
         # we need to convert from the yaw angle to a quaternion representation
@@ -570,6 +576,12 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
 
         # print("pos traj: ", pos_traj[0, 0, :, :2])
         # print("desired pos traj: ", self._desired_pos_traj_w[0,:2])
+
+        # print("Traj shape: ", self._pos_traj.shape)
+        # print("Traj velocity: ", self._pos_traj[1, 0, :, 0])
+        # print("Traj acceleration: ", self._pos_traj[2, 0, :, 0])
+        # print("Traj yaw: ", self._yaw_traj[0, 0, 0])
+        # print("Traj yaw velocity: ", self._yaw_traj[1, 0, 0])
 
 
         self._desired_pos_w[env_ids] = self._desired_pos_traj_w[env_ids, 0]
@@ -724,6 +736,8 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
             gc_obs = None
 
         if self.cfg.eval_mode:
+            pos_traj = self._pos_traj[:3,:,:,0].permute(1,0,2).reshape(self.num_envs, -1)
+            yaw_traj = self._yaw_traj[:2,:,0].permute(1,0).reshape(self.num_envs, -1)
             full_state = torch.cat(
                 [
                     quad_pos_w,                                 # (num_envs, 3) [0-3]
@@ -740,6 +754,8 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
                     wrist_joint_vel,                            # (num_envs, 1) [29]
                     self._desired_pos_w,                        # (num_envs, 3) [30-33] [26-29]
                     self._desired_ori_w,                        # (num_envs, 4) [33-37] [29-33]
+                    pos_traj,
+                    yaw_traj,
                 ],
                 dim=-1                                          # (num_envs, 18)
             )
@@ -975,6 +991,7 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
             # default_root_state[:, 10:13] = torch.zeros_like(traj_vel_start)
         elif self.cfg.init_cfg == "fixed":
             default_root_state = self._robot.data.default_root_state[env_ids]
+            default_root_state[:, :3] += self._terrain.env_origins[env_ids]
             default_root_state[:, 2] = 3.0
             # default_root_state[:, 3:7] = self._desired_ori_w[env_ids]
         else:

@@ -429,6 +429,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
             while steps < 500 and not done:
                 obs_tensor = obs_dict["policy"]
                 full_states[:, steps, :] = obs_dict["full_state"]
+                # print("Full State: ", obs_dict["full_state"][0, 33:])
 
                 start = time.time()
                 if args_cli.baseline:

@@ -24,6 +24,9 @@ from pxr import Usd, UsdShade, Gf
 from configs.aerial_manip_asset import AERIAL_MANIPULATOR_0DOF_DEBUG_BALL_CATCHING_CFG, AERIAL_MANIPULATOR_0DOF_BALL_CATCHING_CFG, BALL_CFG
 from utils.math_utilities import yaw_from_quat, yaw_error_from_quats, quat_from_yaw, compute_desired_pose_from_transform
 
+import gymnasium as gym
+import numpy as np
+
 class AerialManipulatorBallCatchEnvWindow(BaseEnvWindow):
     """Window manager for the Quadcopter environment."""
 
@@ -91,6 +94,10 @@ class AerialManipulatorBallCatchingEnvBaseCfg(DirectRLEnvCfg):
     # scene
     scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=2.5, replicate_physics=True)
 
+    action_space= gym.spaces.Box(low=-1.0, high=1.0, shape=(4,))
+    observation_space= gym.spaces.Box(low=-np.inf, high=np.inf, shape=(12,))
+    state_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(0,))
+
     # sphere_cfg = SphereCfg(
     #     radius=0.02,
     #     visible=True,
@@ -132,7 +139,7 @@ class AerialManipulatorBallCatchingEnvBaseCfg(DirectRLEnvCfg):
     # moment_scale_z = 0.05
     # thrust_to_weight = 3.0
     moment_scale_xy = 0.5
-    moment_scale_z = 0.1
+    moment_scale_z = 0.025
     thrust_to_weight = 3.0
 
     # reward scales
@@ -159,8 +166,8 @@ class AerialManipulatorBallCatchingEnvBaseCfg(DirectRLEnvCfg):
     goal_vel = None
     use_catch_pos = True
     use_grav_vector = True
-    use_full_ori_matrix = False
-    use_yaw_representation = True
+    use_full_ori_matrix = True
+    use_yaw_representation = False
 
     ball_radius = 0.04
     ball_error_threshold = ball_radius
@@ -171,6 +178,9 @@ class AerialManipulatorBallCatchingEnvBaseCfg(DirectRLEnvCfg):
     init_cfg = "default" # "default" or "rand"
 
     task_body = "root" # "root" or "endeffector" or "vehicle"
+    goal_body = "root" # "root" or "endeffector" or "vehicle"
+    reward_task_body = "root"
+    reward_goal_body = "root"
     body_name = "vehicle"
     has_end_effector = True
     use_full_ori_matrix = False
@@ -296,6 +306,7 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
 
         # Robot specific data
         self._body_id = self._robot.find_bodies(self.cfg.body_name)[0]
+        self._com_id = self._robot.find_bodies("COM")[0]
         assert len(self._body_id) == 1, "There should be only one body with the name \'vehicle\' or \'body\'"
 
         if self.cfg.has_end_effector:
@@ -316,7 +327,8 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
         quad_pos = self._robot.data.body_pos_w[0, self._body_id]
         quad_ori = self._robot.data.body_quat_w[0, self._body_id]
 
-
+        com_pos = self._robot.data.body_pos_w[0, self._com_id]
+        com_ori = self._robot.data.body_quat_w[0, self._com_id]
 
         ee_pos = self._robot.data.body_pos_w[0, self._ee_id]
         ee_ori = self._robot.data.body_quat_w[0, self._ee_id]
@@ -331,7 +343,7 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
             self.com_pos_w += self._robot.root_physx_view.get_masses()[0, i] * self._robot.root_physx_view.get_link_transforms()[0, i, :3].squeeze()
         self.com_pos_w /= self._robot.root_physx_view.get_masses()[0].sum()
 
-        self.com_pos_e, self.com_ori_e = subtract_frame_transforms(ee_pos, ee_ori, self.com_pos_w, quad_ori)
+        self.com_pos_e, self.com_ori_e = subtract_frame_transforms(ee_pos, ee_ori, com_pos, com_ori)
 
 
         self.position_offset = quad_pos
@@ -409,7 +421,7 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
             self._desired_ori_w = quat_from_yaw(yaw_angle_w)
             # self._desired_ori_w = torch.stack([torch.cos(yaw_angle_w / 2), 0.0, 0.0, torch.sin(yaw_angle_w / 2)], dim=-1)
             
-            # self._desired_ori_w = torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device).unsqueeze(0).repeat(self.num_envs, 1)
+            self._desired_ori_w = torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device).unsqueeze(0).repeat(self.num_envs, 1)
         else:
             self._desired_pos_w = self._ball_pos_w
             self._desired_ori_w = self._ball_ori_w
@@ -452,7 +464,8 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
             grav_vector_b = torch.zeros(self.num_envs, 0, device=self.device)
         
         # Compute the linear and angular velocities of the end-effector in body frame
-        lin_vel_b = quat_rotate_inverse(base_ori_w, lin_vel_w)
+        lin_vel_error_w = -lin_vel_w
+        lin_vel_b = quat_rotate_inverse(base_ori_w, lin_vel_error_w)
         ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_w)
 
         # Compute the joint states
@@ -538,7 +551,7 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
         """
         Returns the reward tensor.
         """
-        base_pos_w, base_ori_w, lin_vel_w, ang_vel_w = self.get_frame_state_from_task(self.cfg.task_body)
+        base_pos_w, base_ori_w, lin_vel_w, ang_vel_w = self.get_frame_state_from_task(self.cfg.reward_task_body)
         
         # Computes the error from the desired position and orientation
         pos_error = torch.linalg.norm(self._ball_pos_w - base_pos_w, dim=1)
@@ -725,6 +738,7 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
         ball_vel = torch.zeros_like(self._ball.data.root_vel_w[env_ids], device=self.device)
         ball_pos = self._ball.data.root_pos_w[env_ids]
         self._ball.write_root_velocity_to_sim(ball_vel, env_ids=env_ids)
+
         
         self.set_ball_color(env_ids, (0.0, 1.0, 0.0))
     
@@ -858,6 +872,7 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
             default_root_state[:, 3:7] = torch.tensor([0.7071068, 0.0, 0.0, 0.7071068], device=self.device, requires_grad=False).float().tile((env_ids.size(0), 1))
         else:
             default_root_state = self._robot.data.default_root_state[env_ids]
+            # default_root_state[:, 3] = 3.0 * torch.ones_like(default_root_state[:, 3])
         default_root_state[:, :3] += self._terrain.env_origins[env_ids]
         
         if self.cfg.num_joints > 0:
