@@ -50,6 +50,7 @@ from controllers.decoupled_controller import DecoupledController
 import optuna
 
 use_integral_terms = False
+use_feed_forward_terms = True
 
 
 def eval_trial(trial):
@@ -89,7 +90,7 @@ def eval_trial(trial):
             gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, com_pos_w=None, device=env.device,
                                     kp_pos_gain_xy=pos_kp_gain_xy, kp_pos_gain_z=pos_kp_gain_z, kd_pos_gain_xy=pos_kd_gain_xy, kd_pos_gain_z=pos_kd_gain_z,
                                     kp_att_gain_xy=ori_kp_gain_xy, kp_att_gain_z=ori_kp_gain_z, kd_att_gain_xy=ori_kd_gain_xy, kd_att_gain_z=ori_kd_gain_z,
-                                    tuning_mode=False, feed_forward=True)
+                                    tuning_mode=False, feed_forward=use_feed_forward_terms)
         else:
             gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, com_pos_w=None, device=env.device,
                                     kp_pos_gain_xy=pos_kp_gain_xy, kp_pos_gain_z=pos_kp_gain_z, kd_pos_gain_xy=pos_kd_gain_xy, kd_pos_gain_z=pos_kd_gain_z,
@@ -171,6 +172,11 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg):
 
     if use_integral_terms:
         study_name += " Integral Terms"
+    
+    if use_feed_forward_terms:
+        study_name += " Feed Forward Terms"
+
+    study_name += " Hover" if 0.0 in env_cfg.lissajous_amplitudes_rand_ranges else " Trajectory Tracking"
     
     study = optuna.create_study(direction="maximize",
                                 study_name=study_name, storage="sqlite:///database_gc_tuning.sqlite3", load_if_exists=True,

@@ -327,11 +327,11 @@ class DecoupledController():
 
             collective_thrust = self.mass * (s_actual.unsqueeze(-1).transpose(-2, -1) @ (x_ddot_des.unsqueeze(-1) + gravity_vec.unsqueeze(-1))).squeeze(-1)
 
-            if self.print_debug:
-                print("Gravity vec (ge3): ", gravity_vec)
-                print("s_actual: ", s_actual)
-                print("x_ddot_des: ", x_ddot_des)
-                print("sT (x_ddot_des + gravity): ", (s_actual.unsqueeze(-1).transpose(-2, -1) @ (x_ddot_des.unsqueeze(-1) + gravity_vec.unsqueeze(-1))).squeeze(-1))
+            # if self.print_debug:
+            #     print("Gravity vec (ge3): ", gravity_vec)
+            #     print("s_actual: ", s_actual)
+            #     print("x_ddot_des: ", x_ddot_des)
+            #     print("sT (x_ddot_des + gravity): ", (s_actual.unsqueeze(-1).transpose(-2, -1) @ (x_ddot_des.unsqueeze(-1) + gravity_vec.unsqueeze(-1))).squeeze(-1))
             # print("s @ (x_ddot_des + gravity): ", (s_actual.unsqueeze(-1) @ (x_ddot_des.unsqueeze(-1) + gravity_vec.unsqueeze(-1))).squeeze(-1))
 
             # Project x_ddot_des + gravity onto the s_actual direction. 
@@ -352,34 +352,34 @@ class DecoupledController():
             # s_dot comes from the hat_map(R^T @ omega) last column
             s_dot = torch.bmm(R_actual, math_utils.hat_map(quad_omega))[:,:,-1].view(batch_size, 3)
             self.s_dot_buffer.append(s_dot)
-            if self.print_debug:
-                print("s_dot: ", s_dot.shape)
-                print("x_ddot_des: ", x_ddot_des.shape)
-                print("x_ddot: ", x_ddot.shape)
-                print("x_dddot_des: ", x_dddot_des.shape)
-                print("s_actual: ", s_actual.shape)
-                print("gravity_vec: ", gravity_vec.shape)
+            # if self.print_debug:
+            #     print("s_dot: ", s_dot.shape)
+            #     print("x_ddot_des: ", x_ddot_des.shape)
+            #     print("x_ddot: ", x_ddot.shape)
+            #     print("x_dddot_des: ", x_dddot_des.shape)
+            #     print("s_actual: ", s_actual.shape)
+            #     print("gravity_vec: ", gravity_vec.shape)
             # s_dot is (N,3), then (N,3,1), then (N,1,3) @ (N,3,1) = (N,1,1) -> (N)
             # I want x_dddot to be (N,3) by the end. 
             x_dddot = (s_dot.unsqueeze(-1).transpose(-2, -1) @ (x_ddot_des.unsqueeze(-1) + gravity_vec.unsqueeze(-1))).squeeze(-1) * s_dot + (s_actual.unsqueeze(-1).transpose(-2, -1) @ x_dddot_des.unsqueeze(-1)).squeeze(-1) * s_actual
             x_ddddot_des = -self.kp_pos*(x_ddot - ff_acc) - self.kd_pos*(x_dddot - ff_jerk) + ff_snap
             
-            if self.print_debug:
-                print("X_dddot: ", x_dddot.shape)
-                print("X_ddddot_des: ", x_ddddot_des.shape)
+            # if self.print_debug:
+            #     print("X_dddot: ", x_dddot.shape)
+            #     print("X_ddddot_des: ", x_ddddot_des.shape)
 
 
-            if self.print_debug:
-                print("Projected x_ddot_des: ", projected_x_ddot_des)
-                print("X_ddot_des: ", x_ddot_des)
-                print("X_ddot: ", x_ddot)
+            # if self.print_debug:
+            #     print("Projected x_ddot_des: ", projected_x_ddot_des)
+            #     print("X_ddot_des: ", x_ddot_des)
+            #     print("X_ddot: ", x_ddot)
 
             # Compute desired shapes and derivatives
             denom = torch.linalg.norm(x_ddot_des + gravity_vec, dim=1).unsqueeze(1)
             s_des = (x_ddot_des + gravity_vec) / denom # (N, 3)
             self.s_des_buffer.append(s_des)
-            if self.print_debug:
-                print("S_des: ", s_des)
+            # if self.print_debug:
+            #     print("S_des: ", s_des)
             s_dot_des = (torch.bmm(Id_3 - s_des.unsqueeze(-1) * s_des.unsqueeze(1), x_dddot_des.unsqueeze(-1))).squeeze(-1) / denom # (N, 3) # TODO: Check if this should be s_actual or s_des
             self.s_dot_des_buffer.append(s_dot_des)
             num1 = torch.bmm(Id_3 - s_des.unsqueeze(-1) * s_des.unsqueeze(1), x_ddddot_des.unsqueeze(-1)).squeeze(-1) # TODO: Check if this should be s_actual or s_des
@@ -396,12 +396,12 @@ class DecoupledController():
             omega_dot_hat_des = R_actual.transpose(-2, -1) @ R_ddot_des  - torch.bmm(omega_hat_des, omega_hat_des) # (N, 3, 3)
             omega_des = vee_map(omega_hat_des) # (N, 3) [Body Frame]
             omega_dot_des = vee_map(omega_dot_hat_des) # (N, 3) [Body Frame]
-            if self.print_debug:
-                print("R actual: ", R_actual.shape)
-                print("R des: ", R_des.shape)
-                print("quad_omega_hat: ", math_utils.hat_map(quad_omega).shape)
-                print("omega_des: ", omega_des.shape)
-                print("omega_dot_des: ", omega_dot_des.shape)
+            # if self.print_debug:
+            #     print("R actual: ", R_actual.shape)
+            #     print("R des: ", R_des.shape)
+            #     print("quad_omega_hat: ", math_utils.hat_map(quad_omega).shape)
+            #     print("omega_des: ", omega_des.shape)
+            #     print("omega_dot_des: ", omega_dot_des.shape)
 
             ff_part_1 = torch.bmm(torch.bmm(torch.bmm(math_utils.hat_map(quad_omega), R_actual.transpose(-2, -1)), R_des), omega_des.unsqueeze(-1)).squeeze(-1) # (N, 3)
             ff_part_2 = torch.bmm(torch.bmm(R_actual.transpose(-2, -1), R_des), omega_dot_des.unsqueeze(-1)).squeeze(-1) # (N, 3)
@@ -461,13 +461,13 @@ class DecoupledController():
 
 
         if self.print_debug:
-            print("Pos Error: ", com_pos - desired_pos)
-            print("Vel Error: ", com_vel - ff_vel)
-            print("Yaw error: ", math_utils.yaw_from_quat(com_ori_quat) - desired_yaw)
-            print("Collective Thrust: ", collective_thrust)
-            print("R_des: ", R_des)
-            print("omega_des: ", omega_des)
-            print("omega_dot_des: ", omega_dot_des)
+            print("Pos Error: ", (com_pos - desired_pos).norm(dim=1))
+            # print("Vel Error: ", com_vel - ff_vel)
+            # print("Yaw error: ", math_utils.yaw_from_quat(com_ori_quat) - desired_yaw)
+            # print("Collective Thrust: ", collective_thrust)
+            # print("R_des: ", R_des)
+            # print("omega_des: ", omega_des)
+            # print("omega_dot_des: ", omega_dot_des)
 
         # import code; code.interact(local=locals())
         
