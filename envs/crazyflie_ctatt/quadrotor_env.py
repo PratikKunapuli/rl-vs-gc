@@ -368,7 +368,7 @@ class QuadrotorEnv(DirectRLEnv):
 
         # Exp Hat Map
         # ori_des_matrix = exp_so3(hat_map(actions[:, 1:] * self.cfg.attitude_scale))
-
+        a = []
         # Flatness based control
         shape_des = flatness_utils.s2_projection(actions[:, 1]* self.cfg.attitude_scale_xy, actions[:, 2]* self.cfg.attitude_scale_xy)
         psi_des = actions[:,3] * self.cfg.attitude_scale_z
