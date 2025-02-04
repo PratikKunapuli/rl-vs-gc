@@ -25,7 +25,8 @@ rc('xtick', labelsize=6)
 sns.set_context("paper")
 sns.set_theme()
 
-from plotting_params import params
+import plotting.plotting_utils as plotting_utils
+from plotting.plotting_utils import params
 
 
 rl_ee_base_path = "../rl/logs/rsl_rl/Hover_PaperModels/2025-01-13_09-11-23_new_model_default_params_anneal_50e6/"
@@ -59,28 +60,7 @@ violin_legend_elements_COM_ablation = [
                     Patch(facecolor=params["violin_color_2"], edgecolor=params["violin_color_2"], fill=True, label='GC'),
 ] 
 
-@torch.no_grad()
-def get_quantiles_error(data, quantiles):
-    N = data.shape[0]
-    T = data.shape[1]-1
 
-    pos_error = torch.norm(data[:, :T, params["goal_pos_slice"]] - data[:, :T, params["ee_pos_slice"]], dim=-1)
-    yaw_error = math_utils.yaw_error_from_quats(data[:,:T,params["goal_ori_slice"]], data[:,:T,params["ee_ori_slice"]], 0)
-
-    pos_quantiles = torch.quantile(pos_error, torch.tensor(quantiles, device=data.device), dim=0).cpu()
-    yaw_quantiles = torch.quantile(yaw_error, torch.tensor(quantiles, device=data.device), dim=0).cpu()
-
-    return pos_quantiles, yaw_quantiles
-
-@torch.no_grad()
-def get_errors(data):
-    N = data.shape[0]
-    T = data.shape[1]-1
-
-    pos_error = torch.norm(data[:, :T, params["goal_pos_slice"]] - data[:, :T, params["ee_pos_slice"]], dim=-1)
-    yaw_error = math_utils.yaw_error_from_quats(data[:,:T,params["goal_ori_slice"]], data[:,:T,params["ee_ori_slice"]], 0)
-
-    return pos_error, yaw_error
 
 def load_data():
     rl_ee_path = os.path.join(rl_ee_base_path, "eval_full_states.pt")
@@ -100,9 +80,9 @@ def plot_error_pos_yaw(axs=None):
     N = rl_ee_data.shape[0]
     T = rl_ee_data.shape[1]-1
 
-    rl_ee_pos_quantiles, rl_ee_yaw_quantiles = get_quantiles_error(rl_ee_data, [0.25, 0.5, 0.75])
-    rl_com_pos_quantiles, rl_com_yaw_quantiles = get_quantiles_error(rl_com_data, [0.25, 0.5, 0.75])
-    gc__pos_quantiles, gc_yaw_quantiles = get_quantiles_error(gc_data, [0.25, 0.5, 0.75])
+    rl_ee_pos_quantiles, rl_ee_yaw_quantiles = plotting_utils.get_quantiles_error(rl_ee_data, [0.25, 0.5, 0.75])
+    rl_com_pos_quantiles, rl_com_yaw_quantiles = plotting_utils.get_quantiles_error(rl_com_data, [0.25, 0.5, 0.75])
+    gc__pos_quantiles, gc_yaw_quantiles = plotting_utils.get_quantiles_error(gc_data, [0.25, 0.5, 0.75])
 
     # Make a seaborn line plot where the x-axis is the time step and the y-axis is the error, showing the Percentile Interval of 50% (IQR)
     if axs==None:
@@ -183,9 +163,9 @@ def plot_violin_rmse_settling_time(axs=None):
     N = rl_ee_data.shape[0]
     T = rl_ee_data.shape[1]-1
 
-    rl_ee_pos_error, rl_ee_yaw_error = get_errors(rl_ee_data)
-    rl_com_pos_error, rl_com_yaw_error = get_errors(rl_com_data)
-    gc_pos_error, gc_yaw_error = get_errors(gc_data)
+    rl_ee_pos_error, rl_ee_yaw_error = plotting_utils.get_errors(rl_ee_data)
+    rl_com_pos_error, rl_com_yaw_error = plotting_utils.get_errors(rl_com_data)
+    gc_pos_error, gc_yaw_error = plotting_utils.get_errors(gc_data)
 
     rl_ee_pos_rmse = torch.sqrt(torch.mean(rl_ee_pos_error**2, dim=1)).cpu()
     rl_com_pos_rmse = torch.sqrt(torch.mean(rl_com_pos_error**2, dim=1)).cpu()
@@ -249,12 +229,12 @@ def plot_COM_ablation():
     rl_com_middle_data = torch.load(os.path.join(rl_com_middle_base_path, "Hover_eval_full_states.pt"), weights_only=True)
     rl_com_ee_data = torch.load(os.path.join(rl_com_ee_base_path, "Hover_eval_full_states.pt"), weights_only=True)
 
-    gc_com_v_pos_error, gc_com_v_yaw_error = get_errors(gc_com_v_data)
-    gc_com_middle_pos_error, gc_com_middle_yaw_error = get_errors(gc_com_middle_data)
-    gc_com_ee_pos_error, gc_com_ee_yaw_error = get_errors(gc_com_ee_data)
-    rl_com_v_pos_error, rl_com_v_yaw_error = get_errors(rl_com_v_data)
-    rl_com_middle_pos_error, rl_com_middle_yaw_error = get_errors(rl_com_middle_data)
-    rl_com_ee_pos_error, rl_com_ee_yaw_error = get_errors(rl_com_ee_data)
+    gc_com_v_pos_error, gc_com_v_yaw_error = plotting_utils.get_errors(gc_com_v_data)
+    gc_com_middle_pos_error, gc_com_middle_yaw_error = plotting_utils.get_errors(gc_com_middle_data)
+    gc_com_ee_pos_error, gc_com_ee_yaw_error = plotting_utils.get_errors(gc_com_ee_data)
+    rl_com_v_pos_error, rl_com_v_yaw_error = plotting_utils.get_errors(rl_com_v_data)
+    rl_com_middle_pos_error, rl_com_middle_yaw_error = plotting_utils.get_errors(rl_com_middle_data)
+    rl_com_ee_pos_error, rl_com_ee_yaw_error = plotting_utils.get_errors(rl_com_ee_data)
 
     gc_com_v_pos_rmse = torch.sqrt(torch.mean(gc_com_v_pos_error**2, dim=1)).cpu()
     gc_com_middle_pos_rmse = torch.sqrt(torch.mean(gc_com_middle_pos_error**2, dim=1)).cpu()
@@ -296,12 +276,12 @@ def plot_COM_ablation():
     fig.legend(handles=violin_legend_elements_COM_ablation, loc='lower center', ncol=2, bbox_to_anchor=(0.5, -0.05))
     plt.savefig("COM_ablation_hover_violin.png", bbox_inches='tight', dpi=500, format='png')
 
-    rl_com_v_pos_quantiles, rl_com_v_yaw_quantiles = get_quantiles_error(rl_com_v_data, [0.25, 0.5, 0.75])
-    rl_com_middle_pos_quantiles, rl_com_middle_yaw_quantiles = get_quantiles_error(rl_com_middle_data, [0.25, 0.5, 0.75])
-    rl_com_ee_pos_quantiles, rl_com_ee_yaw_quantiles = get_quantiles_error(rl_com_ee_data, [0.25, 0.5, 0.75])
-    gc_com_v_pos_quantiles, gc_com_v_yaw_quantiles = get_quantiles_error(gc_com_v_data, [0.25, 0.5, 0.75])
-    gc_com_middle_pos_quantiles, gc_com_middle_yaw_quantiles = get_quantiles_error(gc_com_middle_data, [0.25, 0.5, 0.75])
-    gc_com_ee_pos_quantiles, gc_com_ee_yaw_quantiles = get_quantiles_error(gc_com_ee_data, [0.25, 0.5, 0.75])
+    rl_com_v_pos_quantiles, rl_com_v_yaw_quantiles = plotting_utils.get_quantiles_error(rl_com_v_data, [0.25, 0.5, 0.75])
+    rl_com_middle_pos_quantiles, rl_com_middle_yaw_quantiles = plotting_utils.get_quantiles_error(rl_com_middle_data, [0.25, 0.5, 0.75])
+    rl_com_ee_pos_quantiles, rl_com_ee_yaw_quantiles = plotting_utils.get_quantiles_error(rl_com_ee_data, [0.25, 0.5, 0.75])
+    gc_com_v_pos_quantiles, gc_com_v_yaw_quantiles = plotting_utils.get_quantiles_error(gc_com_v_data, [0.25, 0.5, 0.75])
+    gc_com_middle_pos_quantiles, gc_com_middle_yaw_quantiles = plotting_utils.get_quantiles_error(gc_com_middle_data, [0.25, 0.5, 0.75])
+    gc_com_ee_pos_quantiles, gc_com_ee_yaw_quantiles = plotting_utils.get_quantiles_error(gc_com_ee_data, [0.25, 0.5, 0.75])
 
 
     x_axis = np.arange(T) * 0.02

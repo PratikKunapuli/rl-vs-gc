@@ -26,13 +26,14 @@ import numpy as np
 from configs.aerial_manip_asset import AERIAL_MANIPULATOR_0DOF_CFG, AERIAL_MANIPULATOR_0DOF_DEBUG_CFG, AERIAL_MANIPULATOR_QUAD_ONLY_CFG
 from configs.aerial_manip_asset import AERIAL_MANIPULATOR_0DOF_LONG_ARM_COM_MIDDLE_CFG
 from configs.aerial_manip_asset import AERIAL_MANIPULATOR_0DOF_SMALL_ARM_COM_V_CFG, AERIAL_MANIPULATOR_0DOF_SMALL_ARM_COM_MIDDLE_CFG, AERIAL_MANIPULATOR_0DOF_SMALL_ARM_COM_EE_CFG
+
 from utils.math_utilities import yaw_from_quat, yaw_error_from_quats, quat_from_yaw
 from utils.trajectory_utilities import eval_sinusoid
 import utils.trajectory_utilities as traj_utils
 import utils.math_utilities as math_utils
 
 class AerialManipulatorTrajectoryTrackingEnvWindow(BaseEnvWindow):
-    """Window manager for the Quadcopter environment."""
+    """4Window manager for the Quadcopter environment."""
 
     def __init__(self, env: AerialManipulatorTrajectoryTrackingEnv, window_name: str = "Aerial Manipulator Trajectory Tracking - IsaacLab"):
         """Initialize the window.
@@ -126,7 +127,7 @@ class AerialManipulatorTrajectoryTrackingEnvBaseCfg(DirectRLEnvCfg):
 
     # reward scales
     pos_radius = 0.8
-    pos_radius_curriculum = 0 # 10e6
+    pos_radius_curriculum = 50000000 # 10e6
     lin_vel_reward_scale = -0.05 # -0.05
     ang_vel_reward_scale = -0.01 # -0.01
     pos_distance_reward_scale = 15.0 #15.0
@@ -134,6 +135,7 @@ class AerialManipulatorTrajectoryTrackingEnvBaseCfg(DirectRLEnvCfg):
     ori_error_reward_scale = 0.0 # -0.5
     joint_vel_reward_scale = 0.0 # -0.01
     action_norm_reward_scale = 0.0 # -0.01
+    previous_action_norm_reward_scale = 0.0 # -0.01
     yaw_error_reward_scale = -2.0 # -0.01
     yaw_distance_reward_scale = 0.0 # -0.01
     yaw_radius = 0.2 
@@ -143,6 +145,8 @@ class AerialManipulatorTrajectoryTrackingEnvBaseCfg(DirectRLEnvCfg):
     scale_reward_with_time = False
     square_reward_errors = False
     square_pos_error = True
+    penalize_action = False
+    penalize_previous_action = False
     combined_alpha = 0.0
     combined_tolerance = 0.0
     combined_scale = 0.0
@@ -173,8 +177,9 @@ class AerialManipulatorTrajectoryTrackingEnvBaseCfg(DirectRLEnvCfg):
     use_grav_vector = True
     use_full_ori_matrix = True
     use_yaw_representation = False
+    use_previous_actions = False
     use_yaw_representation_for_trajectory=True
-    use_ang_vel_from_trajectory=False
+    use_ang_vel_from_trajectory=True
 
     shoulder_joint_active = True
     wrist_joint_active = True
@@ -248,6 +253,18 @@ class AerialManipulator0DOFSmallArmCOMEndEffectorTrajectoryTrackingEnvCfg(Aerial
     # robot
     robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_SMALL_ARM_COM_EE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
 
+@configclass
+class AerialManipulator0DOFQuadOnlyTrajectoryTrackingEnvCfg(AerialManipulatorTrajectoryTrackingEnvBaseCfg):
+    # env
+    num_actions = 4
+    num_joints = 0
+    num_observations = 91 # TODO: Need to update this..
+    # 3(vel) + 3(ang vel) + 3(pos) + 9(ori) = 18
+    # 3(vel) + 3(ang vel) + 3(pos) + 3(grav vector body frame) = 12
+    
+    # robot
+    robot: ArticulationCfg = AERIAL_MANIPULATOR_QUAD_ONLY_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+
 
 @configclass
 class AerialManipulator0DOFDebugTrajectoryTrackingEnvCfg(AerialManipulatorTrajectoryTrackingEnvBaseCfg):
@@ -295,6 +312,7 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
 
         # Actions / Actuation interfaces
         self._actions = torch.zeros(self.num_envs, self.cfg.num_actions, device=self.device)
+        self._previous_actions = torch.zeros(self.num_envs, self.cfg.num_actions, device=self.device)
         self._joint_torques = torch.zeros(self.num_envs, self._robot.num_joints, device=self.device)
         self._body_forces = torch.zeros(self.num_envs, 1, 3, device=self.device)
         self._body_moment = torch.zeros(self.num_envs, 1, 3, device=self.device)
@@ -346,6 +364,7 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
                 "endeffector_yaw_distance",
                 "joint_vel",
                 "action_norm",
+                "previous_action_norm",
                 "stay_alive",
                 "crash_penalty"
             ]
@@ -364,6 +383,7 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
                 "ang_vel",
                 "joint_vel",
                 "action_norm",
+                "previous_action_norm",
                 "stay_alive",
                 "crash_penalty"
             ]
@@ -429,6 +449,7 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         print("Arm Length: ", self.arm_length)
         print("COM_pos_e: ", self.com_pos_e)
         print("Inertia: ", self.quad_inertia)
+
         # import code; code.interact(local=locals())
 
 
@@ -678,6 +699,12 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
             wrist_joint_pos = self._robot.data.joint_pos[:, self._wrist_joint_idx].unsqueeze(1)
             wrist_joint_vel = self._robot.data.joint_pos[:, self._wrist_joint_idx].unsqueeze(1)
 
+        # Previous Action
+        if self.cfg.use_previous_actions:
+            previous_actions = self._previous_actions
+        else:
+            previous_actions = torch.zeros(self.num_envs, 0, device=self.device)
+
         obs = torch.cat(
             [
                 pos_error_b,                                # (num_envs, 3)
@@ -690,6 +717,7 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
                 wrist_joint_pos,                            # (num_envs, 1)
                 shoulder_joint_vel,                         # (num_envs, 1)
                 wrist_joint_vel,                            # (num_envs, 1)
+                previous_actions,                     # (num_envs, 4)
                 future_pos_error_b.flatten(-2, -1),         # (num_envs, horizon * 3)
                 future_ori_error_b.flatten(-2, -1)          # (num_envs, horizon * 4) if use_yaw_representation_for_trajectory, else (num_envs, horizon, 1)
             ],
@@ -714,8 +742,13 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
                 des_com_pos_w, des_com_ori_w = self.convert_ee_goal_to_com_goal(self._desired_pos_traj_w[:, i].squeeze(1), self._desired_ori_traj_w[:, i].squeeze(1))
                 future_com_pos_w.append(des_com_pos_w)
                 future_com_ori_w.append(des_com_ori_w)
-            future_com_pos_w = torch.stack(future_com_pos_w, dim=1)
-            future_com_ori_w = torch.stack(future_com_ori_w, dim=1)
+
+            if len(future_com_pos_w) > 0:
+                future_com_pos_w = torch.stack(future_com_pos_w, dim=1)
+                future_com_ori_w = torch.stack(future_com_ori_w, dim=1)
+            else:
+                future_com_pos_w = torch.zeros(self.num_envs, self.cfg.trajectory_horizon, 3, device=self.device)
+                future_com_ori_w = torch.zeros(self.num_envs, self.cfg.trajectory_horizon, 4, device=self.device)
 
             goal_pos_w, goal_ori_w = self.get_goal_state_from_task("COM")
 
@@ -831,6 +864,8 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
 
         # action_error = torch.sum(torch.square(self._actions), dim=1) 
         action_error = torch.norm(self._actions, dim=1)
+        previous_action_error = torch.norm(self._actions - self._previous_actions, dim=1)
+
 
         if self.cfg.scale_reward_with_time:
             time_scale = 1.0 / self.cfg.policy_rate_hz
@@ -847,6 +882,7 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
             ang_vel_error = ang_vel_error ** 2
             joint_vel_error = joint_vel_error ** 2
             action_error = action_error ** 2
+            previous_action_error = previous_action_error ** 2
             combined_distance = combined_distance ** 2
 
         crash_penalty_time = self.cfg.crash_penalty * (self.max_episode_length - self.episode_length_buf)
@@ -857,13 +893,16 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
             "endeffector_pos_error": pos_error * self.cfg.pos_error_reward_scale * time_scale,
             "endeffector_pos_distance": pos_distance * self.cfg.pos_distance_reward_scale * time_scale,
             "endeffector_ori_error": ori_error * self.cfg.ori_error_reward_scale * time_scale,
-            "endeffector_yaw_error": yaw_error * self.arm_length * self.cfg.yaw_error_reward_scale * time_scale,
+            # "endeffector_yaw_error": yaw_error * self.arm_length * self.cfg.yaw_error_reward_scale * time_scale,
+            "endeffector_yaw_error": yaw_error  * self.cfg.yaw_error_reward_scale * time_scale,
             "endeffector_yaw_distance": yaw_distance * self.cfg.yaw_distance_reward_scale * time_scale,
             "endeffector_lin_vel": lin_vel_error * self.cfg.lin_vel_reward_scale * time_scale,
-            "endeffector_ang_vel": ang_vel_error * self.arm_length * self.cfg.ang_vel_reward_scale * time_scale,
+            # "endeffector_ang_vel": ang_vel_error * self.arm_length * self.cfg.ang_vel_reward_scale * time_scale,
+            "endeffector_ang_vel": ang_vel_error * self.cfg.ang_vel_reward_scale * time_scale,
             # "joint_vel": joint_vel_error * self.cfg.joint_vel_reward_scale * time_scale,
             "joint_vel": combined_distance * self.cfg.joint_vel_reward_scale * time_scale,
             "action_norm": action_error * self.cfg.action_norm_reward_scale * time_scale,
+            "previous_action_norm": previous_action_error * self.cfg.previous_action_norm_reward_scale * time_scale,
             "stay_alive": torch.ones_like(pos_error) * self.cfg.stay_alive_reward * time_scale,
             "crash_penalty": self.reset_terminated[:].float() * crash_penalty_time * time_scale,
         }
@@ -878,6 +917,7 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
             "ang_vel": ang_vel_error,
             "joint_vel": joint_vel_error,
             "action_norm": action_error,
+            "previous_action_norm": previous_action_error,
             "stay_alive": torch.ones_like(pos_error),
             "crash_penalty": self.reset_terminated[:].float(),
         }

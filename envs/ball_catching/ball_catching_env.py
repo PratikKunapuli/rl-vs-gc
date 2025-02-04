@@ -55,7 +55,7 @@ class AerialManipulatorBallCatchingEnvBaseCfg(DirectRLEnvCfg):
     decimation = sim_rate_hz // policy_rate_hz
     ui_window_class_type = AerialManipulatorBallCatchEnvWindow
     num_states = 0
-    debug_vis = True
+    debug_vis = False
 
     seed = 0
 

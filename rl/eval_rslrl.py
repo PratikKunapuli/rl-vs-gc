@@ -20,6 +20,7 @@ parser.add_argument("--seed", type=int, default=0, help="Seed used for the envir
 parser.add_argument("--goal_task", type=str, default="rand", help="Goal task for the environment.")
 parser.add_argument("--frame", type=str, default="root", help="Frame of the task.")
 parser.add_argument("--baseline", type=bool, default=False, help="Use baseline policy.")
+parser.add_argument("--baseline_gains", type=str, default=None, help="Baseline gains to use.")
 parser.add_argument("--use_integral_terms", type=bool, default=False, help="Use integral terms in the controller.")
 parser.add_argument("--case_study", type=bool, default=False, help="Use case study policy.")
 parser.add_argument("--save_prefix", type=str, default="", help="Prefix for saving files.")
@@ -132,6 +133,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         task_name = args_cli.task            
         if args_cli.use_integral_terms:
             task_name = args_cli.task + "-Integral"
+        elif args_cli.baseline_gains is not None:
+            task_name = args_cli.task + "-" + args_cli.baseline_gains
             
         policy_path = gc_params_dict[task_name]["log_dir"]
             
