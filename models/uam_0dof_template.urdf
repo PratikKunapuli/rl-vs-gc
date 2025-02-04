@@ -1,6 +1,33 @@
 <?xml version="1.0" ?>
 <robot name="AerialManipulator">
-
+  <material name="carbon">
+    <color rgba="0.2 0.2 0.2 1.0"/>
+  </material>
+  <material name="tmotor">
+    <color rgba="0.4 0.4 0.4 1.0"/>
+  </material>
+  <material name="tip">
+    <color rgba="0.7 0.3 0.3 1.0"/>
+  </material>
+  <material name="print">
+    <color rgba="0.9 0.9 0.9 1.0"/>
+  </material>
+  <material name="battery">
+    <color rgba="0.2 0.5 0.5 1.0"/>
+  </material>
+  <material name="blue">
+    <color rgba="0 0 1 1"/>
+  </material>
+  <material name="wash">
+    <color rgba="1 0 0 .15"/>
+  </material>
+  <material name="prop">
+    <color rgba="1 0 0 1"/>
+  </material>
+  <material name="motor">
+    <color rgba="0.5 0.5 .5 1.0"/>
+  </material>
+  
   <!-- To create a coordinate system for gripper -->
  <link name="endeffector">
  <inertial>
@@ -18,9 +45,7 @@
       <geometry>
         <box size=".04 .022 .01" />
       </geometry>
-      <material name="carbon">
-        <color rgba="0.2 0.2 0.2 1.0"/>
-      </material>
+      <material name="carbon"/>
     </visual>
     <!-- Servo -->
     <visual>
@@ -28,9 +53,7 @@
       <geometry>
         <box size=".03 .015 .02" />
       </geometry>
-      <material name="tmotor">
-        <color rgba="0.4 0.4 0.4 1.0"/>
-      </material>
+      <material name="tmotor"/>
     </visual>
     <!-- Finger -->
     <visual>
@@ -38,9 +61,7 @@
       <geometry>
         <box size=".004 .022 .03" />
       </geometry>
-      <material name="tip">
-        <color rgba="0.7 0.3 0.3 1.0"/>
-      </material>
+      <material name="tip"/>
     </visual>
     <!-- Finger -->
     <visual>
@@ -48,9 +69,7 @@
       <geometry>
         <box size=".004 .022 .03" />
       </geometry>
-      <material name="tip">
-        <color rgba="0.7 0.3 0.3 1.0"/>
-      </material>
+      <material name="tip"/>
     </visual>
   </link>
 
@@ -69,9 +88,7 @@
       <geometry>
         <cylinder radius=".0075" length="{{ arm_length_geom }}"/>
       </geometry>
-      <material name="carbon">
-        <color rgba="0.2 0.2 0.2 1.0"/>
-      </material>
+      <material name="carbon"/>
     </visual>
   </link>
 
@@ -87,9 +104,7 @@
       <geometry>
         <cylinder radius=".009" length=".036"/>
       </geometry>
-      <material name="tmotor">
-        <color rgba="0.4 0.4 0.4 1.0"/>
-      </material>
+      <material name="tmotor"/>
     </visual>
     <!-- Printed Mounts -->
     <visual>
@@ -97,18 +112,14 @@
       <geometry>
         <box size=".048 .005 .02" />
       </geometry>
-      <material name="print">
-        <color rgba="0.9 0.9 0.9 1.0"/>
-      </material>
+      <material name="print"/>
     </visual>
     <visual>
       <origin xyz="0 -.0205 0" rpy="0 0 0" />
       <geometry>
         <box size=".048 .005 .02" />
       </geometry>
-      <material name="print">
-        <color rgba="0.9 0.9 0.9 1.0"/>
-      </material>
+      <material name="print"/>
     </visual>
     <!-- Plates -->
     <visual>
@@ -116,36 +127,28 @@
       <geometry>
         <box size=".048 .086 .003" />
       </geometry>
-      <material name="carbon">
-        <color rgba="0.2 0.2 0.2 1.0"/>
-      </material>
+      <material name="carbon"/>
     </visual>
     <visual>
       <origin xyz="0 -.061 -.0115" rpy="0 0 0" />
       <geometry>
         <box size=".048 .086 .003" />
       </geometry>
-      <material name="carbon">
-        <color rgba="0.2 0.2 0.2 1.0"/>
-      </material>
+      <material name="carbon"/>
     </visual>
     <visual>
       <origin xyz="0 .061 -.0345" rpy="0 0 0" />
       <geometry>
         <box size=".048 .086 .003" />
       </geometry>
-      <material name="carbon">
-        <color rgba="0.2 0.2 0.2 1.0"/>
-      </material>
+      <material name="carbon"/>
     </visual>
     <visual>
       <origin xyz="0 -.061 -.0345" rpy="0 0 0" />
       <geometry>
         <box size=".048 .086 .003" />
       </geometry>
-      <material name="carbon">
-        <color rgba="0.2 0.2 0.2 1.0"/>
-      </material>
+      <material name="carbon"/>
     </visual>
     <!-- Standoffs -->
     <visual>
@@ -153,72 +156,56 @@
       <geometry>
         <cylinder radius=".002" length=".020"/>
       </geometry>
-      <material name="tmotor">
-        <color rgba="0.4 0.4 0.4 1.0"/>
-      </material>
+      <material name="tmotor"/>
     </visual>
     <visual>
       <origin xyz=".02 -.022 -.023" rpy="0 0 0" />
       <geometry>
         <cylinder radius=".002" length=".020"/>
       </geometry>
-      <material name="tmotor">
-        <color rgba="0.4 0.4 0.4 1.0"/>
-      </material>
+      <material name="tmotor"/>
     </visual>
     <visual>
       <origin xyz="-.02 .022 -.023" rpy="0 0 0" />
       <geometry>
         <cylinder radius=".002" length=".020"/>
       </geometry>
-      <material name="tmotor">
-        <color rgba="0.4 0.4 0.4 1.0"/>
-      </material>
+      <material name="tmotor"/>
     </visual>
     <visual>
       <origin xyz="-.02 -.022 -.023" rpy="0 0 0" />
       <geometry>
         <cylinder radius=".002" length=".020"/>
       </geometry>
-      <material name="tmotor">
-        <color rgba="0.4 0.4 0.4 1.0"/>
-      </material>
+      <material name="tmotor"/>
     </visual>
     <visual>
       <origin xyz=".02 .099 -.023" rpy="0 0 0" />
       <geometry>
         <cylinder radius=".002" length=".020"/>
       </geometry>
-      <material name="tmotor">
-        <color rgba="0.4 0.4 0.4 1.0"/>
-      </material>
+      <material name="tmotor"/>
     </visual>
     <visual>
       <origin xyz=".02 -.099 -.023" rpy="0 0 0" />
       <geometry>
         <cylinder radius=".002" length=".020"/>
       </geometry>
-      <material name="tmotor">
-        <color rgba="0.4 0.4 0.4 1.0"/>
-      </material>
+      <material name="tmotor"/>
     </visual>
     <visual>
       <origin xyz="-.02 .099 -.023" rpy="0 0 0" />
       <geometry>
         <cylinder radius=".002" length=".020"/>
       </geometry>
-      <material name="tmotor">
-        <color rgba="0.4 0.4 0.4 1.0"/>
-      </material>
+      <material name="tmotor"/>
     </visual>
     <visual>
       <origin xyz="-.02 -.099 -.023" rpy="0 0 0" />
       <geometry>
         <cylinder radius=".002" length=".020"/>
       </geometry>
-      <material name="tmotor">
-        <color rgba="0.4 0.4 0.4 1.0"/>
-      </material>
+      <material name="tmotor"/>
     </visual>
     <!-- Saddle -->
     <visual>
@@ -226,9 +213,7 @@
       <geometry>
         <box size=".009 .0455 .004" />
       </geometry>
-      <material name="carbon">
-        <color rgba="0.2 0.2 0.2 1.0"/>
-      </material>
+      <material name="carbon"/>
     </visual>
     <!-- Shoulder Motor -->
     <visual>
@@ -236,9 +221,7 @@
       <geometry>
         <cylinder radius=".0278" length=".015"/>
       </geometry>
-      <material name="tmotor">
-        <color rgba="0.4 0.4 0.4 1.0"/>
-      </material>
+      <material name="tmotor"/>
     </visual>
     <!-- Arms -->
     <visual>
@@ -246,36 +229,28 @@
       <geometry>
         <box size=".100 .014 .004" />
       </geometry>
-      <material name="carbon">
-        <color rgba="0.2 0.2 0.2 1.0"/>
-      </material>
+      <material name="carbon"/>
     </visual>
     <visual>
       <origin xyz=".057025 -.062426 -0.008" rpy="0 0 -0.575959" />
       <geometry>
         <box size=".100 .014 .004" />
       </geometry>
-      <material name="carbon">
-        <color rgba="0.2 0.2 0.2 1.0"/>
-      </material>
+      <material name="carbon"/>
     </visual>
     <visual>
       <origin xyz="-.057025 .062426 -0.008" rpy="0 0 -0.575959" />
       <geometry>
         <box size=".100 .014 .004" />
       </geometry>
-      <material name="carbon">
-        <color rgba="0.2 0.2 0.2 1.0"/>
-      </material>
+      <material name="carbon"/>
     </visual>
     <visual>
       <origin xyz="-.057025 -.062426 -0.008" rpy="0 0 0.575959" />
       <geometry>
         <box size=".100 .014 .004" />
       </geometry>
-      <material name="carbon">
-        <color rgba="0.2 0.2 0.2 1.0"/>
-      </material>
+      <material name="carbon"/>
     </visual>
     <!-- Battery -->
     <visual>
@@ -283,18 +258,14 @@
       <geometry>
         <box size=".036 .071 .022" />
       </geometry>
-      <material name="battery">
-        <color rgba="0.2 0.5 0.5 1.0"/>
-      </material>
+      <material name="battery"/>
     </visual>
     <visual>
       <origin xyz="0 -.060 0" rpy="0 0 0" />
       <geometry>
         <box size=".036 .071 .022" />
       </geometry>
-      <material name="battery">
-        <color rgba="0.2 0.5 0.5 1.0"/>
-      </material>
+      <material name="battery"/>
     </visual>
 
   </link>
@@ -304,9 +275,7 @@
       <geometry>
         <sphere radius="0.015"/>
       </geometry>
-      <material name="blue">
-            <color rgba="0 0 1 1"/>
-      </material>
+      <material name="blue"/>
     </visual>
   </link>
   <link name="vehicle">
@@ -350,25 +319,8 @@
     <origin rpy="0 0 0" xyz="0 -{{ com_from_ee }} 0"/>
   </joint>
 
-
-
-
-
-
-
-  <!-- Materials -->
-
-  <material name="wash">
-    <color rgba="1 0 0 .15"/>
-  </material>
-  <material name="prop">
-    <color rgba="1 0 0 1"/>
-  </material>
-
   <!-- Motors -->
-  <material name="motor">
-    <color rgba="0.5 0.5 .5 1.0"/>
-  </material>
+  
 
   <link name="motor1">
     <visual>

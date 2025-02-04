@@ -429,6 +429,7 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
         # print("[Isaac Env: Observations] Desired Pos: ", self._desired_pos_w)
 
         base_pos_w, base_ori_w, lin_vel_w, ang_vel_w = self.get_frame_state_from_task(self.cfg.task_body)
+        goal_pos, goal_yaw = self.get_goal_state_from_task(self.cfg.goal_body)
 
 
         # Find the error of the end-effector to the desired position and orientation
@@ -438,7 +439,8 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
         #                                                      base_pos, base_ori)
         pos_error_b, ori_error_b = subtract_frame_transforms(
             base_pos_w, base_ori_w, 
-            self._desired_pos_w, self._desired_ori_w
+            # self._desired_pos_w, self._desired_ori_w
+            goal_pos, goal_yaw
         )
 
         # Compute the orientation error as a yaw error in the body frame

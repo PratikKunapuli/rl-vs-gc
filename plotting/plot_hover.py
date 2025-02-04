@@ -32,6 +32,9 @@ from plotting.plotting_utils import params
 rl_ee_base_path = "../rl/logs/rsl_rl/Hover_PaperModels/2025-01-13_09-11-23_new_model_default_params_anneal_50e6/"
 rl_com_base_path = "../rl/logs/rsl_rl/Hover_PaperModels/2025-01-13_10-33-26_new_model_default_params_anneal_50e6_COM/"
 gc_base_path = "../rl/baseline_0dof_ee_reward_tune/"
+# rl_ee_base_path = "../rl/logs/rsl_rl/PaperModels_Hover/2025-01-21_17-44-46_Hover_ee_traj_env_fixed_init/"
+# rl_com_base_path = "../rl/logs/rsl_rl/PaperModels_Hover/2025-01-29_08-23-11_Hover_COM/"
+# gc_base_path = "../rl/baseline_0dof_ee_reward_tune_no_ff/"
 
 error_legend_elements = [ 
                     Line2D([0], [0], color=params["rl_ee_color"], label='RL-EE'),
@@ -66,6 +69,9 @@ def load_data():
     rl_ee_path = os.path.join(rl_ee_base_path, "eval_full_states.pt")
     rl_com_path = os.path.join(rl_com_base_path, "eval_full_states.pt")
     gc_path = os.path.join(gc_base_path, "hover_eval_full_states.pt")
+    # rl_ee_path = os.path.join(rl_ee_base_path, "Hover_rand_init_eval_traj_track_50Hz_eval_full_states.pt")
+    # rl_com_path = os.path.join(rl_com_base_path, "Hover_rand_init_eval_traj_track_50Hz_eval_full_states.pt")
+    # gc_path = os.path.join(gc_base_path, "Hover_rand_init_eval_traj_track_50Hz_eval_full_states.pt")
 
     rl_ee_data = torch.load(rl_ee_path, weights_only=True)
     rl_com_data = torch.load(rl_com_path, weights_only=True)
@@ -99,6 +105,33 @@ def plot_error_pos_yaw(axs=None):
     plt.setp(axs[0].get_xticklabels(), visible=False) # hide x axis ticks for top plot
     # axs[0].set_xlabel("Time (s)")
     axs[0].set_xlim(0, plot_clip_time)
+    axs[0].set_xticks(np.linspace(0, plot_clip_time, 3))
+    axs[0].set_xticklabels([np.round(x, 2) for x in np.linspace(0, plot_clip_time, 3)])
+    axs[0].set_yticks(np.linspace(0, 2.0, 4))
+    axs[0].set_yticklabels(np.round(np.linspace(0, 2.0, 4), 2))
+
+
+    #Inset axis for the position plot
+    x1, x2, y1, y2 = 0.5, 1.5, 0.0, 0.3
+    ins_ax = axs[0].inset_axes([0.4, 0.4, 0.6, 0.6], xlim=(x1, x2), ylim=(y1, y2))
+    axs[0].indicate_inset_zoom(ins_ax, edgecolor="grey")
+    sns.lineplot(x=x_axis, y=rl_ee_pos_quantiles[1], ax=ins_ax, label="RL-EE", color=params["rl_ee_color"], legend=False)
+    sns.lineplot(x=x_axis, y=rl_com_pos_quantiles[1], ax=ins_ax, label="RL-COM", color=params["rl_com_color"], legend=False)
+    sns.lineplot(x=x_axis, y=gc__pos_quantiles[1], ax=ins_ax, label="GC", color=params["gc_color"], legend=False)
+    ins_ax.fill_between(x_axis, rl_ee_pos_quantiles[0], rl_ee_pos_quantiles[2], alpha=0.2, color=params["rl_ee_color"])
+    ins_ax.fill_between(x_axis, rl_com_pos_quantiles[0], rl_com_pos_quantiles[2], alpha=0.2, color=params["rl_com_color"])
+    ins_ax.fill_between(x_axis, gc__pos_quantiles[0], gc__pos_quantiles[2], alpha=0.2, color=params["gc_color"])
+    ins_ax.yaxis.label.set_visible(False)
+    ins_ax.set_xlim([0.5, 1.5])
+    ins_ax.set_xticks(np.linspace(0.5, 1.5, 5))
+    ins_ax.set_xticklabels([np.round(x, 2) for x in np.linspace(0.5, 1.5, 5)])
+    ins_ax.set_ylim([0, 0.3])
+    ins_ax.set_yticks(np.linspace(0, 0.3, 4))
+    ins_ax.set_yticklabels(np.round(np.linspace(0, 0.3, 4), 2))
+
+
+
+
     sns.lineplot(x=x_axis, y=rl_ee_yaw_quantiles[1], ax=axs[1], label="RL-EE", color=params["rl_ee_color"], legend=False)
     sns.lineplot(x=x_axis, y=rl_com_yaw_quantiles[1], ax=axs[1], label="RL-COM", color=params["rl_com_color"], legend=False)
     sns.lineplot(x=x_axis, y=gc_yaw_quantiles[1], ax=axs[1], label="GC", color=params["gc_color"], legend=False)
@@ -110,6 +143,10 @@ def plot_error_pos_yaw(axs=None):
     # axs[1].yaxis.tick_right()
     axs[1].set_xlabel("Time (s)")
     axs[1].set_xlim(0, plot_clip_time)
+    axs[1].set_xticks(np.linspace(0, plot_clip_time, 3))
+    axs[1].set_xticklabels([np.round(x, 2) for x in np.linspace(0, plot_clip_time, 3)])
+    axs[1].set_yticks(np.linspace(0, 2.5, 4))
+    axs[1].set_yticklabels(np.round(np.linspace(0, 2.5, 4), 2))
 
     # fig.legend(handles=legend_elements, loc='lower center', ncol=3, bbox_to_anchor=(0.5, -0.05))
     # plt.tight_layout()
@@ -441,7 +478,7 @@ def gen_combined_layout():
     plt.savefig("hover_error_violin_v2.pdf", bbox_inches='tight', dpi=500, format='pdf')
 
 def gen_error_plot_only():
-    fig = plt.figure(layout="constrained", dpi=300, figsize=(3.5, 4))
+    fig = plt.figure(layout="constrained", dpi=300, figsize=(5, 6))
     axd = fig.subplot_mosaic(
         """
         A
@@ -450,15 +487,47 @@ def gen_error_plot_only():
     )
     plot_error_pos_yaw([axd["A"], axd["B"]])
     legend_elements = error_legend_elements
-    fig.legend(handles=legend_elements, loc='lower center', ncol=3, bbox_to_anchor=(0.5, -0.15))
+    fig.legend(handles=legend_elements, loc='lower center', ncol=3, bbox_to_anchor=(0.5, -0.12))
     plt.savefig("hover_error_plot.png", bbox_inches='tight', dpi=500, format='png')
     plt.savefig("hover_error_plot.pdf", bbox_inches='tight', dpi=500, format='pdf')
+
+def check_catch_time(vel=None):
+    import numpy as np
+    z_crossing = 0.5
+    g = 9.81
+    pos_init = 2.0
+    if vel is not None:
+        t = (vel +  np.sqrt(vel**2 + 2*g*(pos_init - z_crossing))) / g
+        return t
+    else:
+        for vel_init in [2.0, 4.0, 6.5, 9.0]:
+            t = (vel_init +  np.sqrt(vel_init**2 + 2*g*(pos_init - z_crossing))) / g
+            print("Vel_init: ", vel_init, " time to catch: ", t)
+
+def eval_ball_catch():
+    gc_path = "../rl/baseline_0dof_ee_reward_tune/"
+    rl_ee_path = "../rl/logs/rsl_rl/PaperModels_Hover/2025-01-21_17-44-46_Hover_ee_traj_env_fixed_init/"
+    rl_com_path = "../rl/logs/rsl_rl/PaperModels_Hover/2025-01-29_08-23-11_Hover_COM/"
+
+    for vel in ['2', '4', '6.5', '9']:
+        gc_rewards = torch.load(gc_path + "ball_catching_vel_" + vel + "_ball_catch_eval_rewards.pt", weights_only=True)
+        rl_ee_rewards = torch.load(rl_ee_path + "ball_catching_vel_" + vel + "_ball_catch_eval_rewards.pt", weights_only=True)
+        rl_com_rewards = torch.load(rl_com_path + "ball_catching_vel_" + vel + "_ball_catch_eval_rewards.pt", weights_only=True)
+
+        print("----------------")
+        print("Vel: ", vel)
+        print("Time: ", check_catch_time(float(vel)))
+        print("GC: ", (gc_rewards.sum(dim=1)/5.0).mean().item(), (gc_rewards.sum(dim=1)/5.0).std().item())
+        print("RL-EE: ", (rl_ee_rewards.sum(dim=1)/5.0).mean().item(), (rl_ee_rewards.sum(dim=1)/5.0).std().item())
+        print("RL-COM: ", (rl_com_rewards.sum(dim=1)/5.0).mean().item(), (rl_com_rewards.sum(dim=1)/5.0).std().item())
+        print()
 
 
 if __name__ == "__main__":
     # gen_combined_layout()
-    # gen_error_plot_only()
+    gen_error_plot_only()
+    eval_ball_catch()
     
     # plot_COM_ablation()
-    plot_rewards()
+    # plot_rewards()
     # plt.show()

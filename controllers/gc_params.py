@@ -105,7 +105,7 @@ gc_params_dict = {
     # },
 
     "Isaac-AerialManipulator-0DOF-TrajectoryTracking-v0-Hover" : {
-        "log_dir": "./baseline_0dof_ee_reward_tune_no_ff/",
+        "log_dir": "./baseline_0dof_ee_reward_tune_no_ff_hover/",
         "controller_params": {
             "kp_pos_gain_xy": 34.004,
             "kp_pos_gain_z": 41.063,
@@ -119,38 +119,85 @@ gc_params_dict = {
         },
     },
 
+    "Isaac-AerialManipulator-0DOF-TrajectoryTracking-v0-Traj" : {
+        "log_dir": "./baseline_0dof_ee_reward_tune_no_ff_traj/",
+        "controller_params": {
+            "kp_pos_gain_xy": 41.564,
+            "kp_pos_gain_z": 43.588,
+            "kd_pos_gain_xy": 3.531,
+            "kd_pos_gain_z": 3.661,
+            "kp_att_gain_xy": 960.076,
+            "kp_att_gain_z": 18.592,
+            "kd_att_gain_xy": 40.740,
+            "kd_att_gain_z": 5.729,
+            "feed_forward": False,
+        },
+    },
+
+    # Old Parameters
+    # "Isaac-AerialManipulator-0DOF-TrajectoryTracking-v0-Hover-FF" : {
+    #     "log_dir": "./baseline_0dof_ee_reward_tune_with_ff_hover/",
+    #     "controller_params": {
+    #         "kp_pos_gain_xy": 17.601,
+    #         "kp_pos_gain_z": 28.995,
+    #         "kd_pos_gain_xy": 5.576,
+    #         "kd_pos_gain_z": 12.412,
+    #         "kp_att_gain_xy": 966.060,
+    #         "kp_att_gain_z": 19.171,
+    #         "kd_att_gain_xy": 33.214,
+    #         "kd_att_gain_z": 9.086,
+    #         "feed_forward": True,
+    #     },
+    # },
+
     "Isaac-AerialManipulator-0DOF-TrajectoryTracking-v0-Hover-FF" : {
         "log_dir": "./baseline_0dof_ee_reward_tune_with_ff_hover/",
         "controller_params": {
-            "kp_pos_gain_xy": 34.004,
-            "kp_pos_gain_z": 41.063,
-            "kd_pos_gain_xy": 8.978,
-            "kd_pos_gain_z": 12.577,
-            "kp_att_gain_xy": 920.832,
-            "kp_att_gain_z": 10.302,
-            "kd_att_gain_xy": 42.157,
-            "kd_att_gain_z": 5.042,
+            "kp_pos_gain_xy": 15.213,
+            "kp_pos_gain_z": 11.857,
+            "kd_pos_gain_xy": 4.316,
+            "kd_pos_gain_z": 4.051,
+            "kp_att_gain_xy": 835.763,
+            "kp_att_gain_z": 15.046,
+            "kd_att_gain_xy": 39.350,
+            "kd_att_gain_z": 6.979,
             "feed_forward": True,
         },
     },
+
+    # Old parameters
+    # "Isaac-AerialManipulator-0DOF-TrajectoryTracking-v0" : {
+    #     "log_dir": "./baseline_0dof_ee_reward_tune_with_ff/",
+    #     "controller_params": {
+    #         "kp_pos_gain_xy": 43.507,
+    #         "kp_pos_gain_z": 24.167,
+    #         "kd_pos_gain_xy": 9.129,
+    #         "kd_pos_gain_z": 6.081,
+    #         "kp_att_gain_xy": 998.777,
+    #         "kp_att_gain_z": 18.230,
+    #         "kd_att_gain_xy": 47.821,
+    #         "kd_att_gain_z": 8.818,
+    #         "feed_forward": True,
+    #     },
+    # },
 
     "Isaac-AerialManipulator-0DOF-TrajectoryTracking-v0" : {
         "log_dir": "./baseline_0dof_ee_reward_tune_with_ff/",
         "controller_params": {
-            "kp_pos_gain_xy": 43.507,
-            "kp_pos_gain_z": 24.167,
-            "kd_pos_gain_xy": 9.129,
-            "kd_pos_gain_z": 6.081,
-            "kp_att_gain_xy": 998.777,
-            "kp_att_gain_z": 18.230,
-            "kd_att_gain_xy": 47.821,
-            "kd_att_gain_z": 8.818,
+            "kp_pos_gain_xy": 24.733,
+            "kp_pos_gain_z": 24.364,
+            "kd_pos_gain_xy": 4.884,
+            "kd_pos_gain_z": 8.147,
+            "kp_att_gain_xy": 920.567,
+            "kp_att_gain_z": 19.172,
+            "kd_att_gain_xy": 37.265,
+            "kd_att_gain_z": 6.960,
             "feed_forward": True,
         },
     },
 
-    "Isaac-AerialManipulator-0DOF-TrajectoryTracking-v0-Integral" : {
-        "log_dir": "./baseline_0dof_ee_reward_tune_pid/",
+    "Isaac-AerialManipulator-0DOF-TrajectoryTracking-v0-Hover-Integral" : {
+        "log_dir": "./baseline_0dof_ee_reward_tune_pid_hover/",
         "controller_params": {
             "kp_pos_gain_xy": 47.080,
             "kp_pos_gain_z": 37.972,
@@ -169,6 +216,26 @@ gc_params_dict = {
         },
     },
 
+    "Isaac-AerialManipulator-0DOF-TrajectoryTracking-v0-Traj-Integral" : {
+        "log_dir": "./baseline_0dof_ee_reward_tune_pid_traj/",
+        "controller_params": {
+            "kp_pos_gain_xy": 38.435,
+            "kp_pos_gain_z": 31.333,
+            "kd_pos_gain_xy": 4.136,
+            "kd_pos_gain_z": 3.052,
+            "kp_att_gain_xy": 962.850,
+            "kp_att_gain_z": 18.503,
+            "kd_att_gain_xy": 29.785,
+            "kd_att_gain_z": 4.879,
+            "ki_pos_gain_xy": 2.831,
+            "ki_pos_gain_z": 1.224,
+            "ki_att_gain_xy": 151.872,
+            "ki_att_gain_z": 5.729,
+            "use_integral": True,
+            "feed_forward": False,
+        },
+    },
+
     "Isaac-AerialManipulator-0DOF-TrajectoryTracking-v0-Hand-Tune" : {
         "log_dir": "./baseline_0dof_hand_tuned/",
         "controller_params": {
@@ -181,6 +248,21 @@ gc_params_dict = {
             "kd_att_gain_xy": 50.0,
             "kd_att_gain_z": 10.0,
             "feed_forward": False,
+        },
+    },
+
+    "Isaac-AerialManipulator-0DOF-TrajectoryTracking-v0-Hand-Tune-FF" : {
+        "log_dir": "./baseline_0dof_hand_tuned_with_ff/",
+        "controller_params": {
+            "kp_pos_gain_xy": 45.0,
+            "kp_pos_gain_z": 20.0,
+            "kd_pos_gain_xy": 8.0,
+            "kd_pos_gain_z": 10.0,
+            "kp_att_gain_xy": 900.0,
+            "kp_att_gain_z": 15.0,
+            "kd_att_gain_xy": 50.0,
+            "kd_att_gain_z": 10.0,
+            "feed_forward": True,
         },
     },
 

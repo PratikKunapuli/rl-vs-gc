@@ -270,13 +270,26 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
                 env_cfg.viewer.origin_type = "asset_root"
                 env_cfg.viewer.env_index = args_cli.follow_robot
                 env_cfg.viewer.asset_name = "robot"
+
             else:
-                env_cfg.viewer.eye = (0.75, 0.75, 0.75)
-                env_cfg.viewer.lookat = (0.0, 0.0, 0.0)
-                env_cfg.viewer.resulution = (1080, 1920)
-                env_cfg.viewer.origin_type = "asset_root"
+                # env_cfg.viewer.eye = (0.75, 0.75, 0.75)
+                # env_cfg.viewer.lookat = (0.0, 0.0, 0.0)
+                # env_cfg.viewer.resulution = (1080, 1920)
+                # env_cfg.viewer.origin_type = "asset_root"
+                # env_cfg.viewer.env_index = args_cli.follow_robot
+                # env_cfg.viewer.asset_name = "robot"
+
+                env_cfg.viewer.eye = (0, 0, 5.5)
+                env_cfg.viewer.lookat = (0, 0, 0)
+                env_cfg.viewer.resulution = (720, 720)
+                # env_cfg.viewer.origin_type = "asset_root"
+                env_cfg.viewer.origin_type = "env"
                 env_cfg.viewer.env_index = args_cli.follow_robot
                 env_cfg.viewer.asset_name = "robot"
+
+
+
+
             robot_index_prefix = f"_robot_{args_cli.follow_robot}"
 
 

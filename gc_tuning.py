@@ -50,7 +50,7 @@ from controllers.decoupled_controller import DecoupledController
 import optuna
 
 use_integral_terms = False
-use_feed_forward_terms = True
+use_feed_forward_terms = False
 
 
 def eval_trial(trial):

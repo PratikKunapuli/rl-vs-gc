@@ -128,7 +128,7 @@ class AerialManipulatorTrajectoryTrackingEnvBaseCfg(DirectRLEnvCfg):
     # reward scales
     pos_radius = 0.8
     pos_radius_curriculum = 50000000 # 10e6
-    lin_vel_reward_scale = -0.05 # -0.05
+    lin_vel_reward_scale = -0.05 # -0.05 
     ang_vel_reward_scale = -0.01 # -0.01
     pos_distance_reward_scale = 15.0 #15.0
     pos_error_reward_scale = 0.0# -1.0
@@ -188,6 +188,8 @@ class AerialManipulatorTrajectoryTrackingEnvBaseCfg(DirectRLEnvCfg):
     gc_mode = False
     viz_mode = "triad" # or robot
     viz_history_length = 100
+    robot_color=[0.0, 0.0, 0.0]
+    viz_ref_offset=[0.0,0.0,0.0]
 
 @configclass
 class AerialManipulator0DOFTrajectoryTrackingEnvCfg(AerialManipulatorTrajectoryTrackingEnvBaseCfg):
@@ -474,6 +476,9 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
             self._robot_ori_history = torch.zeros(self.num_envs, self.cfg.viz_history_length, 4, device=self.device)
             self._goal_pos_history = torch.zeros(self.num_envs, self.cfg.viz_history_length, 3, device=self.device)
             self._goal_ori_history = torch.zeros(self.num_envs, self.cfg.viz_history_length, 4, device=self.device)
+        elif self.cfg.viz_mode == "viz":
+            self._robot_positions = torch.zeros(self.num_envs, 3, device=self.device)
+            self._robot_orientations = torch.zeros(self.num_envs, 4, device=self.device)
         else:
             raise ValueError("Visualization mode not recognized: ", self.cfg.viz_mode)
 
@@ -678,15 +683,18 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
             grav_vector_b = torch.zeros(self.num_envs, 0, device=self.device)
         
         # Compute the linear and angular velocities of the end-effector in body frame
-        lin_vel_error_w = self._pos_traj[1, :, :, 0] - lin_vel_w
+        if self.cfg.trajectory_horizon > 0:
+            lin_vel_error_w = self._pos_traj[1, :, :, 0] - lin_vel_w
+        else:
+            lin_vel_error_w = torch.zeros_like(lin_vel_w, device=self.device) - lin_vel_w
         lin_vel_b = quat_rotate_inverse(base_ori_w, lin_vel_error_w)
-        if self.cfg.use_ang_vel_from_trajectory:
+        if self.cfg.use_ang_vel_from_trajectory and self.cfg.trajectory_horizon > 0:
             ang_vel_des = torch.zeros_like(ang_vel_w)
             ang_vel_des[:,2] = self._yaw_traj[1, :, 0]
             ang_vel_error_w = ang_vel_des - ang_vel_w
-            ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_error_w)
         else:
-            ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_w)
+            ang_vel_error_w = torch.zeros_like(ang_vel_w) - ang_vel_w
+        ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_error_w)
         # Compute the joint states
         shoulder_joint_pos = torch.zeros(self.num_envs, 0, device=self.device)
         shoulder_joint_vel = torch.zeros(self.num_envs, 0, device=self.device)
@@ -837,15 +845,18 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         combined_distance = combined_reward
 
         # Velocity error components, used for stabliization tuning
-        lin_vel_error_w = self._pos_traj[1, :, :, 0] - lin_vel_w
+        if self.cfg.trajectory_horizon > 0:
+            lin_vel_error_w = self._pos_traj[1, :, :, 0] - lin_vel_w
+        else:
+            lin_vel_error_w = torch.zeros_like(lin_vel_w, device=self.device) - lin_vel_w
         lin_vel_b = quat_rotate_inverse(base_ori_w, lin_vel_error_w)
-        if self.cfg.use_ang_vel_from_trajectory:
+        if self.cfg.use_ang_vel_from_trajectory and self.cfg.trajectory_horizon > 0:
             ang_vel_des = torch.zeros_like(ang_vel_w)
             ang_vel_des[:,2] = self._yaw_traj[1, :, 0]
             ang_vel_error_w = ang_vel_des - ang_vel_w
-            ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_error_w)
         else:
-            ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_w)
+            ang_vel_error_w = torch.zeros_like(ang_vel_w) - ang_vel_w
+        ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_error_w)
         # lin_vel_error = torch.linalg.norm(lin_vel_b, dim=-1)
         # ang_vel_error = torch.linalg.norm(ang_vel_b, dim=-1)
         # lin_vel_error = torch.sum(torch.square(lin_vel_b), dim=1)
@@ -995,7 +1006,7 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         self.initialize_trajectories(env_ids)
         self.update_goal_state()
 
-        
+        print("Goal State: ", self._desired_pos_w[env_ids[0]], self._desired_ori_w[env_ids[0]])
 
         # Reset Robot state
         self._robot.reset()
@@ -1148,6 +1159,12 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         return desired_pos, quat_from_yaw(desired_yaw)
 
     def _setup_scene(self):
+        if sum(self.cfg.robot_color) > 0:
+            print("Setting robot color to: ", self.cfg.robot_color)
+            print(self.cfg.robot.spawn.visual_material)
+            self.cfg.robot.spawn.visual_material=sim_utils.GlassMdlCfg(glass_color=tuple(self.cfg.robot_color))
+            print(self.cfg.robot.spawn.visual_material)
+            
         self._robot = Articulation(self.cfg.robot)
         self.scene.articulations["robot"] = self._robot
 
@@ -1173,6 +1190,7 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
                                                 scale=(0.1, 0.1, 0.1),
                                             ),})
                 elif self.cfg.viz_mode == "robot":
+                    history_color = tuple(self.cfg.robot_color) if sum(self.cfg.robot_color) > 0 else (0.05, 0.05, 0.05)
                     frame_marker_cfg = VisualizationMarkersCfg(prim_path="/Visuals/Markers",
                                             markers={
                                             "robot_mesh": sim_utils.UsdFileCfg(
@@ -1182,12 +1200,27 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
                                             ),
                                             "robot_history": sim_utils.SphereCfg(
                                                 radius=0.01,
-                                                visual_material=sim_utils.GlassMdlCfg(glass_color=(0.05, 0.05, 0.05)),
+                                                visual_material=sim_utils.GlassMdlCfg(glass_color=history_color),
                                             ),
                                             "goal_history": sim_utils.SphereCfg(
                                                 radius=0.01,
                                                 visual_material=sim_utils.GlassMdlCfg(glass_color=(0.0, 0.1, 0.0)),
                                             ),})
+                elif self.cfg.viz_mode == "viz":
+                    robot_color = tuple(self.cfg.robot_color) if sum(self.cfg.robot_color) > 0 else (0.05, 0.05, 0.05)
+                    frame_marker_cfg = VisualizationMarkersCfg(prim_path="/Visuals/Markers",
+                                            markers={
+                                            "goal_mesh": sim_utils.UsdFileCfg(
+                                                usd_path=self.cfg.robot.spawn.usd_path,
+                                                scale=(1.0, 1.0, 1.0),
+                                                visual_material=sim_utils.GlassMdlCfg(glass_color=(0.0, 0.1, 0.0)),
+                                            ),
+                                            "robot_mesh": sim_utils.UsdFileCfg(
+                                                usd_path=self.cfg.robot.spawn.usd_path,
+                                                scale=(1.0, 1.0, 1.0),
+                                                visual_material=sim_utils.GlassMdlCfg(glass_color=robot_color),
+                                            ),
+                                            })
                 else:
                     raise ValueError("Visualization mode not recognized: ", self.cfg.viz_mode)
     
@@ -1213,7 +1246,7 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
             # self._frame_orientations[:, 2] = com_ori_w
             self.frame_visualizer.visualize(self._frame_positions.flatten(0, 1), self._frame_orientations.flatten(0,1))
         elif self.cfg.viz_mode == "robot":
-            self._robot_positions = self._desired_pos_w
+            self._robot_positions = self._desired_pos_w + torch.tensor(self.cfg.viz_ref_offset, device=self.device).unsqueeze(0).tile((self.num_envs, 1))
             self._robot_orientations = self._desired_ori_w
             # self.frame_visualizer.visualize(self._robot_positions, self._robot_orientations, marker_indices=[0]*self.num_envs)
 
@@ -1232,5 +1265,19 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
             translation_pos = torch.cat([self._robot_positions, self._robot_pos_history.flatten(0, 1), self._goal_pos_history.flatten(0, 1)], dim=0)
             translation_ori = torch.cat([self._robot_orientations, self._robot_ori_history.flatten(0, 1), self._goal_ori_history.flatten(0, 1)], dim=0)
             marker_indices = [0]*self.num_envs + [1]*self.num_envs*self.cfg.viz_history_length + [2]*self.num_envs*self.cfg.viz_history_length
+            self.frame_visualizer.visualize(translation_pos, translation_ori, marker_indices=marker_indices)
+        elif self.cfg.viz_mode == "viz":
+            self._robot_positions = self._desired_pos_w
+            self._robot_orientations = self._desired_ori_w
+
+            goal_pos = self._desired_pos_w.clone()
+            goal_ori = self._desired_ori_w.clone()
+
+            robot_pos = self._robot.data.root_pos_w.clone()
+            robot_ori = self._robot.data.root_quat_w.clone()
+
+            translation_pos = torch.cat([goal_pos, robot_pos], dim=0)
+            translation_ori = torch.cat([goal_ori, robot_ori], dim=0)
+            marker_indices = [0]*self.num_envs + [1]*self.num_envs
             self.frame_visualizer.visualize(translation_pos, translation_ori, marker_indices=marker_indices)
 
