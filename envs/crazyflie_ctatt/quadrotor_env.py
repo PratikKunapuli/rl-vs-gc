@@ -299,6 +299,13 @@ class QuadrotorEnv(DirectRLEnv):
             # import code; code.interact(local=locals())
             self.body_pos_ee_frame = self.body_pos_ee_frame.tile((self.num_envs, 1))
 
+        ## INTRODUCED FIXES TO GET THE SRT HOVER EXAMPLE TO WORK
+        else:
+            quad_pos = self._robot.data.body_pos_w[0, self._body_id]
+            quad_ori = self._robot.data.body_quat_w[0, self._body_id]
+            self.body_pos_ee_frame, self.body_ori_ee_frame = subtract_frame_transforms(quad_pos, quad_ori, quad_pos, quad_ori)
+            self.body_pos_ee_frame = self.body_pos_ee_frame.tile((self.num_envs, 1))
+
         self._robot_mass = self._robot.root_physx_view.get_masses()[0].sum()
         self._gravity_magnitude = torch.tensor(self.sim.cfg.gravity, device=self.device).norm()
         self._grav_vector_unit = torch.tensor([0.0, 0.0, -1.0], device=self.device).tile((self.num_envs, 1))
@@ -435,7 +442,8 @@ class QuadrotorEnv(DirectRLEnv):
         # print("[Isaac Env: Curriculum] Total Timesteps: ", total_timesteps, " Pos Radius: ", self.cfg.pos_radius)
         if self.cfg.pos_radius_curriculum > 0:
             # half the pos radius every pos_radius_curriculum timesteps
-            self.cfg.pos_radius = 0.8 * (0.5 ** (total_timesteps // self.cfg.pos_radius_curriculum))
+            self.cfg.pos_radius = 0.8 * (0.25 ** (total_timesteps // self.cfg.pos_radius_curriculum))
+            # self.cfg.pos_radius = 0.8 * (0.5 ** (total_timesteps // self.cfg.pos_radius_curriculum))
 
     def _get_observations(self) -> dict:
         self._apply_curriculum(self.common_step_counter * self.num_envs)
@@ -494,7 +502,11 @@ class QuadrotorEnv(DirectRLEnv):
 
         if self.cfg.eval_mode:
             quad_pos_w, quad_ori_w, quad_lin_vel_w, quad_ang_vel_w = self.get_body_state_by_name("body")
-            ee_pos_w, ee_ori_w, ee_lin_vel_w, ee_ang_vel_w = self.get_body_state_by_name("endeffector")
+            ## added in to allow for SRT hover task
+            if self.cfg.has_end_effector:
+                ee_pos_w, ee_ori_w, ee_lin_vel_w, ee_ang_vel_w = self.get_body_state_by_name("endeffector")
+            else:
+                ee_pos_w, ee_ori_w, ee_lin_vel_w, ee_ang_vel_w = torch.tensor([], device=self.device), torch.tensor([], device=self.device), torch.tensor([], device=self.device), torch.tensor([], device=self.device)
             full_state = torch.cat(
                 [
                     quad_pos_w,                                 # (num_envs, 3) [0-3]
@@ -521,6 +533,51 @@ class QuadrotorEnv(DirectRLEnv):
         lin_vel_b = quat_rotate_inverse(ori_w, lin_vel_w)
         ang_vel_b = quat_rotate_inverse(ori_w, ang_vel_w)
 
+
+        ## implementing LQR style rewards
+        pos_penalty = [-5000.] * 3
+        ori_penalty = [-1.] * 4
+        lin_vel_penalty = [-1.] * 3
+        ang_vel_penalty = [-0.1] * 3
+        # pen_array = pos_penalty + ori_penalty + lin_vel_penalty + ang_vel_penalty
+        # Q = torch.diag(torch.tensor(pen_array))
+        # Q = Q.to(device=self.device)
+
+        pos_penalty = torch.diag(torch.tensor(pos_penalty)) / 1000.
+        pos_penalty = pos_penalty.to(device=self.device)
+        ori_penalty = torch.diag(torch.tensor(ori_penalty)) / 1000.
+        ori_penalty = ori_penalty.to(device=self.device)
+        lin_vel_penalty = torch.diag(torch.tensor(lin_vel_penalty)) / 1000.
+        lin_vel_penalty = lin_vel_penalty.to(device=self.device)
+        ang_vel_penalty = torch.diag(torch.tensor(ang_vel_penalty)) / 1000.
+        ang_vel_penalty = ang_vel_penalty.to(device=self.device)
+
+        # full_world_state = torch.hstack((pos_w, ori_w, lin_vel_w, ang_vel_w))
+        goal_pos, goal_ori = self.get_goal_state_from_task("body")
+        n = goal_pos.shape[0]
+        pos_penalty = (goal_pos - pos_w) @ pos_penalty @ (goal_pos - pos_w).T
+        pos_penalty = torch.diag(pos_penalty)
+        ori_penalty = (goal_ori - ori_w) @ ori_penalty @ (goal_ori - ori_w).T
+        ori_penalty = torch.diag(ori_penalty)
+        lin_vel_penalty = lin_vel_w @ lin_vel_penalty @ lin_vel_w.T
+        lin_vel_penalty = torch.diag(lin_vel_penalty)
+        ang_vel_penalty = ang_vel_w @ ang_vel_penalty @ ang_vel_w.T
+        ang_vel_penalty = torch.diag(ang_vel_penalty)
+        
+        # goal_state = torch.hstack((goal_pos, goal_ori, torch.zeros((n, 3), device=self.device), torch.zeros((n, 3), device=self.device)))
+        # state_penalty = (full_world_state - goal_state) @ Q @ (full_world_state - goal_state).T
+        # state_penalty = torch.diag(state_penalty)
+        # state_penalty = torch.sum(state_penalty)
+
+        R = torch.diag(torch.tensor([-1, -0.1, -0.1, -0.1])) / 1000.
+        R = R.to(device=self.device)
+        action_penalty = (self._actions - self._nominal_action) @ R @ (self._actions - self._nominal_action).T
+        action_penalty = torch.diag(action_penalty)
+        # action_penalty = torch.sum(action_penalty)
+
+                               
+
+
         lin_vel = torch.sum(torch.square(lin_vel_b), dim=1)
         ang_vel = torch.sum(torch.square(ang_vel_b), dim=1)
         distance_to_goal = torch.linalg.norm(self._desired_pos_w - pos_w, dim=1)
@@ -543,18 +600,41 @@ class QuadrotorEnv(DirectRLEnv):
         else:
             time_scale = 1.0
 
+        # rewards = {
+        #     "lin_vel": lin_vel * self.cfg.lin_vel_reward_scale * time_scale,
+        #     "ang_vel": ang_vel * self.cfg.ang_vel_reward_scale * time_scale,
+        #     "pos_distance": distance_to_goal_mapped * self.cfg.pos_distance_reward_scale * time_scale,
+        #     "pos_error": distance_to_goal * self.cfg.pos_error_reward_scale * time_scale,
+        #     "yaw_error": ori_error * self.cfg.yaw_error_reward_scale * time_scale,
+        #     "previous_thrust": action_thrust_error * self.cfg.previous_thrust_reward_scale * time_scale,
+        #     "previous_attitude": action_att_error * self.cfg.previous_attitude_reward_scale * time_scale,
+        #     "action_norm": action_norm_error * self.cfg.action_norm_reward_scale * time_scale,
+        #     "crash_penalty": self.reset_terminated[:].float() * crash_penalty_time * time_scale,
+        #     "stay_alive": torch.ones_like(distance_to_goal) * self.cfg.stay_alive_reward * time_scale,
+        # }
+        # for key, value in rewards.items():
+        #     print(key, value.shape)
+
         rewards = {
-            "lin_vel": lin_vel * self.cfg.lin_vel_reward_scale * time_scale,
-            "ang_vel": ang_vel * self.cfg.ang_vel_reward_scale * time_scale,
-            "pos_distance": distance_to_goal_mapped * self.cfg.pos_distance_reward_scale * time_scale,
-            "pos_error": distance_to_goal * self.cfg.pos_error_reward_scale * time_scale,
-            "yaw_error": ori_error * self.cfg.yaw_error_reward_scale * time_scale,
-            "previous_thrust": action_thrust_error * self.cfg.previous_thrust_reward_scale * time_scale,
-            "previous_attitude": action_att_error * self.cfg.previous_attitude_reward_scale * time_scale,
-            "action_norm": action_norm_error * self.cfg.action_norm_reward_scale * time_scale,
+            "lin_vel": lin_vel_penalty,
+            "ang_vel": ang_vel_penalty,
+            "pos_distance": distance_to_goal_mapped * self.cfg.pos_distance_reward_scale * time_scale * 0,
+            "pos_error": pos_penalty,
+            "yaw_error": ori_penalty,
+            "previous_thrust": action_thrust_error * self.cfg.previous_thrust_reward_scale * time_scale * 0,
+            "previous_attitude": action_att_error * self.cfg.previous_attitude_reward_scale * time_scale * 0,
+            "action_norm": action_penalty,
             "crash_penalty": self.reset_terminated[:].float() * crash_penalty_time * time_scale,
             "stay_alive": torch.ones_like(distance_to_goal) * self.cfg.stay_alive_reward * time_scale,
         }
+        # for key, value in rewards.items():
+        #     print(key, value.shape)
+
+        ## names have to match above
+        # rewards = {
+        #     "lin_vel" : state_penalty,
+        #     "action_norm" : action_penalty
+        # }
         reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
         # print("[Isaac] pos error: ", distance_to_goal)
         # print("[Isaac] pos error reward: ", rewards["pos_error"])
