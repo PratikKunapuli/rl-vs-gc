@@ -60,7 +60,8 @@ AERIAL_MANIPULATOR_CFG = ArticulationCfg(
 AERIAL_MANIPULATOR_2DOF_CFG = ArticulationCfg(
     prim_path="{ENV_REGEX_NS}/Robot",
     spawn=sim_utils.UsdFileCfg(
-        usd_path=f"{MODELS_PATH}/aerial_manipulator_2dof.usd",
+        # usd_path=f"{MODELS_PATH}/aerial_manipulator_2dof.usd",
+        usd_path=f"{MODELS_PATH}/uam_2dof.usd",
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,
             max_depenetration_velocity=10.0,
@@ -86,15 +87,18 @@ AERIAL_MANIPULATOR_2DOF_CFG = ArticulationCfg(
             "prop2": -0.0,
             "prop3": 0.0,
             "prop4": -0.0,
-            "joint1": 0.0,
-            "joint2": 0.0,
+            # "joint1": 0.0,
+            # "joint2": 0.0,
+            "joint_wrist": 0.0,
+            "joint_shoulder": 0.0,
         },
     ),
 
     # Available joints: joint1, joint2
     actuators={ 
         "shoulder": IdealPDActuatorCfg( # Stiffness, damping, armature, friction need to be set. 
-            joint_names_expr=["joint1"],
+            # joint_names_expr=["joint1"],
+            joint_names_expr=["joint_shoulder"],
             effort_limit=0.6,
             velocity_limit=float(1e5),
             stiffness=0.0,
@@ -103,7 +107,8 @@ AERIAL_MANIPULATOR_2DOF_CFG = ArticulationCfg(
             friction=0.0,
         ),
         "wrist": IdealPDActuatorCfg( # Stiffness, damping, armature, friction need to be set. 
-            joint_names_expr=["joint2"],
+            # joint_names_expr=["joint2"],
+            joint_names_expr=["joint_wrist"],
             effort_limit=0.3,
             velocity_limit=float(1e5),
             stiffness=0.0,
