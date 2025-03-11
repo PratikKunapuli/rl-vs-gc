@@ -577,6 +577,8 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
             # print("Poly coefficients: ", self.polynomial_coefficients[0, :, :])
             # print("Pos Poly: ", pos_poly[:2, 0, :, 0])
             # print("Yaw poly: ", yaw_poly[:2, 0, 0])
+        elif self.cfg.trajectory_type == "random_walk":
+            pass
         else:
             raise NotImplementedError("Trajectory type not implemented")
     
@@ -650,7 +652,7 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         if len(future_pos_error_b) > 0:
             future_pos_error_b = torch.stack(future_pos_error_b, dim=1) # stack to (n, horizon, 3) tensor
             future_ori_error_b = torch.stack(future_ori_error_b, dim=1) # stack to (n, horizon, 4) tensor
-
+ 
             if self.cfg.use_yaw_representation_for_trajectory:
                 future_ori_error_b = math_utils.yaw_from_quat(future_ori_error_b).reshape(self.num_envs, self.cfg.trajectory_horizon, 1)
         else:
@@ -683,18 +685,26 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
             grav_vector_b = torch.zeros(self.num_envs, 0, device=self.device)
         
         # Compute the linear and angular velocities of the end-effector in body frame
-        if self.cfg.trajectory_horizon > 0:
-            lin_vel_error_w = self._pos_traj[1, :, :, 0] - lin_vel_w
-        else:
-            lin_vel_error_w = torch.zeros_like(lin_vel_w, device=self.device) - lin_vel_w
+        # if self.cfg.trajectory_horizon > 0:
+        #     lin_vel_error_w = self._pos_traj[1, :, :, 0] - lin_vel_w
+        # else:
+        #     lin_vel_error_w = torch.zeros_like(lin_vel_w, device=self.device) - lin_vel_w
+        # lin_vel_b = quat_rotate_inverse(base_ori_w, lin_vel_error_w)
+        # if self.cfg.use_ang_vel_from_trajectory and self.cfg.trajectory_horizon > 0:
+        #     ang_vel_des = torch.zeros_like(ang_vel_w)
+        #     ang_vel_des[:,2] = self._yaw_traj[1, :, 0]
+        #     ang_vel_error_w = ang_vel_des - ang_vel_w
+        # else:
+        #     ang_vel_error_w = torch.zeros_like(ang_vel_w) - ang_vel_w
+        # ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_error_w)
+        
+        
+        # Old computation for lin and ang vel:
+        lin_vel_error_w = self._pos_traj[1, :, :, 0] - lin_vel_w
         lin_vel_b = quat_rotate_inverse(base_ori_w, lin_vel_error_w)
-        if self.cfg.use_ang_vel_from_trajectory and self.cfg.trajectory_horizon > 0:
-            ang_vel_des = torch.zeros_like(ang_vel_w)
-            ang_vel_des[:,2] = self._yaw_traj[1, :, 0]
-            ang_vel_error_w = ang_vel_des - ang_vel_w
-        else:
-            ang_vel_error_w = torch.zeros_like(ang_vel_w) - ang_vel_w
-        ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_error_w)
+        ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_w)
+
+
         # Compute the joint states
         shoulder_joint_pos = torch.zeros(self.num_envs, 0, device=self.device)
         shoulder_joint_vel = torch.zeros(self.num_envs, 0, device=self.device)
@@ -1006,7 +1016,7 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         self.initialize_trajectories(env_ids)
         self.update_goal_state()
 
-        print("Goal State: ", self._desired_pos_w[env_ids[0]], self._desired_ori_w[env_ids[0]])
+        # print("Goal State: ", self._desired_pos_w[env_ids[0]], self._desired_ori_w[env_ids[0]])
 
         # Reset Robot state
         self._robot.reset()

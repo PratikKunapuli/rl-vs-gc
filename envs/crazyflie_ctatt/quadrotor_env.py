@@ -211,6 +211,62 @@ class QuadrotorManipulatorLongEnvCfg(QuadrotorEnvCfg):
 
     dr_dict = {'thrust_to_weight':  False}
 
+@configclass
+class BrushlessQuadrotorEnvCfg(QuadrotorEnvCfg):
+    """
+    Cfg for the brushless quadrotor environment simulating the Brushless Crazyflie 2.1
+    """
+
+    thrust_to_weight = 3.5
+    
+
+    # Motor dynamics
+    arm_length = 0.05
+    k_eta = 2.3e-8 #unchanged
+    k_m = 7.8e-10 #unchanged
+    tau_m = 0.005 #unchanged
+    motor_speed_min = 0.0
+    motor_speed_max = 2500.0
+
+    kp_att = 3264.54 # 544
+    kd_att = 361.58 # 46.64
+
+    # CTBR Parameters
+    kp_omega = 5.27 # measured on static test stand
+    kd_omega = 0.0
+    body_rate_scale_xy = 10.0
+    body_rate_scale_z = 2.5
+
+    control_mode = "CTATT" # "CTBM" or "CTATT" or "CTBR"
+
+
+@configclass
+class BrushlessQuadrotorManipulatorEnvCfg(QuadrotorEnvCfg):
+    """
+    Cfg for the brushless quadrotor environment simulating the Brushless Crazyflie 2.1 with a manipulator
+    """
+    thrust_to_weight = 3.5
+    # Motor dynamics
+    arm_length = 0.05
+    k_eta = 2.3e-8 #unchanged
+    k_m = 7.8e-10 #unchanged
+    tau_m = 0.005 #unchanged
+    motor_speed_min = 0.0
+    motor_speed_max = 2500.0
+
+    kp_att = 3264.54 # 544
+    kd_att = 361.58 # 46.64
+
+    # CTBR Parameters
+    kp_omega = 5.27 # measured on static test stand
+    kd_omega = 0.0
+    body_rate_scale_xy = 10.0
+    body_rate_scale_z = 2.5
+
+    control_mode = "CTATT" # "CTBM" or "CTATT" or "CTBR"
+    has_end_effector = True
+
+
 class QuadrotorEnv(DirectRLEnv):
     cfg: QuadrotorEnvCfg
 

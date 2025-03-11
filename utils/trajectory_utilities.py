@@ -2,6 +2,24 @@ import torch
 import omni.isaac.lab.utils.math as isaac_math_utils
 from typing import Tuple
 
+@torch.jit.script
+def quat_from_yaw(yaw: torch.Tensor) -> torch.Tensor:
+    """Get quaternion from yaw angle.
+
+    Args:
+        yaw: The yaw angle. Shape is (...,).
+
+    Returns:
+        The quaternion. Shape is (..., 4).
+    """
+    shape = yaw.shape
+    yaw = yaw.view(-1)
+    q = torch.zeros(yaw.shape[0], 4, device=yaw.device)
+    q[:, 0] = torch.cos(yaw / 2.0)
+    q[:, 1] = 0.0
+    q[:, 2] = 0.0
+    q[:, 3] = torch.sin(yaw / 2.0)
+    return q.view(shape + (4,))
 
 @torch.jit.script
 def eval_sinusoid(t: torch.Tensor, amp:float, freq:float, phase:float, offset:float):
@@ -215,3 +233,51 @@ def eval_polynomial_curve(t: torch.Tensor, coeffs: torch.Tensor, derivatives: in
     yaw = full_data[:, :, 3, :]   # (derivatives+1, n_envs, n_samples)
 
     return pos, yaw
+
+@torch.jit.script
+def eval_random_walk(pos_init:torch.Tensor, vel_init:torch.Tensor, acc_coeffs: torch.Tensor, T_max:float, step_size:float) -> torch.Tensor:
+    """
+    Generate random walk trajectories from acceleration coefficients. Acceleration should be in body frame, but then the random walk should be in the world frame.
+
+    Args:
+        pos_init: Initial position for each environment. Shape: (n_envs, 3).
+        vel_init: Initial velocity for each environment. Shape: (n_envs, 3).
+        acc_coeffs: Coefficients for the random walk acceleration.
+            Shape: (n_envs, 3).
+        T_max: Maximum time for the random walk.
+        step_size: Time step size for integration.
+
+    Returns:
+        pos: Evaluated random walk position curves (x,y,z) and their derivatives.
+            Shape: (n_envs, 3, step_size * T_max).
+    """
+    yaw = torch.zeros((1), device=pos_init.device, dtype=torch.float32)
+    ori = quat_from_yaw(yaw) 
+    
+    n_envs, n_curves = acc_coeffs.shape
+    
+    # Initialize position and velocity
+    pos = pos_init
+    vel = vel_init
+
+    # Initialize the list of results with the position (0th derivative)
+    results = [pos.unsqueeze(-1)]
+
+    # Integrate the random walk dynamics
+    for _ in range(int(T_max / step_size)):
+        # Compute the new velocity and position
+        # acc_b = torch.randn((n_envs, 3), device=pos.device) * acc_coeffs
+        acc_b = acc_coeffs
+        acc_w = isaac_math_utils.quat_rotate(ori, acc_b)
+        # print(acc_w)
+        vel += acc_w * step_size
+        pos += vel * step_size
+
+        # Append the new position to the results
+        results.append(pos.unsqueeze(-1))
+    
+    # Stack the results
+    full_data = torch.cat(results, dim=-1)
+    return full_data
+
+    
