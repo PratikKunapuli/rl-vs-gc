@@ -218,13 +218,20 @@ class BrushlessQuadrotorEnvCfg(QuadrotorEnvCfg):
     """
 
     thrust_to_weight = 3.5
+    mass = 0.039 # 39 grams
+    sim_rate_hz = 1000
+    pd_loop_rate_hz = 500
+    pd_loop_decimation = sim_rate_hz // pd_loop_rate_hz # decimation from sim physics rate
     
+    # Reward Terms
+    previous_thrust_reward_scale = -0.01
+    previous_attitude_reward_scale = -0.01
 
     # Motor dynamics
     arm_length = 0.05
-    k_eta = 2.3e-8 #unchanged
+    k_eta = 4.81e-8 # Measured from thrust stand data
     k_m = 7.8e-10 #unchanged
-    tau_m = 0.005 #unchanged
+    tau_m = 0.03 # slower motor dynamics
     motor_speed_min = 0.0
     motor_speed_max = 2500.0
 
@@ -237,7 +244,7 @@ class BrushlessQuadrotorEnvCfg(QuadrotorEnvCfg):
     body_rate_scale_xy = 10.0
     body_rate_scale_z = 2.5
 
-    control_mode = "CTATT" # "CTBM" or "CTATT" or "CTBR"
+    control_mode = "CTBR" # "CTBM" or "CTATT" or "CTBR"
 
 
 @configclass
@@ -248,9 +255,9 @@ class BrushlessQuadrotorManipulatorEnvCfg(QuadrotorEnvCfg):
     thrust_to_weight = 3.5
     # Motor dynamics
     arm_length = 0.05
-    k_eta = 2.3e-8 #unchanged
+    k_eta = 4.81e-8 #unchanged
     k_m = 7.8e-10 #unchanged
-    tau_m = 0.005 #unchanged
+    tau_m = 0.03 #unchanged
     motor_speed_min = 0.0
     motor_speed_max = 2500.0
 
@@ -263,7 +270,7 @@ class BrushlessQuadrotorManipulatorEnvCfg(QuadrotorEnvCfg):
     body_rate_scale_xy = 10.0
     body_rate_scale_z = 2.5
 
-    control_mode = "CTATT" # "CTBM" or "CTATT" or "CTBR"
+    control_mode = "CTBR" # "CTBM" or "CTATT" or "CTBR"
     has_end_effector = True
 
 
@@ -369,7 +376,10 @@ class QuadrotorEnv(DirectRLEnv):
             self.body_pos_ee_frame, self.body_ori_ee_frame = subtract_frame_transforms(quad_pos, quad_ori, quad_pos, quad_ori)
             self.body_pos_ee_frame = self.body_pos_ee_frame.tile((self.num_envs, 1))
 
-        self._robot_mass = self._robot.root_physx_view.get_masses()[0].sum()
+        if "mass" in self.cfg.to_dict().keys():
+            self._robot_mass = self.cfg.mass
+        else:
+            self._robot_mass = self._robot.root_physx_view.get_masses()[0].sum()
         self._gravity_magnitude = torch.tensor(self.sim.cfg.gravity, device=self.device).norm()
         self._grav_vector_unit = torch.tensor([0.0, 0.0, -1.0], device=self.device).tile((self.num_envs, 1))
         self._robot_weight = (self._robot_mass * self._gravity_magnitude).item()
@@ -457,7 +467,7 @@ class QuadrotorEnv(DirectRLEnv):
         
         omega_err = self._robot.data.root_ang_vel_b - omega_des
         omega_dot_err = (omega_err - self._previous_omega_err) / self.cfg.pd_loop_rate_hz
-        omega_dot = self.cfg.kp_omega * omega_err + self.cfg.kd_omega * omega_dot_err
+        omega_dot = -self.cfg.kp_omega * omega_err - self.cfg.kd_omega * omega_dot_err
         self._previous_omega_err = omega_err
 
         cmd_moment = torch.bmm(self.inertia_tensor, omega_dot.unsqueeze(2)).squeeze(2)
@@ -623,44 +633,44 @@ class QuadrotorEnv(DirectRLEnv):
 
 
         ## implementing LQR style rewards
-        pos_penalty = [-5000.] * 3
-        ori_penalty = [-1.] * 4
-        lin_vel_penalty = [-1.] * 3
-        ang_vel_penalty = [-0.1] * 3
-        # pen_array = pos_penalty + ori_penalty + lin_vel_penalty + ang_vel_penalty
-        # Q = torch.diag(torch.tensor(pen_array))
-        # Q = Q.to(device=self.device)
+        # pos_penalty = [-5000.] * 3
+        # ori_penalty = [-1.] * 4
+        # lin_vel_penalty = [-1.] * 3
+        # ang_vel_penalty = [-0.1] * 3
+        # # pen_array = pos_penalty + ori_penalty + lin_vel_penalty + ang_vel_penalty
+        # # Q = torch.diag(torch.tensor(pen_array))
+        # # Q = Q.to(device=self.device)
 
-        pos_penalty = torch.diag(torch.tensor(pos_penalty)) / 1000.
-        pos_penalty = pos_penalty.to(device=self.device)
-        ori_penalty = torch.diag(torch.tensor(ori_penalty)) / 1000.
-        ori_penalty = ori_penalty.to(device=self.device)
-        lin_vel_penalty = torch.diag(torch.tensor(lin_vel_penalty)) / 1000.
-        lin_vel_penalty = lin_vel_penalty.to(device=self.device)
-        ang_vel_penalty = torch.diag(torch.tensor(ang_vel_penalty)) / 1000.
-        ang_vel_penalty = ang_vel_penalty.to(device=self.device)
+        # pos_penalty = torch.diag(torch.tensor(pos_penalty)) / 1000.
+        # pos_penalty = pos_penalty.to(device=self.device)
+        # ori_penalty = torch.diag(torch.tensor(ori_penalty)) / 1000.
+        # ori_penalty = ori_penalty.to(device=self.device)
+        # lin_vel_penalty = torch.diag(torch.tensor(lin_vel_penalty)) / 1000.
+        # lin_vel_penalty = lin_vel_penalty.to(device=self.device)
+        # ang_vel_penalty = torch.diag(torch.tensor(ang_vel_penalty)) / 1000.
+        # ang_vel_penalty = ang_vel_penalty.to(device=self.device)
 
-        # full_world_state = torch.hstack((pos_w, ori_w, lin_vel_w, ang_vel_w))
-        goal_pos, goal_ori = self.get_goal_state_from_task("body")
-        n = goal_pos.shape[0]
-        pos_penalty = (goal_pos - pos_w) @ pos_penalty @ (goal_pos - pos_w).T
-        pos_penalty = torch.diag(pos_penalty)
-        ori_penalty = (goal_ori - ori_w) @ ori_penalty @ (goal_ori - ori_w).T
-        ori_penalty = torch.diag(ori_penalty)
-        lin_vel_penalty = lin_vel_w @ lin_vel_penalty @ lin_vel_w.T
-        lin_vel_penalty = torch.diag(lin_vel_penalty)
-        ang_vel_penalty = ang_vel_w @ ang_vel_penalty @ ang_vel_w.T
-        ang_vel_penalty = torch.diag(ang_vel_penalty)
+        # # full_world_state = torch.hstack((pos_w, ori_w, lin_vel_w, ang_vel_w))
+        # goal_pos, goal_ori = self.get_goal_state_from_task("body")
+        # n = goal_pos.shape[0]
+        # pos_penalty = (goal_pos - pos_w) @ pos_penalty @ (goal_pos - pos_w).T
+        # pos_penalty = torch.diag(pos_penalty)
+        # ori_penalty = (goal_ori - ori_w) @ ori_penalty @ (goal_ori - ori_w).T
+        # ori_penalty = torch.diag(ori_penalty)
+        # lin_vel_penalty = lin_vel_w @ lin_vel_penalty @ lin_vel_w.T
+        # lin_vel_penalty = torch.diag(lin_vel_penalty)
+        # ang_vel_penalty = ang_vel_w @ ang_vel_penalty @ ang_vel_w.T
+        # ang_vel_penalty = torch.diag(ang_vel_penalty)
         
-        # goal_state = torch.hstack((goal_pos, goal_ori, torch.zeros((n, 3), device=self.device), torch.zeros((n, 3), device=self.device)))
-        # state_penalty = (full_world_state - goal_state) @ Q @ (full_world_state - goal_state).T
-        # state_penalty = torch.diag(state_penalty)
-        # state_penalty = torch.sum(state_penalty)
+        # # goal_state = torch.hstack((goal_pos, goal_ori, torch.zeros((n, 3), device=self.device), torch.zeros((n, 3), device=self.device)))
+        # # state_penalty = (full_world_state - goal_state) @ Q @ (full_world_state - goal_state).T
+        # # state_penalty = torch.diag(state_penalty)
+        # # state_penalty = torch.sum(state_penalty)
 
-        R = torch.diag(torch.tensor([-1, -0.1, -0.1, -0.1])) / 1000.
-        R = R.to(device=self.device)
-        action_penalty = (self._actions - self._nominal_action) @ R @ (self._actions - self._nominal_action).T
-        action_penalty = torch.diag(action_penalty)
+        # R = torch.diag(torch.tensor([-1, -0.1, -0.1, -0.1])) / 1000.
+        # R = R.to(device=self.device)
+        # action_penalty = (self._actions - self._nominal_action) @ R @ (self._actions - self._nominal_action).T
+        # action_penalty = torch.diag(action_penalty)
         # action_penalty = torch.sum(action_penalty)
 
                                
