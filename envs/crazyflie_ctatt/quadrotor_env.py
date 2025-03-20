@@ -820,6 +820,32 @@ class QuadrotorEnv(DirectRLEnv):
         else:
             previous_actions = torch.zeros(self.num_envs, 0, device=self.device)
 
+        # # Legacy Obs
+        # pos_error_b, ori_error_b = subtract_frame_transforms(
+        #     base_pos_w, base_ori_w, goal_pos_w, goal_ori_w
+        # )
+
+        # if self.cfg.use_full_ori_matrix:
+        #     ori_error_b = matrix_from_quat(ori_error_b).view(-1, 9)
+
+        # yaw_error = yaw_error_from_quats(self._robot.data.root_quat_w, goal_ori_w, 0)
+
+        # lin_vel_b = quat_rotate_inverse(base_ori_w, lin_vel_w)
+        # ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_w)
+        # grav_vector_b = quat_rotate_inverse(base_ori_w, self._grav_vector_unit)
+        # obs = torch.cat(
+        #     [
+        #         lin_vel_b, # 3
+        #         ang_vel_b, # 3
+        #         grav_vector_b, # 3
+        #         pos_error_b, # 3
+        #         ori_error_b, # 4 or 9 if use_full_ori_matrix
+        #         yaw_error.unsqueeze(-1), # 1
+        #         self._previous_action, # 4
+        #     ],
+        #     dim=-1,
+        # )
+
         obs = torch.cat(
             [
                 pos_error_b,                                # (num_envs, 3)
@@ -1292,6 +1318,24 @@ class QuadrotorEnv(DirectRLEnv):
             raise ValueError("Invalid goal body: ", self.cfg.goal_body)
 
         return goal_pos_w, goal_ori_w
+
+    def convert_ee_goal_from_task(self, ee_pos_w, ee_ori_w, task_body:str) -> tuple[torch.Tensor, torch.Tensor]:
+        if not self.cfg.has_end_effector:
+            desired_pos, desired_ori = ee_pos_w, ee_ori_w
+        elif task_body == "root":
+            desired_pos, desired_ori = ee_pos_w, ee_ori_w
+        elif task_body == "endeffector":
+            desired_pos, desired_ori = ee_pos_w, ee_ori_w
+        elif task_body == "vehicle":
+            desired_pos, desired_yaw = math_utils.compute_desired_pose_from_transform(ee_pos_w, ee_ori_w, self._robot.data.body_pos_w[:, self._body_id].squeeze(1), 0)
+            desired_ori = quat_from_yaw(desired_yaw)
+        elif task_body == "COM":
+            desired_pos, desired_yaw = math_utils.compute_desired_pose_from_transform(ee_pos_w, ee_ori_w, self.com_pos_e, 0)
+            desired_ori = quat_from_yaw(desired_yaw)
+        else:
+            raise ValueError("Invalid task body: ", task_body)
+
+        return desired_pos, desired_ori
 
     def _set_debug_vis_impl(self, debug_vis: bool):
         # create markers if necessary for the first tome
