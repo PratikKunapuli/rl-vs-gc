@@ -23,9 +23,13 @@ from omni.isaac.lab.markers import VisualizationMarkers, VisualizationMarkersCfg
 from omni.isaac.lab.utils.assets import ISAAC_NUCLEUS_DIR
 
 from utils.assets import MODELS_PATH
-from configs.aerial_manip_asset import CRAZYFLIE_MANIPULATOR_0DOF_CFG, CRAZYFLIE_MANIPULATOR_0DOF_LONG_CFG
+from configs.aerial_manip_asset import CRAZYFLIE_MANIPULATOR_0DOF_CFG, CRAZYFLIE_MANIPULATOR_0DOF_LONG_CFG, CRAZYFLIE_BRUSHLESS_CFG
 from utils.math_utilities import yaw_from_quat, yaw_error_from_quats, quat_from_yaw, compute_desired_pose_from_transform, vee_map, exp_so3, hat_map
 import utils.flatness_utilities as flatness_utils
+import utils.trajectory_utilities as traj_utils
+import utils.math_utilities as math_utils
+import omni.isaac.lab.utils.math as isaac_math_utils
+
 
 ##
 # Pre-defined configs
@@ -101,6 +105,29 @@ class QuadrotorEnvCfg(DirectRLEnvCfg):
 
     # scene
     scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=2.5, replicate_physics=True)
+
+
+    # Trajectory
+    traj_update_dt = 0.02
+
+    trajectory_type = "lissaajous"
+    trajectory_horizon = 0
+    random_shift_trajectory = False
+
+    lissajous_amplitudes = [0, 0, 0, 0]
+    lissajous_amplitudes_rand_ranges = [0.0, 0.0, 0.0, 0.0]
+    lissajous_frequencies = [0, 0, 0, 0]
+    lissajous_frequencies_rand_ranges = [0.0, 0.0, 0.0, 0.0]
+    lissajous_phases = [0, 0, 0, 0]
+    lissajous_phases_rand_ranges = [0.0, 0.0, 0.0, 0.0]
+    lissajous_offsets = [0, 0, 3.0, 0]
+    lissajous_offsets_rand_ranges = [0.0, 0.0, 0.0, 0.0]
+
+    init_pos_ranges=[2.0, 2.0, 0.0]
+    init_lin_vel_ranges=[0.0, 0.0, 0.0]
+    init_yaw_ranges=[3.14159]
+    init_ang_vel_ranges=[0.0, 0.0, 0.0]
+
 
     # robot
     robot: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
@@ -217,6 +244,8 @@ class BrushlessQuadrotorEnvCfg(QuadrotorEnvCfg):
     Cfg for the brushless quadrotor environment simulating the Brushless Crazyflie 2.1
     """
 
+    robot: ArticulationCfg = CRAZYFLIE_BRUSHLESS_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+
     thrust_to_weight = 3.5
     mass = 0.039 # 39 grams
     sim_rate_hz = 1000
@@ -245,6 +274,15 @@ class BrushlessQuadrotorEnvCfg(QuadrotorEnvCfg):
     body_rate_scale_z = 2.5
 
     control_mode = "CTBR" # "CTBM" or "CTATT" or "CTBR"
+
+    dr_dict = {
+        'thrust_to_weight':  False,
+        'mass': False,
+        'arm_length': False,
+        'k_eta': False,
+        'k_m': False,
+        'tau_m': False,
+    }
 
 
 @configclass
@@ -290,44 +328,75 @@ class QuadrotorEnv(DirectRLEnv):
         self._motor_speeds = torch.zeros(self.num_envs, 4, device=self.device)
         self._motor_speeds_des = torch.zeros(self.num_envs, 4, device=self.device)
         self._previous_action = torch.zeros(self.num_envs, self.cfg.action_space, device=self.device)
-        self._thrust_to_weight = self.cfg.thrust_to_weight * torch.ones(self.num_envs, device=self.device)
         self._hover_thrust = 2.0 / self.cfg.thrust_to_weight - 1.0
         self._nominal_action = torch.tensor([self._hover_thrust, 0.0, 0.0, 0.0], device=self.device).tile((self.num_envs, 1))
         self._previous_omega_err = torch.zeros(self.num_envs, 3, device=self.device)
+
+        # Parameters for potential Domain Randomization
+        self._thrust_to_weight = self.cfg.thrust_to_weight * torch.ones(self.num_envs, device=self.device)
+        self._tau_m = self.cfg.tau_m * torch.ones(self.num_envs, device=self.device)
+        self._arm_length = self.cfg.arm_length * torch.ones(self.num_envs, device=self.device)
+        self._k_m = self.cfg.k_m * torch.ones(self.num_envs, device=self.device)
+        self._k_eta = self.cfg.k_eta * torch.ones(self.num_envs, device=self.device)
+
+        # Trajectory initialization
+        self._desired_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
+        self._desired_ori_w = torch.zeros(self.num_envs, 4, device=self.device)
+        self._desired_pos_traj_w = torch.zeros(self.num_envs, 1+self.cfg.trajectory_horizon, 3, device=self.device)
+        self._desired_ori_traj_w = torch.zeros(self.num_envs, 1+self.cfg.trajectory_horizon, 4, device=self.device)
+        self._pos_traj = torch.zeros(5, self.num_envs, 1+self.cfg.trajectory_horizon, 3, device=self.device)
+        self._yaw_traj = torch.zeros(5, self.num_envs, 1+self.cfg.trajectory_horizon, device=self.device)
+        self._pos_shift = torch.zeros(self.num_envs, 3, device=self.device)
+        self._yaw_shift = torch.zeros(self.num_envs, 1, device=self.device)
+        # self.amplitudes = torch.zeros(self.num_envs, 4, device=self.device)
+        # self.frequencies = torch.zeros(self.num_envs, 4, device=self.device)
+        # self.phases = torch.zeros(self.num_envs, 4, device=self.device)
+        # self.offsets = torch.zeros(self.num_envs, 4, device=self.device)
+        self.lissajous_amplitudes = torch.tensor(self.cfg.lissajous_amplitudes, device=self.device).tile((self.num_envs, 1)).float()
+        self.lissajous_amplitudes_rand_ranges = torch.tensor(self.cfg.lissajous_amplitudes_rand_ranges, device=self.device).float()
+        self.lissajous_frequencies = torch.tensor(self.cfg.lissajous_frequencies, device=self.device).tile((self.num_envs, 1)).float()
+        self.lissajous_frequencies_rand_ranges = torch.tensor(self.cfg.lissajous_frequencies_rand_ranges, device=self.device).float()
+        self.lissajous_phases = torch.tensor(self.cfg.lissajous_phases, device=self.device).tile((self.num_envs, 1)).float()
+        self.lissajous_phases_rand_ranges = torch.tensor(self.cfg.lissajous_phases_rand_ranges, device=self.device).float()
+        self.lissajous_offsets = torch.tensor(self.cfg.lissajous_offsets, device=self.device).tile((self.num_envs, 1)).float()
+        self.lissajous_offsets_rand_ranges = torch.tensor(self.cfg.lissajous_offsets_rand_ranges, device=self.device).float()
+
+        self._time = torch.zeros(self.num_envs, 1, device=self.device)
+        
 
         # Things necessary for motor dynamics
         r2o2 = math.sqrt(2.0) / 2.0
         self._rotor_positions = torch.cat(
             [
-                self.cfg.arm_length * torch.tensor([[r2o2, r2o2, 0]]),
-                self.cfg.arm_length * torch.tensor([[r2o2, -r2o2, 0]]),
-                self.cfg.arm_length * torch.tensor([[-r2o2, -r2o2, 0]]),
-                self.cfg.arm_length * torch.tensor([[-r2o2, r2o2, 0]]),
+                (self._arm_length.unsqueeze(1) * torch.tensor([r2o2, r2o2, 0], device=self.device).unsqueeze(0)).unsqueeze(1),
+                (self._arm_length.unsqueeze(1) * torch.tensor([r2o2, -r2o2, 0], device=self.device).unsqueeze(0)).unsqueeze(1),
+                (self._arm_length.unsqueeze(1) * torch.tensor([-r2o2, -r2o2, 0], device=self.device).unsqueeze(0)).unsqueeze(1),
+                (self._arm_length.unsqueeze(1) * torch.tensor([-r2o2, r2o2, 0], device=self.device).unsqueeze(0)).unsqueeze(1),
             ],
-            dim=0, 
+            dim=1, 
         ).to(self.device)
-        self._rotor_directions = torch.tensor([1, -1, 1, -1], device=self.device)
-        self.k = self.cfg.k_m / self.cfg.k_eta
+        self._rotor_directions = torch.tensor([1, -1, 1, -1], device=self.device).tile(self.num_envs, 1)
+        self.k = self._k_m / self._k_eta
+        # test_cross =  torch.linalg.cross(self._rotor_positions, torch.tensor([0.0, 0.0, 1.0], device=self.device).tile(self.num_envs, 1, 1))[:,:, 0:2].transpose(-2,-1)
+        # print(test_cross.shape)
 
         self.f_to_TM = torch.cat(
             [
-                torch.tensor([[1, 1, 1, 1]], device=self.device),
-                torch.cat(
-                    [
-                        torch.linalg.cross(self._rotor_positions[i], torch.tensor([0.0, 0.0, 1.0], device=self.device)).view(-1, 1)[0:2] for i in range(4)
-                    ], 
-                    dim=1
-                ).to(self.device),
-                self.k * self._rotor_directions.view(1, -1),
+                torch.ones(self.num_envs, 1, 4, device=self.device),
+                # torch.cat(
+                #     [
+                #         torch.linalg.cross(self._rotor_positions[i], torch.tensor([0.0, 0.0, 1.0], device=self.device)).view(-1, 1)[0:2] for i in range(4)
+                #     ], 
+                #     dim=1
+                # ).to(self.device),
+                torch.linalg.cross(self._rotor_positions, torch.tensor([0.0, 0.0, 1.0], device=self.device).tile(self.num_envs, 1, 1))[:,:, 0:2].transpose(-2,-1),
+                self.k.view(self.num_envs, 1, 1) * self._rotor_directions.view(self.num_envs, 1, 4),
             ],
-            dim=0
+            dim=1
         )
+
         self.TM_to_f = torch.linalg.inv(self.f_to_TM)
 
-
-        # Goal position
-        self._desired_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
-        self._desired_ori_w = torch.zeros(self.num_envs, 4, device=self.device)
 
         # Logging
         self._episode_sums = {
@@ -377,12 +446,13 @@ class QuadrotorEnv(DirectRLEnv):
             self.body_pos_ee_frame = self.body_pos_ee_frame.tile((self.num_envs, 1))
 
         if "mass" in self.cfg.to_dict().keys():
-            self._robot_mass = self.cfg.mass
+            self._robot_mass = self.cfg.mass * torch.ones(self.num_envs, device=self.device)
         else:
-            self._robot_mass = self._robot.root_physx_view.get_masses()[0].sum()
+            self._robot_mass = self._robot.root_physx_view.get_masses()[0].sum() * torch.ones(self.num_envs, device=self.device)
+        self._default_masses = self._robot.root_physx_view.get_masses()
         self._gravity_magnitude = torch.tensor(self.sim.cfg.gravity, device=self.device).norm()
         self._grav_vector_unit = torch.tensor([0.0, 0.0, -1.0], device=self.device).tile((self.num_envs, 1))
-        self._robot_weight = (self._robot_mass * self._gravity_magnitude).item()
+        self._robot_weight = (self._robot_mass * self._gravity_magnitude)
 
         self._frame_positions = torch.zeros(self.num_envs, 2, 3, device=self.device)
         self._frame_orientations = torch.zeros(self.num_envs, 2, 4, device=self.device)
@@ -404,7 +474,7 @@ class QuadrotorEnv(DirectRLEnv):
         # print("Crazyflie inertia: ", self._robot.root_physx_view.get_inertias()[0, self._body_id, :].view(-1, 3, 3).squeeze())
         # print("TM_to_f: \n", self.TM_to_f)
         # print("f_to_TM: \n", self.f_to_TM)
-        # import code; code.interact(local=locals())
+        import code; code.interact(local=locals())
 
 
     def _setup_scene(self):
@@ -422,14 +492,15 @@ class QuadrotorEnv(DirectRLEnv):
         light_cfg.func("/World/Light", light_cfg)
 
     def _compute_motor_speeds(self, wrench_des):
-        f_des = torch.matmul(self.TM_to_f, wrench_des.t()).t()
-        # print("Desired force: ", f_des[0])
-        motor_speed_squared = f_des / self.cfg.k_eta
-        # print("Desired motor speed squared: ", motor_speed_squared[0])
+        # f_des = torch.matmul(self.TM_to_f, wrench_des.t()).t()
+        f_des = torch.bmm(self.TM_to_f, wrench_des.unsqueeze(2)).squeeze(2) # (n_envs, 4)
+        # print("Desired force: ", f_des.shape)
+        motor_speed_squared = f_des / self._k_eta.unsqueeze(1) # (n_envs, 4)
+        # print("Desired motor speed squared: ", motor_speed_squared.shape)
         motor_speeds_des = torch.sign(motor_speed_squared) * torch.sqrt(torch.abs(motor_speed_squared))
-        # print("Desired motor speed: ", motor_speeds_des[0])
+        # print("Desired motor speed: ", motor_speeds_des.shape)
         motor_speeds_des = motor_speeds_des.clamp(self.cfg.motor_speed_min, self.cfg.motor_speed_max)
-        # print("Clamped desired motor speed: ", motor_speeds_des[0])
+        # print("Clamped desired motor speed: ", motor_speeds_des.shape)
         return motor_speeds_des
     
     def _get_moment_from_ctatt(self, actions):
@@ -441,7 +512,7 @@ class QuadrotorEnv(DirectRLEnv):
 
         # Exp Hat Map
         # ori_des_matrix = exp_so3(hat_map(actions[:, 1:] * self.cfg.attitude_scale))
-        a = []
+        
         # Flatness based control
         shape_des = flatness_utils.s2_projection(actions[:, 1]* self.cfg.attitude_scale_xy, actions[:, 2]* self.cfg.attitude_scale_xy)
         psi_des = actions[:,3] * self.cfg.attitude_scale_z
@@ -476,23 +547,19 @@ class QuadrotorEnv(DirectRLEnv):
     def _pre_physics_step(self, actions: torch.Tensor):
         self._actions = actions.clone().clamp(-1.0, 1.0)
 
+        # 0th action is collective thrust
+        self._wrench_des[:, 0] = ((self._actions[:, 0] + 1.0) / 2.0) * (self._robot_weight * self._thrust_to_weight)
+
         if self.cfg.control_mode == "CTBM":
-            self._wrench_des[:, 0] = ((self._actions[:, 0] + 1.0) / 2.0) * (self._robot_weight * self._thrust_to_weight)
             self._wrench_des[:, 1:] = self.cfg.moment_scale * self._actions[:, 1:]
         elif self.cfg.control_mode == "CTATT":
-            # 0th action is collective thrust
             # 1st and 2nd action are desired attitude for pitch and roll
             # 3rd action is desired yaw rate
-            self._wrench_des[:, 0] = ((self._actions[:, 0] + 1.0) / 2.0) * (self._robot_weight * self._thrust_to_weight)
-            
             # compute wrench from desired attitude and current attitude using PD controller
             self._wrench_des[:,1:] = self._get_moment_from_ctatt(self._actions)
         elif self.cfg.control_mode == "CTBR":
-            # 0th action is collective thrust
             # 1st and 2nd action are desired body rates for pitch and roll
-            # 3rd action is desired yaw rate
-            self._wrench_des[:, 0] = ((self._actions[:, 0] + 1.0) / 2.0) * (self._robot_weight * self._thrust_to_weight)
-            
+            # 3rd action is desired yaw rate            
             # compute wrench from desired body rates and current body rates using PD controller
             self._wrench_des[:,1:] = self._get_moment_from_ctbr(self._actions)
             
@@ -516,14 +583,18 @@ class QuadrotorEnv(DirectRLEnv):
         self.pd_loop_counter += 1
         # print("--------------------")
         # print("Input wrench: ", self._wrench_des[0])
-        # print("Motor speed des: ", self._motor_speeds_des[0])
-        # print("Current motor speed (pre update): ", self._motor_speeds[0])
-        motor_accel = (1/self.cfg.tau_m) * (self._motor_speeds_des - self._motor_speeds)
+        # print("Motor speed des: ", self._motor_speeds_des.shape)
+        # print("Current motor speed (pre update): ", self._motor_speeds.shape)
+        motor_accel = torch.bmm((1.0/self._tau_m).reshape(self.num_envs, 1, 1), (self._motor_speeds_des - self._motor_speeds).unsqueeze(1)).squeeze(1) # (n_envs, 4)
+        # print("Motor acceleration: ", motor_accel.shape)
         self._motor_speeds += motor_accel * self.physics_dt
         self._motor_speeds = self._motor_speeds.clamp(self.cfg.motor_speed_min, self.cfg.motor_speed_max) # Motor saturation
         # self._motor_speeds = self._motor_speeds_des # assume no delay to simplify the simulation
         motor_forces = self.cfg.k_eta * self._motor_speeds ** 2
-        wrench = torch.matmul(self.f_to_TM, motor_forces.t()).t()
+   
+        # wrench = torch.matmul(self.f_to_TM, motor_forces.t()).t()
+        wrench = torch.bmm(self.f_to_TM, motor_forces.unsqueeze(2)).squeeze(2) # (n_envs, 4)
+        # print("wrench: ", wrench.shape)
         
         # print("Motor acceleration: ", motor_accel[0])
         # print("Current motor speed (post update): ", self._motor_speeds[0])
@@ -543,68 +614,256 @@ class QuadrotorEnv(DirectRLEnv):
             # self.cfg.pos_radius = 0.8 * (0.25 ** (total_timesteps // self.cfg.pos_radius_curriculum))
             self.cfg.pos_radius = 0.8 * (0.5 ** (total_timesteps // self.cfg.pos_radius_curriculum))
 
-    def _get_observations(self) -> dict:
-        self._apply_curriculum(self.common_step_counter * self.num_envs)
-
-        pos_w, ori_w, lin_vel_w, ang_vel_w = self.get_body_state_by_name(self.cfg.task_body)
-        goal_pos_w, goal_ori_w = self.get_goal_state_from_task(self.cfg.task_body)
-
-        # print("Num envs: ", self.num_envs)
-        # print("Pos: ", pos_w.shape)
-        # print("Ori: ", ori_w.shape)
-        # print("Lin vel: ", lin_vel_w.shape)
-        # print("Ang vel: ", ang_vel_w.shape)
+    def update_goal_state(self):
+        env_ids = (self.episode_length_buf % int(self.cfg.traj_update_dt*self.cfg.policy_rate_hz)== 0).nonzero(as_tuple=False)
+        # print("Env IDs: ", env_ids, env_ids.squeeze(1))
+        
+        if len(env_ids) == 0 or env_ids.size(0) == 0:
+            return
         
 
+        current_time = self.episode_length_buf[env_ids]
+        future_timesteps = torch.arange(0, 1+self.cfg.trajectory_horizon, device=self.device)
+        # future_timesteps = torch.arange(0, 1+self.cfg.trajectory_horizon, device=self.device)
+        time = (current_time + future_timesteps.unsqueeze(0)) * self.cfg.traj_update_dt
+
+        # env_ids =  # need to squeeze after getting current time
+
+        # Update the desired position and orientation based on the trajectory
+        # Traj Util functions return a position and a yaw trajectory as tensors of the following shape:
+        # pos: Tensor containing the evaluated curves and their derivatives.
+        #      Shape: (num_derivatives + 1, n_envs, 3, n_samples).
+        # yaw: Tensor containing the yaw angles of the curves.
+        #      Shape: (num_derivatives + 1, n_envs, n_samples).
+        if self.cfg.trajectory_type == "lissaajous":
+            # print("Time: ", time.shape)
+            # print("Amp: ", self.lissajous_amplitudes.shape)
+            # print("Freq: ", self.lissajous_frequencies.shape)
+            # print("Phase: ", self.lissajous_phases.shape)
+            # print("Offset: ", self.lissajous_offsets.shape)
+            pos_traj, yaw_traj = traj_utils.eval_lissajous_curve(time, self.lissajous_amplitudes, self.lissajous_frequencies, self.lissajous_phases, self.lissajous_offsets, derivatives=4)
+        elif self.cfg.trajectory_type == "polynomial":
+            pos_traj, yaw_traj = traj_utils.eval_polynomial_curve(time, self.polynomial_coefficients, derivatives=4)
+        elif self.cfg.trajectory_type == "combined":
+            pos_lissajous, yaw_lissajous = traj_utils.eval_lissajous_curve(time, self.lissajous_amplitudes, self.lissajous_frequencies, self.lissajous_phases, self.lissajous_offsets, derivatives=4)
+            pos_poly, yaw_poly = traj_utils.eval_polynomial_curve(time, self.polynomial_coefficients, derivatives=4)
+            pos_traj = pos_lissajous + pos_poly
+            yaw_traj = yaw_lissajous + yaw_poly
+
+            # print("Poly coefficients: ", self.polynomial_coefficients[0, :, :])
+            # print("Pos Poly: ", pos_poly[:2, 0, :, 0])
+            # print("Yaw poly: ", yaw_poly[:2, 0, 0])
+        elif self.cfg.trajectory_type == "random_walk":
+            pass
+        else:
+            raise NotImplementedError("Trajectory type not implemented")
+    
+        self._pos_traj = pos_traj
+        self._yaw_traj = yaw_traj
+        
+        if self.cfg.random_shift_trajectory:
+            # Ensure the shapes are compatible for broadcasting
+            pos_shift = self._pos_shift.unsqueeze(-1)
+            yaw_shift = self._yaw_shift
+
+            pos_traj[0, :, :, :] += pos_shift
+            yaw_traj[0, :, :] += yaw_shift
+
+        # we need to switch the last two dimensions of pos_traj since the _desired_pos_w is of shape (num_envs, horizon, 3) instead of (num_envs, 3, horizon)
+        # print(self._desired_pos_traj_w.shape, pos_traj[0,env_ids.squeeze(1)].shape)
+        self._desired_pos_traj_w[env_ids.squeeze(1)] = (pos_traj[0,env_ids.squeeze(1)]).transpose(1,2)
+        # self._desired_pos_traj_w[env_ids.squeeze(1),:, :2] += self._terrain.env_origins[env_ids, :2] # shift the trajectory to the correct position for each environment
+        # we need to convert from the yaw angle to a quaternion representation
+        # print("Yaw Traj: ", yaw_traj[0, 0, :2])
+        self._desired_ori_traj_w[env_ids.squeeze(1)] = quat_from_yaw(yaw_traj[0,env_ids.squeeze(1)])
+        # print("desired ori traj: ", self._desired_ori_traj_w[0,:2])
+
+        # print("pos traj: ", pos_traj[0, 0, :, :2])
+        # print("desired pos traj: ", self._desired_pos_traj_w[0,:2])
+
+        # print("Traj shape: ", self._pos_traj.shape)
+        # print("Traj velocity: ", self._pos_traj[1, 0, :, 0])
+        # print("Traj acceleration: ", self._pos_traj[2, 0, :, 0])
+        # print("Traj yaw: ", self._yaw_traj[0, 0, 0])
+        # print("Traj yaw velocity: ", self._yaw_traj[1, 0, 0])
+
+
+        self._desired_pos_w[env_ids] = self._desired_pos_traj_w[env_ids, 0]
+        self._desired_ori_w[env_ids] = self._desired_ori_traj_w[env_ids, 0]
+        # print("0th env: ", self._desired_pos_w[0], self._desired_ori_w[0])
+        # print("[Isaac Env: Update Goal State] Desired Pos: ", self._desired_pos_w[env_ids[:5,0]])
+
+    def _get_observations(self) -> torch.Dict[str, torch.Tensor | torch.Dict[str, torch.Tensor]]:
+        """
+        Returns the observation dictionary. Policy observations are in the key "policy".
+        """
+        self._apply_curriculum(self.common_step_counter * self.num_envs)
+        self.update_goal_state()
+        
+        
+        base_pos_w, base_ori_w, lin_vel_w, ang_vel_w = self.get_frame_state_from_task(self.cfg.task_body)
+        goal_pos_w, goal_ori_w = self.get_goal_state_from_task(self.cfg.goal_body)
+
+
+        # Find the error of the end-effector to the desired position and orientation
+        # The root state of the robot is the end-effector frame in this case
+        # Batched over number of environments, returns (num_envs, 3) and (num_envs, 4) tensors
+        # pos_error_b, ori_error_b = subtract_frame_transforms(self._desired_pos_w, self._desired_ori_w, 
+        #                                                      base_pos, base_ori)
         pos_error_b, ori_error_b = subtract_frame_transforms(
-            pos_w, ori_w, goal_pos_w, goal_ori_w
+            base_pos_w, base_ori_w, 
+            # self._desired_pos_w, self._desired_ori_w
+            goal_pos_w, goal_ori_w
         )
 
+        future_pos_error_b = []
+        future_ori_error_b = []
+        for i in range(self.cfg.trajectory_horizon):
+            goal_pos_traj_w, goal_ori_traj_w = self.convert_ee_goal_from_task(self._desired_pos_traj_w[:, i+1].squeeze(1), self._desired_ori_traj_w[:, i+1].squeeze(1), self.cfg.goal_body)
+
+            waypoint_pos_error_b, waypoint_ori_error_b = subtract_frame_transforms(base_pos_w, base_ori_w, goal_pos_traj_w, goal_ori_traj_w)
+            future_pos_error_b.append(waypoint_pos_error_b) # append (n, 3) tensor
+            future_ori_error_b.append(waypoint_ori_error_b) # append (n, 4) tensor
+        if len(future_pos_error_b) > 0:
+            future_pos_error_b = torch.stack(future_pos_error_b, dim=1) # stack to (n, horizon, 3) tensor
+            future_ori_error_b = torch.stack(future_ori_error_b, dim=1) # stack to (n, horizon, 4) tensor
+ 
+            if self.cfg.use_yaw_representation_for_trajectory:
+                future_ori_error_b = math_utils.yaw_from_quat(future_ori_error_b).reshape(self.num_envs, self.cfg.trajectory_horizon, 1)
+        else:
+            future_pos_error_b = torch.zeros(self.num_envs, self.cfg.trajectory_horizon, 3, device=self.device)
+            future_ori_error_b = torch.zeros(self.num_envs, self.cfg.trajectory_horizon, 4, device=self.device)
+
+        
+
+        # Compute the orientation error as a yaw error in the body frame
+        # goal_yaw_w = yaw_quat(self._desired_ori_w)
+        goal_yaw_w = isaac_math_utils.yaw_quat(goal_ori_w)
+        current_yaw_w = isaac_math_utils.yaw_quat(base_ori_w)
+        # yaw_error_w = quat_mul(quat_inv(current_yaw_w), goal_yaw_w)
+        yaw_error_w = yaw_error_from_quats(current_yaw_w, goal_yaw_w, dof=self.cfg.num_joints).view(self.num_envs, 1)
+        
+        if self.cfg.use_yaw_representation:
+            yaw_representation = yaw_error_w
+        else:
+            yaw_representation = torch.zeros(self.num_envs, 0, device=self.device)
+        
+
         if self.cfg.use_full_ori_matrix:
-            ori_error_b = matrix_from_quat(ori_error_b).view(-1, 9)
+            ori_representation_b = matrix_from_quat(ori_error_b).flatten(-2, -1)
+        else:
+            ori_representation_b = torch.zeros(self.num_envs, 0, device=self.device)
 
-        yaw_error = yaw_error_from_quats(self._robot.data.root_quat_w, goal_ori_w, 0)
+        if self.cfg.use_grav_vector:
+            grav_vector_b = quat_rotate_inverse(base_ori_w, self._grav_vector_unit) # projected gravity vector in the cfg frame
+        else:
+            grav_vector_b = torch.zeros(self.num_envs, 0, device=self.device)
+        
+        # Compute the linear and angular velocities of the end-effector in body frame
+        # if self.cfg.trajectory_horizon > 0:
+        #     lin_vel_error_w = self._pos_traj[1, :, :, 0] - lin_vel_w
+        # else:
+        #     lin_vel_error_w = torch.zeros_like(lin_vel_w, device=self.device) - lin_vel_w
+        # lin_vel_b = quat_rotate_inverse(base_ori_w, lin_vel_error_w)
+        # if self.cfg.use_ang_vel_from_trajectory and self.cfg.trajectory_horizon > 0:
+        #     ang_vel_des = torch.zeros_like(ang_vel_w)
+        #     ang_vel_des[:,2] = self._yaw_traj[1, :, 0]
+        #     ang_vel_error_w = ang_vel_des - ang_vel_w
+        # else:
+        #     ang_vel_error_w = torch.zeros_like(ang_vel_w) - ang_vel_w
+        # ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_error_w)
+        
+        
+        # Old computation for lin and ang vel:
+        lin_vel_error_w = self._pos_traj[1, :, :, 0] - lin_vel_w
+        lin_vel_b = quat_rotate_inverse(base_ori_w, lin_vel_error_w)
+        ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_w)
 
-        lin_vel_b = quat_rotate_inverse(ori_w, lin_vel_w)
-        ang_vel_b = quat_rotate_inverse(ori_w, ang_vel_w)
-        grav_vector_b = quat_rotate_inverse(ori_w, self._grav_vector_unit)
+
+        # Compute the joint states
+        shoulder_joint_pos = torch.zeros(self.num_envs, 0, device=self.device)
+        shoulder_joint_vel = torch.zeros(self.num_envs, 0, device=self.device)
+        wrist_joint_pos = torch.zeros(self.num_envs, 0, device=self.device)
+        wrist_joint_vel = torch.zeros(self.num_envs, 0, device=self.device)
+        if self.cfg.num_joints > 0:
+            shoulder_joint_pos = self._robot.data.joint_pos[:, self._shoulder_joint_idx].unsqueeze(1)
+            shoulder_joint_vel = self._robot.data.joint_vel[:, self._shoulder_joint_idx].unsqueeze(1)
+        if self.cfg.num_joints > 1:
+            wrist_joint_pos = self._robot.data.joint_pos[:, self._wrist_joint_idx].unsqueeze(1)
+            wrist_joint_vel = self._robot.data.joint_pos[:, self._wrist_joint_idx].unsqueeze(1)
+
+        # Previous Action
+        if self.cfg.use_previous_actions:
+            previous_actions = self._previous_actions
+        else:
+            previous_actions = torch.zeros(self.num_envs, 0, device=self.device)
 
         obs = torch.cat(
             [
-                lin_vel_b, # 3
-                ang_vel_b, # 3
-                grav_vector_b, # 3
-                pos_error_b, # 3
-                ori_error_b, # 4 or 9 if use_full_ori_matrix
-                yaw_error.unsqueeze(-1), # 1
-                self._previous_action, # 4
+                pos_error_b,                                # (num_envs, 3)
+                ori_representation_b,                       # (num_envs, 0) if not using full ori matrix, (num_envs, 9) if using full ori matrix
+                yaw_representation,                         # (num_envs, 4) if using yaw representation (quat), 0 otherwise
+                grav_vector_b,                              # (num_envs, 3) if using gravity vector, 0 otherwise
+                lin_vel_b,                                  # (num_envs, 3)
+                ang_vel_b,                                  # (num_envs, 3)
+                shoulder_joint_pos,                         # (num_envs, 1)
+                wrist_joint_pos,                            # (num_envs, 1)
+                shoulder_joint_vel,                         # (num_envs, 1)
+                wrist_joint_vel,                            # (num_envs, 1)
+                previous_actions,                     # (num_envs, 4)
+                future_pos_error_b.flatten(-2, -1),         # (num_envs, horizon * 3)
+                future_ori_error_b.flatten(-2, -1)          # (num_envs, horizon * 4) if use_yaw_representation_for_trajectory, else (num_envs, horizon, 1)
             ],
-            dim=-1,
+            dim=-1                                          # (num_envs, 22 + 7*horizon)
         )
 
+        
+        
+        # We also need the state information for other controllers like the decoupled controller.
+        # This is the full state of the robot
+        # print("[Isaac Env: Observations] \"Frame\" Pos: ", base_pos_w)
+        # quad_pos_w, quad_ori_w, quad_lin_vel_w, quad_ang_vel_w = self.get_frame_state_from_task("vehicle")
+        quad_pos_w, quad_ori_w, quad_lin_vel_w, quad_ang_vel_w = self.get_frame_state_from_task("COM")
+        ee_pos_w, ee_ori_w, ee_lin_vel_w, ee_ang_vel_w = self.get_frame_state_from_task("root")
+        # print("[Isaac Env: Observations] Quad pos: ", quad_pos_w)
+        # print("[Isaac Env: Observations] EE pos: ", ee_pos_w)
+
         if self.cfg.gc_mode:
-            pos_w, ori_w, lin_vel_w, ang_vel_w = self.get_body_state_by_name(self.cfg.task_body)
+            future_com_pos_w = []
+            future_com_ori_w = []
+            for i in range(self.cfg.trajectory_horizon):
+                des_com_pos_w, des_com_ori_w = self.convert_ee_goal_to_com_goal(self._desired_pos_traj_w[:, i].squeeze(1), self._desired_ori_traj_w[:, i].squeeze(1))
+                future_com_pos_w.append(des_com_pos_w)
+                future_com_ori_w.append(des_com_ori_w)
+
+            if len(future_com_pos_w) > 0:
+                future_com_pos_w = torch.stack(future_com_pos_w, dim=1)
+                future_com_ori_w = torch.stack(future_com_ori_w, dim=1)
+            else:
+                future_com_pos_w = torch.zeros(self.num_envs, self.cfg.trajectory_horizon, 3, device=self.device)
+                future_com_ori_w = torch.zeros(self.num_envs, self.cfg.trajectory_horizon, 4, device=self.device)
+
+            goal_pos_w, goal_ori_w = self.get_goal_state_from_task("COM")
+
             gc_obs = torch.cat(
                 [
-                    pos_w,
-                    ori_w,
-                    lin_vel_w,
-                    ang_vel_w,
-                    goal_pos_w,
-                    yaw_from_quat(goal_ori_w).unsqueeze(1),
+                    quad_pos_w,                                 # (num_envs, 3)
+                    quad_ori_w,                                 # (num_envs, 4)
+                    quad_lin_vel_w,                             # (num_envs, 3)
+                    quad_ang_vel_w,                             # (num_envs, 3)
+                    goal_pos_w,                                 # (num_envs, 3)
+                    yaw_from_quat(goal_ori_w).unsqueeze(1),     # (num_envs, 1)
+                    future_com_pos_w.flatten(-2, -1),            # (num_envs, horizon * 3)
+                    future_com_ori_w.flatten(-2, -1)            # (num_envs, horizon * 4)
                 ],
-                dim=-1
+                dim=-1                                          # (num_envs, 17 + 3*horizon)
             )
         else:
             gc_obs = None
 
         if self.cfg.eval_mode:
-            quad_pos_w, quad_ori_w, quad_lin_vel_w, quad_ang_vel_w = self.get_body_state_by_name("body")
-            ## added in to allow for SRT hover task
-            if self.cfg.has_end_effector:
-                ee_pos_w, ee_ori_w, ee_lin_vel_w, ee_ang_vel_w = self.get_body_state_by_name("endeffector")
-            else:
-                ee_pos_w, ee_ori_w, ee_lin_vel_w, ee_ang_vel_w = torch.tensor([], device=self.device), torch.tensor([], device=self.device), torch.tensor([], device=self.device), torch.tensor([], device=self.device)
+            pos_traj = self._pos_traj[:3,:,:,0].permute(1,0,2).reshape(self.num_envs, -1)
+            yaw_traj = self._yaw_traj[:2,:,0].permute(1,0).reshape(self.num_envs, -1)
             full_state = torch.cat(
                 [
                     quad_pos_w,                                 # (num_envs, 3) [0-3]
@@ -615,16 +874,22 @@ class QuadrotorEnv(DirectRLEnv):
                     ee_ori_w,                                   # (num_envs, 4) [16-20]
                     ee_lin_vel_w,                               # (num_envs, 3) [20-23]
                     ee_ang_vel_w,                               # (num_envs, 3) [23-26]
-                    self._desired_pos_w,                        # (num_envs, 3) [26-29]
-                    self._desired_ori_w,                        # (num_envs, 4) [29-33]
+                    shoulder_joint_pos,                         # (num_envs, 1) [26] 
+                    wrist_joint_pos,                            # (num_envs, 1) [27]
+                    shoulder_joint_vel,                         # (num_envs, 1) [28]
+                    wrist_joint_vel,                            # (num_envs, 1) [29]
+                    self._desired_pos_w,                        # (num_envs, 3) [30-33] [26-29]
+                    self._desired_ori_w,                        # (num_envs, 4) [33-37] [29-33]
+                    pos_traj,
+                    yaw_traj,
                 ],
-                dim=-1,
+                dim=-1                                          # (num_envs, 18)
             )
+            self._state = full_state
         else:
             full_state = None
 
-        observations = {"policy": obs, "gc": gc_obs, "full_state": full_state}
-        return observations
+        return {"policy": obs, "gc": gc_obs, "full_state": full_state}
 
     def _get_rewards(self) -> torch.Tensor:
         pos_w, ori_w, lin_vel_w, ang_vel_w = self.get_body_state_by_name(self.cfg.reward_task_body)
@@ -815,9 +1080,70 @@ class QuadrotorEnv(DirectRLEnv):
         if env_ids is None or env_ids.shape[0] == 0:
             return
         
-        # randomize thrust to weight ratio
+        reinit_motor_dynamics = False
+
         if self.cfg.dr_dict.get("thrust_to_weight", False):
             self._thrust_to_weight[env_ids] = torch.zeros_like(self._thrust_to_weight[env_ids]).normal_(mean=0.0, std=0.4) + self.cfg.thrust_to_weight
+
+        if self.cfg.dr_dict.get("mass", False):
+            self._robot_mass[env_ids] = torch.zeros_like(self._robot_mass[env_ids]).uniform_(0.9, 1.1) * self.cfg.mass
+            self._robot_weight[env_ids] = self._robot_mass[env_ids] * self._gravity_magnitude
+            new_masses = self._default_masses.clone().to(device=self.device)
+            new_masses[env_ids, self._body_id] = self._robot_mass[env_ids]
+            self._robot.root_physx_view.set_masses(new_masses.cpu(), env_ids.cpu())
+
+        if self.cfg.dr_dict.get("tau_m", False):
+            self._tau_m[env_ids] = torch.zeros_like(self._tau_m[env_ids], device=self.device).uniform_(-0.01, 0.01) + self.cfg.tau_m*torch.ones(self._tau_m[env_ids].shape, device=self.device)
+            reinit_motor_dynamics = True
+
+        if self.cfg.dr_dict.get("k_eta", False):
+            self._k_eta[env_ids] = torch.zeros_like(self._k_eta[env_ids], device=self.device).uniform_(-1e-8, 1e-8) + self.cfg.k_eta*torch.ones(self._k_eta[env_ids].shape, device=self.device)
+            reinit_motor_dynamics = True
+
+        if self.cfg.dr_dict.get("k_m", False):
+            self._k_m[env_ids] = torch.zeros_like(self._k_m[env_ids], device=self.device).uniform_(-1e-10, 1e-10) + self.cfg.k_m*torch.ones(self._k_m[env_ids].shape, device=self.device)
+            reinit_motor_dynamics = True
+        
+        if self.cfg.dr_dict.get("arm_length", False):
+            self._arm_length[env_ids] = torch.zeros_like(self._arm_length[env_ids], device=self.device).uniform_(-0.01, 0.01) + self.cfg.arm_length*torch.ones(self._arm_length[env_ids].shape, device=self.device)
+            reinit_motor_dynamics = True
+
+        if reinit_motor_dynamics:
+            self.reinitialize_motor_dynamics(env_ids)
+
+    
+    def reinitialize_motor_dynamics(self, env_ids: torch.Tensor | None = None):
+        if env_ids is None or env_ids.shape[0] == 0:
+            return
+        r2o2 = math.sqrt(2.0) / 2.0
+        num_envs = len(env_ids)
+        self._rotor_positions[env_ids] = torch.cat(
+            [
+                (self._arm_length[env_ids].unsqueeze(1) * torch.tensor([r2o2, r2o2, 0], device=self.device).unsqueeze(0)).unsqueeze(1),
+                (self._arm_length[env_ids].unsqueeze(1) * torch.tensor([r2o2, -r2o2, 0], device=self.device).unsqueeze(0)).unsqueeze(1),
+                (self._arm_length[env_ids].unsqueeze(1) * torch.tensor([-r2o2, -r2o2, 0], device=self.device).unsqueeze(0)).unsqueeze(1),
+                (self._arm_length[env_ids].unsqueeze(1) * torch.tensor([-r2o2, r2o2, 0], device=self.device).unsqueeze(0)).unsqueeze(1),
+            ],
+            dim=1, 
+        )
+        self.k[env_ids] = self._k_m[env_ids] / self._k_eta[env_ids]
+        
+        self.f_to_TM[env_ids] = torch.cat(
+            [
+                torch.ones(num_envs, 1, 4, device=self.device),
+                # torch.cat(
+                #     [
+                #         torch.linalg.cross(self._rotor_positions[i], torch.tensor([0.0, 0.0, 1.0], device=self.device)).view(-1, 1)[0:2] for i in range(4)
+                #     ], 
+                #     dim=1
+                # ).to(self.device),
+                torch.linalg.cross(self._rotor_positions[env_ids], torch.tensor([0.0, 0.0, 1.0], device=self.device).tile(num_envs, 1, 1))[:,:, 0:2].transpose(-2,-1),
+                self.k.view(num_envs, 1, 1) * self._rotor_directions.view(num_envs, 1, 4),
+            ],
+            dim=1
+        )
+
+        self.TM_to_f[env_ids] = torch.linalg.inv(self.f_to_TM[env_ids])
 
     def get_body_state_by_name(self, body_name: str) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         if body_name == "body":
