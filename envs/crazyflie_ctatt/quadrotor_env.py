@@ -123,10 +123,13 @@ class QuadrotorEnvCfg(DirectRLEnvCfg):
     lissajous_offsets = [0, 0, 3.0, 0]
     lissajous_offsets_rand_ranges = [0.0, 0.0, 0.0, 0.0]
 
-    init_pos_ranges=[2.0, 2.0, 0.0]
+    init_cfg = "default"
+    init_pos_ranges=[0.0, 0.0, 0.0]
     init_lin_vel_ranges=[0.0, 0.0, 0.0]
-    init_yaw_ranges=[3.14159]
+    init_yaw_ranges=[0.0]
     init_ang_vel_ranges=[0.0, 0.0, 0.0]
+    goal_pos_range = 2.0
+    goal_yaw_range = 3.14159
 
 
     # robot
@@ -141,6 +144,7 @@ class QuadrotorEnvCfg(DirectRLEnvCfg):
     attitude_scale_z = torch.pi - 1e-6
     attitude_scale_xy = 0.2
     has_end_effector = False
+    num_joints = 0
 
     control_mode = "CTATT" # "CTBM" or "CTATT" or "CTBR"
     pd_loop_decimation = sim_rate_hz // pd_loop_rate_hz # decimation from sim physics rate
@@ -160,9 +164,27 @@ class QuadrotorEnvCfg(DirectRLEnvCfg):
     crash_penalty = 0.0
     scale_reward_with_time = True
 
+    ori_error_reward_scale = 0.0 # -0.5
+    joint_vel_reward_scale = 0.0 # -0.01
+    previous_action_norm_reward_scale = 0.0 # -0.01
+    yaw_distance_reward_scale = 0.0 # -0.01
+    yaw_radius = 0.2 
+    yaw_smooth_transition_scale = 0.0
+    square_reward_errors = False
+    square_pos_error = True
+    penalize_action = False
+    penalize_previous_action = False
+    combined_alpha = 0.0
+    combined_tolerance = 0.0
+    combined_scale = 0.0
+
     # observation modifiers
     use_yaw_representation = False
     use_full_ori_matrix = True
+    use_grav_vector = True
+    use_previous_actions = False
+    use_yaw_representation_for_trajectory=True
+    use_ang_vel_from_trajectory=True
 
     eval_mode = False
     gc_mode = False
@@ -474,7 +496,7 @@ class QuadrotorEnv(DirectRLEnv):
         # print("Crazyflie inertia: ", self._robot.root_physx_view.get_inertias()[0, self._body_id, :].view(-1, 3, 3).squeeze())
         # print("TM_to_f: \n", self.TM_to_f)
         # print("f_to_TM: \n", self.f_to_TM)
-        import code; code.interact(local=locals())
+        # import code; code.interact(local=locals())
 
 
     def _setup_scene(self):
@@ -892,63 +914,59 @@ class QuadrotorEnv(DirectRLEnv):
         return {"policy": obs, "gc": gc_obs, "full_state": full_state}
 
     def _get_rewards(self) -> torch.Tensor:
-        pos_w, ori_w, lin_vel_w, ang_vel_w = self.get_body_state_by_name(self.cfg.reward_task_body)
-        lin_vel_b = quat_rotate_inverse(ori_w, lin_vel_w)
-        ang_vel_b = quat_rotate_inverse(ori_w, ang_vel_w)
-
-
-        ## implementing LQR style rewards
-        # pos_penalty = [-5000.] * 3
-        # ori_penalty = [-1.] * 4
-        # lin_vel_penalty = [-1.] * 3
-        # ang_vel_penalty = [-0.1] * 3
-        # # pen_array = pos_penalty + ori_penalty + lin_vel_penalty + ang_vel_penalty
-        # # Q = torch.diag(torch.tensor(pen_array))
-        # # Q = Q.to(device=self.device)
-
-        # pos_penalty = torch.diag(torch.tensor(pos_penalty)) / 1000.
-        # pos_penalty = pos_penalty.to(device=self.device)
-        # ori_penalty = torch.diag(torch.tensor(ori_penalty)) / 1000.
-        # ori_penalty = ori_penalty.to(device=self.device)
-        # lin_vel_penalty = torch.diag(torch.tensor(lin_vel_penalty)) / 1000.
-        # lin_vel_penalty = lin_vel_penalty.to(device=self.device)
-        # ang_vel_penalty = torch.diag(torch.tensor(ang_vel_penalty)) / 1000.
-        # ang_vel_penalty = ang_vel_penalty.to(device=self.device)
-
-        # # full_world_state = torch.hstack((pos_w, ori_w, lin_vel_w, ang_vel_w))
-        # goal_pos, goal_ori = self.get_goal_state_from_task("body")
-        # n = goal_pos.shape[0]
-        # pos_penalty = (goal_pos - pos_w) @ pos_penalty @ (goal_pos - pos_w).T
-        # pos_penalty = torch.diag(pos_penalty)
-        # ori_penalty = (goal_ori - ori_w) @ ori_penalty @ (goal_ori - ori_w).T
-        # ori_penalty = torch.diag(ori_penalty)
-        # lin_vel_penalty = lin_vel_w @ lin_vel_penalty @ lin_vel_w.T
-        # lin_vel_penalty = torch.diag(lin_vel_penalty)
-        # ang_vel_penalty = ang_vel_w @ ang_vel_penalty @ ang_vel_w.T
-        # ang_vel_penalty = torch.diag(ang_vel_penalty)
+        base_pos_w, base_ori_w, lin_vel_w, ang_vel_w = self.get_frame_state_from_task(self.cfg.reward_task_body)
+        goal_pos_w, goal_ori_w = self.get_goal_state_from_task(self.cfg.reward_goal_body)
         
-        # # goal_state = torch.hstack((goal_pos, goal_ori, torch.zeros((n, 3), device=self.device), torch.zeros((n, 3), device=self.device)))
-        # # state_penalty = (full_world_state - goal_state) @ Q @ (full_world_state - goal_state).T
-        # # state_penalty = torch.diag(state_penalty)
-        # # state_penalty = torch.sum(state_penalty)
+        # Computes the error from the desired position and orientation
+        pos_error = torch.linalg.norm(goal_pos_w - base_pos_w, dim=1)
+        # pos_distance = 1.0 - torch.tanh(pos_error / self.cfg.pos_radius)
+        if self.cfg.square_pos_error:
+            pos_distance = torch.exp(- (pos_error **2) / self.cfg.pos_radius)
+        else:
+            pos_distance = torch.exp(- (pos_error) / self.cfg.pos_radius)
 
-        # R = torch.diag(torch.tensor([-1, -0.1, -0.1, -0.1])) / 1000.
-        # R = R.to(device=self.device)
-        # action_penalty = (self._actions - self._nominal_action) @ R @ (self._actions - self._nominal_action).T
-        # action_penalty = torch.diag(action_penalty)
-        # action_penalty = torch.sum(action_penalty)
+        ori_error = isaac_math_utils.quat_error_magnitude(goal_ori_w, base_ori_w)
+        
+        goal_yaw_w = isaac_math_utils.yaw_quat(goal_ori_w)
+        current_yaw_w = isaac_math_utils.yaw_quat(base_ori_w)
+        # yaw_error_w = quat_mul(quat_inv(current_yaw_w), goal_yaw_w)
+        # yaw_error = quat_error_magnitude(yaw_error_w, torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device).tile((self.num_envs, 1)))
 
-                               
+        smooth_transition_func = 1.0 - torch.exp(-1.0 / torch.max(self.cfg.yaw_smooth_transition_scale*pos_error - 10.0, torch.zeros_like(pos_error)))
 
+        # other_yaw_error = yaw_error_from_quats(goal_yaw_w, current_yaw_w, self.cfg.num_joints).unsqueeze(1)
+        yaw_error = yaw_error_from_quats(goal_ori_w, base_ori_w, self.cfg.num_joints).unsqueeze(1)
+        # other_yaw_error = torch.sum(torch.square(other_yaw_error), dim=1)
+        yaw_error = torch.linalg.norm(yaw_error, dim=1)
 
-        lin_vel = torch.sum(torch.square(lin_vel_b), dim=1)
-        ang_vel = torch.sum(torch.square(ang_vel_b), dim=1)
-        distance_to_goal = torch.linalg.norm(self._desired_pos_w - pos_w, dim=1)
-        # distance_to_goal_mapped = 1 - torch.tanh(distance_to_goal / 0.8)
-        # distance_to_goal_mapped = torch.exp(- (distance_to_goal**2) / 0.8)
-        distance_to_goal_mapped = torch.exp(- (distance_to_goal) / self.cfg.pos_radius)
+        # yaw_distance = (1.0 - torch.tanh(yaw_error / self.cfg.yaw_radius)) * smooth_transition_func
+        yaw_distance = torch.exp(- (yaw_error **2) / self.cfg.yaw_radius)
+        yaw_error = yaw_error * smooth_transition_func
 
-        ori_error = yaw_error_from_quats(ori_w, self._desired_ori_w, 0) # Yaw error'
+        # combined_error = (pos_error)**2 + (yaw_error * self.arm_length)**2
+        # combined_error = pos_error/self.cfg.goal_pos_range + (yaw_error/self.cfg.goal_yaw_range)*self.arm_length
+        # combined_reward = (1 + torch.exp(self.cfg.combined_alpha * (combined_error - self.cfg.combined_tolerance)))**-1
+        # combined_distance = combined_reward
+
+        # Velocity error components, used for stabliization tuning
+        if self.cfg.trajectory_horizon > 0:
+            lin_vel_error_w = self._pos_traj[1, :, :, 0] - lin_vel_w
+        else:
+            lin_vel_error_w = torch.zeros_like(lin_vel_w, device=self.device) - lin_vel_w
+        lin_vel_b = quat_rotate_inverse(base_ori_w, lin_vel_error_w)
+        if self.cfg.use_ang_vel_from_trajectory and self.cfg.trajectory_horizon > 0:
+            ang_vel_des = torch.zeros_like(ang_vel_w)
+            ang_vel_des[:,2] = self._yaw_traj[1, :, 0]
+            ang_vel_error_w = ang_vel_des - ang_vel_w
+        else:
+            ang_vel_error_w = torch.zeros_like(ang_vel_w) - ang_vel_w
+        ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_error_w)
+        # lin_vel_error = torch.linalg.norm(lin_vel_b, dim=-1)
+        # ang_vel_error = torch.linalg.norm(ang_vel_b, dim=-1)
+        # lin_vel_error = torch.sum(torch.square(lin_vel_b), dim=1)
+        lin_vel_error = torch.norm(lin_vel_b, dim=1)
+        # ang_vel_error = torch.sum(torch.square(ang_vel_b), dim=1)
+        ang_vel_error = torch.norm(ang_vel_b, dim=1)
 
         # action_error = torch.sum(torch.square(self._actions - self._previous_action), dim=1)
         action_thrust_error = torch.square(self._actions[:, 0] - self._previous_action[:, 0])
@@ -964,40 +982,18 @@ class QuadrotorEnv(DirectRLEnv):
             time_scale = 1.0
 
         rewards = {
-            "lin_vel": lin_vel * self.cfg.lin_vel_reward_scale * time_scale,
-            "ang_vel": ang_vel * self.cfg.ang_vel_reward_scale * time_scale,
-            "pos_distance": distance_to_goal_mapped * self.cfg.pos_distance_reward_scale * time_scale,
-            "pos_error": distance_to_goal * self.cfg.pos_error_reward_scale * time_scale,
+            "lin_vel": lin_vel_error * self.cfg.lin_vel_reward_scale * time_scale,
+            "ang_vel": ang_vel_error * self.cfg.ang_vel_reward_scale * time_scale,
+            "pos_distance": pos_distance * self.cfg.pos_distance_reward_scale * time_scale,
+            "pos_error": pos_error * self.cfg.pos_error_reward_scale * time_scale,
             "yaw_error": ori_error * self.cfg.yaw_error_reward_scale * time_scale,
             "previous_thrust": action_thrust_error * self.cfg.previous_thrust_reward_scale * time_scale,
             "previous_attitude": action_att_error * self.cfg.previous_attitude_reward_scale * time_scale,
             "action_norm": action_norm_error * self.cfg.action_norm_reward_scale * time_scale,
             "crash_penalty": self.reset_terminated[:].float() * crash_penalty_time * time_scale,
-            "stay_alive": torch.ones_like(distance_to_goal) * self.cfg.stay_alive_reward * time_scale,
+            "stay_alive": torch.ones_like(pos_error) * self.cfg.stay_alive_reward * time_scale,
         }
-        # for key, value in rewards.items():
-        #     print(key, value.shape)
-
-        # rewards = {
-        #     "lin_vel": lin_vel_penalty,
-        #     "ang_vel": ang_vel_penalty,
-        #     "pos_distance": distance_to_goal_mapped * self.cfg.pos_distance_reward_scale * time_scale * 0,
-        #     "pos_error": pos_penalty,
-        #     "yaw_error": ori_penalty,
-        #     "previous_thrust": action_thrust_error * self.cfg.previous_thrust_reward_scale * time_scale * 0,
-        #     "previous_attitude": action_att_error * self.cfg.previous_attitude_reward_scale * time_scale * 0,
-        #     "action_norm": action_penalty,
-        #     "crash_penalty": self.reset_terminated[:].float() * crash_penalty_time * time_scale,
-        #     "stay_alive": torch.ones_like(distance_to_goal) * self.cfg.stay_alive_reward * time_scale,
-        # }
-        # for key, value in rewards.items():
-        #     print(key, value.shape)
-
-        ## names have to match above
-        # rewards = {
-        #     "lin_vel" : state_penalty,
-        #     "action_norm" : action_penalty
-        # }
+        
         reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
         # print("[Isaac] pos error: ", distance_to_goal)
         # print("[Isaac] pos error reward: ", rewards["pos_error"])
@@ -1050,31 +1046,93 @@ class QuadrotorEnv(DirectRLEnv):
         self._actions[env_ids] = 0.0
         self._previous_action[env_ids] = 0.0
         self._previous_omega_err[env_ids] = 0.0
+        # Update the trajectories for the reset environments
+        self.initialize_trajectories(env_ids)
+        self.update_goal_state()
+
+        # Reset Robot state
+        self._robot.reset()
         
         # Sample new commands
-        if self.cfg.goal_cfg == "rand":
-            self._desired_pos_w[env_ids, :2] = torch.zeros_like(self._desired_pos_w[env_ids, :2]).uniform_(-2.0, 2.0)
-            self._desired_pos_w[env_ids, :2] += self._terrain.env_origins[env_ids, :2]
-            self._desired_pos_w[env_ids, 2] = torch.zeros_like(self._desired_pos_w[env_ids, 2]).uniform_(2.0, 4.0)
-            self._desired_ori_w[env_ids] = random_yaw_orientation(len(env_ids), device=self.device) 
-        elif self.cfg.goal_cfg == "fixed":
-            self._desired_pos_w[env_ids] = torch.tensor(self.cfg.goal_pos, device=self.device).tile((env_ids.size(0), 1))
-            self._desired_pos_w[env_ids, :2] += self._terrain.env_origins[env_ids, :2]
-            self._desired_ori_w[env_ids] = torch.tensor(self.cfg.goal_ori, device=self.device).tile((env_ids.size(0), 1))
+        # if self.cfg.goal_cfg == "rand":
+        #     self._desired_pos_w[env_ids, :2] = torch.zeros_like(self._desired_pos_w[env_ids, :2]).uniform_(-2.0, 2.0)
+        #     self._desired_pos_w[env_ids, :2] += self._terrain.env_origins[env_ids, :2]
+        #     self._desired_pos_w[env_ids, 2] = torch.zeros_like(self._desired_pos_w[env_ids, 2]).uniform_(2.0, 4.0)
+        #     self._desired_ori_w[env_ids] = random_yaw_orientation(len(env_ids), device=self.device) 
+        # elif self.cfg.goal_cfg == "fixed":
+        #     self._desired_pos_w[env_ids] = torch.tensor(self.cfg.goal_pos, device=self.device).tile((env_ids.size(0), 1))
+        #     self._desired_pos_w[env_ids, :2] += self._terrain.env_origins[env_ids, :2]
+        #     self._desired_ori_w[env_ids] = torch.tensor(self.cfg.goal_ori, device=self.device).tile((env_ids.size(0), 1))
+        # # Reset robot state
+        # joint_pos = self._robot.data.default_joint_pos[env_ids]
+        # joint_vel = self._robot.data.default_joint_vel[env_ids]
+        # default_root_state = self._robot.data.default_root_state[env_ids]
+        # default_root_state[:, 2] = 3.0 # start at 3m height
+        # default_root_state[:, :3] += self._terrain.env_origins[env_ids]
+        # self._robot.write_root_pose_to_sim(default_root_state[:, :7], env_ids)
+        # self._robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids)
+        # self._robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
 
-        # Reset robot state
-        joint_pos = self._robot.data.default_joint_pos[env_ids]
-        joint_vel = self._robot.data.default_joint_vel[env_ids]
-        default_root_state = self._robot.data.default_root_state[env_ids]
-        default_root_state[:, 2] = 3.0 # start at 3m height
-        default_root_state[:, :3] += self._terrain.env_origins[env_ids]
-        self._robot.write_root_pose_to_sim(default_root_state[:, :7], env_ids)
-        self._robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids)
-        self._robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
-        self._motor_speeds[env_ids] = 1788.53 * torch.ones_like(self._motor_speeds[env_ids])
+        if self.cfg.init_cfg == "rand":
+            default_root_state = self._robot.data.default_root_state[env_ids]
+            # Initialize the robot on the trajectory with the correct velocity
+            traj_pos_start = self._pos_traj[0, env_ids, :, 0]
+            traj_vel_start = self._pos_traj[1, env_ids, :, 0]
+            traj_yaw_start = self._yaw_traj[0, env_ids, 0]
+            pos_rand = (torch.rand(len(env_ids), 3, device=self.device) * 2.0 - 1.0) * torch.tensor(self.cfg.init_pos_ranges, device=self.device).float()
+            vel_rand = (torch.rand(len(env_ids), 3, device=self.device) * 2.0 - 1.0) * torch.tensor(self.cfg.init_lin_vel_ranges, device=self.device).float()
+            yaw_rand = (torch.rand(len(env_ids), 1, device=self.device) * 2.0 - 1.0) * torch.tensor(self.cfg.init_yaw_ranges, device=self.device).float()
+            ang_vel_rand = (torch.rand(len(env_ids), 3, device=self.device) * 2.0 - 1.0) * torch.tensor(self.cfg.init_ang_vel_ranges, device=self.device).float()
+            init_yaw = math_utils.quat_from_yaw(traj_yaw_start + yaw_rand.squeeze(1))
+
+            default_root_state[:, :3] = traj_pos_start + pos_rand
+            default_root_state[:, 3:7] = init_yaw
+            default_root_state[:, 7:10] = traj_vel_start + vel_rand
+            default_root_state[:, 10:13] = ang_vel_rand
+            # default_root_state[:, :3] = traj_pos_start
+            # default_root_state[:, 3:7] = math_utils.quat_from_yaw(traj_yaw_start)
+            # default_root_state[:, 7:10] = traj_vel_start
+            # default_root_state[:, 10:13] = torch.zeros_like(traj_vel_start)
+        elif self.cfg.init_cfg == "fixed":
+            default_root_state = self._robot.data.default_root_state[env_ids]
+            default_root_state[:, :3] += self._terrain.env_origins[env_ids]
+            default_root_state[:, 2] = 3.0
+            # default_root_state[:, 3:7] = self._desired_ori_w[env_ids]
+        else:
+            default_root_state = self._robot.data.default_root_state[env_ids]
+            # Initialize the robot on the trajectory with the correct velocity
+            default_root_state[:, :3] = self._desired_pos_w[env_ids]
+            default_root_state[:, 3:7] = self._desired_ori_w[env_ids]
+            default_root_state[:, 7:10] = self._pos_traj[1, env_ids, :, 0]
+
+        self._robot.write_root_pose_to_sim(default_root_state[:, :7], env_ids=env_ids)
+        self._robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids=env_ids)
+
+        
+        self._motor_speeds[env_ids] = 1000. * torch.ones_like(self._motor_speeds[env_ids])
         
         # Domain Randomization
         self.domain_randomization(env_ids)
+
+    def initialize_trajectories(self, env_ids):
+        """
+        Initializes the trajectory for the environment ids.
+        """
+        num_envs = env_ids.size(0)
+
+        # Randomize Lissajous parameters
+        random_amplitudes = ((torch.rand(num_envs, 4, device=self.device)) * 2.0 - 1.0) * self.lissajous_amplitudes_rand_ranges
+        random_frequencies = ((torch.rand(num_envs, 4, device=self.device))) * self.lissajous_frequencies_rand_ranges
+        random_phases = ((torch.rand(num_envs, 4, device=self.device)) * 2.0 - 1.0) * self.lissajous_phases_rand_ranges
+        random_offsets = ((torch.rand(num_envs, 4, device=self.device)) * 2.0 - 1.0) * self.lissajous_offsets_rand_ranges
+
+        terrain_offsets = torch.zeros_like(random_offsets, device=self.device)
+        terrain_offsets[:, :2] = self._terrain.env_origins[env_ids, :2]
+        
+        self.lissajous_amplitudes[env_ids] = torch.tensor(self.cfg.lissajous_amplitudes, device=self.device).tile((num_envs, 1)).float() + random_amplitudes
+        self.lissajous_frequencies[env_ids] = torch.tensor(self.cfg.lissajous_frequencies, device=self.device).tile((num_envs, 1)).float() + random_frequencies
+        self.lissajous_phases[env_ids] = torch.tensor(self.cfg.lissajous_phases, device=self.device).tile((num_envs, 1)).float() + random_phases
+        self.lissajous_offsets[env_ids] = torch.tensor(self.cfg.lissajous_offsets, device=self.device).tile((num_envs, 1)).float() + random_offsets + terrain_offsets
 
     def domain_randomization(self, env_ids: torch.Tensor | None):
         if env_ids is None or env_ids.shape[0] == 0:
@@ -1164,6 +1222,33 @@ class QuadrotorEnv(DirectRLEnv):
         else:
             raise NotImplementedError(f"Body name {body_name} is not implemented.")
         return pos, ori, vel, ang_vel
+    
+    def get_frame_state_from_task(self, task_body:str) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        if task_body == "root":
+            base_pos_w = self._robot.data.root_pos_w
+            base_ori_w = self._robot.data.root_quat_w
+            lin_vel_w = self._robot.data.root_lin_vel_w
+            ang_vel_w = self._robot.data.root_ang_vel_w
+        elif task_body == "endeffector":
+            base_pos_w = self._robot.data.body_pos_w[:, self._ee_id].squeeze(1)
+            base_ori_w = self._robot.data.body_quat_w[:, self._ee_id].squeeze(1)
+            lin_vel_w = self._robot.data.root_lin_vel_w
+            ang_vel_w = self._robot.data.root_ang_vel_w
+        elif task_body == "vehicle" or task_body == "body":
+            base_pos_w = self._robot.data.body_pos_w[:, self._body_id].squeeze(1)
+            base_ori_w = self._robot.data.body_quat_w[:, self._body_id].squeeze(1)
+            lin_vel_w = self._robot.data.body_lin_vel_w[:, self._body_id].squeeze(1)
+            ang_vel_w = self._robot.data.body_ang_vel_w[:, self._body_id].squeeze(1)
+        elif task_body == "COM":
+            frame_id = self._robot.find_bodies("COM")[0]
+            base_pos_w = self._robot.data.body_pos_w[:, frame_id].squeeze(1)
+            base_ori_w = self._robot.data.body_quat_w[:, frame_id].squeeze(1)
+            lin_vel_w = self._robot.data.body_lin_vel_w[:, frame_id].squeeze(1)
+            ang_vel_w = self._robot.data.body_ang_vel_w[:, frame_id].squeeze(1)
+        else:
+            raise ValueError("Invalid task body: ", self.cfg.task_body)
+
+        return base_pos_w, base_ori_w, lin_vel_w, ang_vel_w
     
     def compute_desired_pose_from_transform(self, goal_pos_w, goal_ori_w, pos_transform):
         # Find b2 in the ori frame, set z component to 0 and the desired yaw is the atan2 of the x and y components
