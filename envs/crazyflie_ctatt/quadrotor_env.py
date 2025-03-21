@@ -221,7 +221,7 @@ class QuadrotorEnvCfg(DirectRLEnvCfg):
 
     # Domain Randomization
     dr_dict = {}
-    contol_latency_steps = 0 # number of timesteps for control latency
+    control_latency_steps = 0 # number of timesteps for control latency
 
     # Visualizations
     viz_mode = "triad" # or robot
@@ -1105,9 +1105,6 @@ class QuadrotorEnv(DirectRLEnv):
         # Update the trajectories for the reset environments
         self.initialize_trajectories(env_ids)
         self.update_goal_state()
-
-        # Reset Robot state
-        self._robot.reset()
         
         # Sample new commands
         # if self.cfg.goal_cfg == "rand":
@@ -1252,7 +1249,7 @@ class QuadrotorEnv(DirectRLEnv):
                 #     dim=1
                 # ).to(self.device),
                 torch.linalg.cross(self._rotor_positions[env_ids], torch.tensor([0.0, 0.0, 1.0], device=self.device).tile(num_envs, 1, 1))[:,:, 0:2].transpose(-2,-1),
-                self.k.view(num_envs, 1, 1) * self._rotor_directions.view(num_envs, 1, 4),
+                self.k[env_ids].view(num_envs, 1, 1) * self._rotor_directions[env_ids].view(num_envs, 1, 4),
             ],
             dim=1
         )
