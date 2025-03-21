@@ -221,6 +221,13 @@ class QuadrotorEnvCfg(DirectRLEnvCfg):
 
     # Domain Randomization
     dr_dict = {}
+    contol_latency_steps = 0 # number of timesteps for control latency
+
+    # Visualizations
+    viz_mode = "triad" # or robot
+    viz_history_length = 100
+    robot_color=[0.0, 0.0, 0.0]
+    viz_ref_offset=[0.0,0.0,0.0]
 
 @configclass
 class QuadrotorManipulatorEnvCfg(QuadrotorEnvCfg):
@@ -353,6 +360,7 @@ class QuadrotorEnv(DirectRLEnv):
         self._hover_thrust = 2.0 / self.cfg.thrust_to_weight - 1.0
         self._nominal_action = torch.tensor([self._hover_thrust, 0.0, 0.0, 0.0], device=self.device).tile((self.num_envs, 1))
         self._previous_omega_err = torch.zeros(self.num_envs, 3, device=self.device)
+        self._action_queue = torch.tensor([self._hover_thrust, 0.0, 0.0, 0.0], device=self.device).tile((self.cfg.control_latency_steps+1, self.num_envs, 1)) # for control latency
 
         # Parameters for potential Domain Randomization
         self._thrust_to_weight = self.cfg.thrust_to_weight * torch.ones(self.num_envs, device=self.device)
@@ -466,6 +474,7 @@ class QuadrotorEnv(DirectRLEnv):
             quad_ori = self._robot.data.body_quat_w[0, self._body_id]
             self.body_pos_ee_frame, self.body_ori_ee_frame = subtract_frame_transforms(quad_pos, quad_ori, quad_pos, quad_ori)
             self.body_pos_ee_frame = self.body_pos_ee_frame.tile((self.num_envs, 1))
+            self.com_pos_e = torch.zeros(3, device=self.device).tile((self.num_envs, 1))
 
         if "mass" in self.cfg.to_dict().keys():
             self._robot_mass = self.cfg.mass * torch.ones(self.num_envs, device=self.device)
@@ -481,7 +490,24 @@ class QuadrotorEnv(DirectRLEnv):
 
         self.inertia_tensor = self._robot.root_physx_view.get_inertias()[0, self._body_id, :].view(-1, 3, 3).tile(self.num_envs, 1, 1).to(self.device)
 
-        # add handle for debug visualization (this is set to a valid handle inside set_debug_vis)
+        # Visualization setup
+        if self.cfg.viz_mode == "triad" or self.cfg.viz_mode == "frame":
+            self._frame_positions = torch.zeros(self.num_envs, 2, 3, device=self.device)
+            self._frame_orientations = torch.zeros(self.num_envs, 2, 4, device=self.device)
+        elif self.cfg.viz_mode == "robot":
+            self._robot_positions = torch.zeros(self.num_envs, 3, device=self.device)
+            self._robot_orientations = torch.zeros(self.num_envs, 4, device=self.device)
+            self._robot_pos_history = torch.zeros(self.num_envs, self.cfg.viz_history_length, 3, device=self.device)
+            self._robot_ori_history = torch.zeros(self.num_envs, self.cfg.viz_history_length, 4, device=self.device)
+            self._goal_pos_history = torch.zeros(self.num_envs, self.cfg.viz_history_length, 3, device=self.device)
+            self._goal_ori_history = torch.zeros(self.num_envs, self.cfg.viz_history_length, 4, device=self.device)
+        elif self.cfg.viz_mode == "viz":
+            self._robot_positions = torch.zeros(self.num_envs, 3, device=self.device)
+            self._robot_orientations = torch.zeros(self.num_envs, 4, device=self.device)
+        else:
+            raise ValueError("Visualization mode not recognized: ", self.cfg.viz_mode)
+
+        self.local_num_envs = self.num_envs
         self.set_debug_vis(self.cfg.debug_vis)
 
 
@@ -567,7 +593,11 @@ class QuadrotorEnv(DirectRLEnv):
         return cmd_moment
 
     def _pre_physics_step(self, actions: torch.Tensor):
-        self._actions = actions.clone().clamp(-1.0, 1.0)
+        # self._actions = actions.clone().clamp(-1.0, 1.0)
+        self._action_queue.roll(-1, dims=0) # roll the action queue to make room for the new action
+        self._action_queue[-1] = actions.clone().clamp(-1.0, 1.0) # add the new action to the end of the queue
+        self._actions = self._action_queue[0]
+
 
         # 0th action is collective thrust
         self._wrench_des[:, 0] = ((self._actions[:, 0] + 1.0) / 2.0) * (self._robot_weight * self._thrust_to_weight)
@@ -1336,40 +1366,111 @@ class QuadrotorEnv(DirectRLEnv):
             raise ValueError("Invalid task body: ", task_body)
 
         return desired_pos, desired_ori
+    
+    def convert_ee_goal_to_com_goal(self, ee_pos_w: torch.Tensor, ee_ori_w: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        desired_pos, desired_yaw = math_utils.compute_desired_pose_from_transform(ee_pos_w, ee_ori_w, self.com_pos_e, 0)
+        return desired_pos, quat_from_yaw(desired_yaw)
 
     def _set_debug_vis_impl(self, debug_vis: bool):
         # create markers if necessary for the first tome
         if debug_vis:
-            if not hasattr(self, "goal_pos_visualizer"):
-                marker_cfg = VisualizationMarkersCfg(prim_path="/Visuals/Markers",
-                                        markers={
-                                        "frame": sim_utils.UsdFileCfg(
-                                            usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/UIElements/frame_prim.usd",
-                                            scale=(0.03, 0.03, 0.03),
-                                        ),})
-                self.frame_visualizer = VisualizationMarkers(marker_cfg)
-            # set their visibility to true
-            self.frame_visualizer.set_visibility(True)
+            if not hasattr(self, "frame_visualizer"):
+                if self.cfg.viz_mode == "triad" or self.cfg.viz_mode == "frame": 
+                    frame_marker_cfg = VisualizationMarkersCfg(prim_path="/Visuals/Markers",
+                                            markers={
+                                            "frame": sim_utils.UsdFileCfg(
+                                                usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/UIElements/frame_prim.usd",
+                                                scale=(0.03, 0.03, 0.03),
+                                            ),})
+                elif self.cfg.viz_mode == "robot":
+                    history_color = tuple(self.cfg.robot_color) if sum(self.cfg.robot_color) > 0 else (0.05, 0.05, 0.05)
+                    frame_marker_cfg = VisualizationMarkersCfg(prim_path="/Visuals/Markers",
+                                            markers={
+                                            "robot_mesh": sim_utils.UsdFileCfg(
+                                                usd_path=self.cfg.robot.spawn.usd_path,
+                                                scale=(1.0, 1.0, 1.0),
+                                                visual_material=sim_utils.GlassMdlCfg(glass_color=(0.0, 0.1, 0.0)),
+                                            ),
+                                            "robot_history": sim_utils.SphereCfg(
+                                                radius=0.005,
+                                                visual_material=sim_utils.GlassMdlCfg(glass_color=history_color),
+                                            ),
+                                            "goal_history": sim_utils.SphereCfg(
+                                                radius=0.005,
+                                                visual_material=sim_utils.GlassMdlCfg(glass_color=(0.0, 0.1, 0.0)),
+                                            ),})
+                elif self.cfg.viz_mode == "viz":
+                    robot_color = tuple(self.cfg.robot_color) if sum(self.cfg.robot_color) > 0 else (0.05, 0.05, 0.05)
+                    frame_marker_cfg = VisualizationMarkersCfg(prim_path="/Visuals/Markers",
+                                            markers={
+                                            "goal_mesh": sim_utils.UsdFileCfg(
+                                                usd_path=self.cfg.robot.spawn.usd_path,
+                                                scale=(1.0, 1.0, 1.0),
+                                                visual_material=sim_utils.GlassMdlCfg(glass_color=(0.0, 0.1, 0.0)),
+                                            ),
+                                            "robot_mesh": sim_utils.UsdFileCfg(
+                                                usd_path=self.cfg.robot.spawn.usd_path,
+                                                scale=(1.0, 1.0, 1.0),
+                                                visual_material=sim_utils.GlassMdlCfg(glass_color=robot_color),
+                                            ),
+                                            })
+                else:
+                    raise ValueError("Visualization mode not recognized: ", self.cfg.viz_mode)
+    
+                self.frame_visualizer = VisualizationMarkers(frame_marker_cfg)
+                # set their visibility to true
+                self.frame_visualizer.set_visibility(True)
         else:
-            if hasattr(self, "goal_pos_visualizer"):
-                self.goal_pos_visualizer.set_visibility(False)
+            if hasattr(self, "frame_visualizer"):
+                self.frame_visualizer.set_visibility(False)
+
 
     def _debug_vis_callback(self, event):
-        pos, ori, _, _ = self.get_body_state_by_name(self.cfg.visualization_body)
-        # body_pos, body_ori, _, _ = self.get_body_state_by_name("body")
-        # ee_pos, ee_ori, _, _ = self.get_body_state_by_name("endeffector")
-
+        # update the markers
         # Update frame positions for debug visualization
-        self._frame_positions[:, 0] = pos
-        # self._frame_positions[:, 0] = body_pos
-        self._frame_positions[:, 1] = self._desired_pos_w
-        # self._frame_positions[:, 2] = ee_pos
-        # self._frame_positions[:, 2] = self._robot.data.body_pos_w[:, self._body_id].squeeze(1)
-        # self._frame_positions[:, 2] = com_pos_w
-        self._frame_orientations[:, 0] = ori
-        # self._frame_orientations[:, 0] = body_ori
-        self._frame_orientations[:, 1] = self._desired_ori_w
-        # self._frame_orientations[:, 2] = ee_ori
-        # self._frame_orientations[:, 2] = self._robot.data.body_quat_w[:, self._body_id].squeeze(1)
-        # self._frame_orientations[:, 2] = com_ori_w
-        self.frame_visualizer.visualize(self._frame_positions.flatten(0, 1), self._frame_orientations.flatten(0,1))
+        if self.cfg.viz_mode == "triad" or self.cfg.viz_mode == "frame":
+            self._frame_positions[:, 0] = self._robot.data.root_pos_w
+            self._frame_positions[:, 1] = self._desired_pos_w
+            # self._frame_positions[:, 2] = self._robot.data.body_pos_w[:, self._body_id].squeeze(1)
+            # self._frame_positions[:, 2] = com_pos_w
+            self._frame_orientations[:, 0] = self._robot.data.root_quat_w
+            self._frame_orientations[:, 1] = self._desired_ori_w
+            # self._frame_orientations[:, 2] = self._robot.data.body_quat_w[:, self._body_id].squeeze(1)
+            # self._frame_orientations[:, 2] = com_ori_w
+            self.frame_visualizer.visualize(self._frame_positions.flatten(0, 1), self._frame_orientations.flatten(0,1))
+        elif self.cfg.viz_mode == "robot":
+            self._robot_positions = self._desired_pos_w + torch.tensor(self.cfg.viz_ref_offset, device=self.device).unsqueeze(0).tile((self.num_envs, 1))
+            self._robot_orientations = self._desired_ori_w
+            # self.frame_visualizer.visualize(self._robot_positions, self._robot_orientations, marker_indices=[0]*self.num_envs)
+
+            self._goal_pos_history = self._goal_pos_history.roll(1, dims=1)
+            self._goal_pos_history[:, 0] = self._desired_pos_w
+            self._goal_ori_history = self._goal_ori_history.roll(1, dims=1)
+            self._goal_ori_history[:, 0] = self._desired_ori_w
+            # self.frame_visualizer.visualize(self._goal_pos_history.flatten(0, 1), self._goal_ori_history.flatten(0, 1),  marker_indices=[2]*self.num_envs*10)
+
+            self._robot_pos_history = self._robot_pos_history.roll(1, dims=1)
+            self._robot_pos_history[:, 0] = self._robot.data.root_pos_w
+            self._robot_ori_history = self._robot_ori_history.roll(1, dims=1)
+            self._robot_ori_history[:, 0] = self._robot.data.root_quat_w
+            # self.frame_visualizer.visualize(self._robot_pos_history.flatten(0, 1), self._robot_ori_history.flatten(0, 1),  marker_indices=[1]*self.num_envs*10)
+
+            translation_pos = torch.cat([self._robot_positions, self._robot_pos_history.flatten(0, 1), self._goal_pos_history.flatten(0, 1)], dim=0)
+            translation_ori = torch.cat([self._robot_orientations, self._robot_ori_history.flatten(0, 1), self._goal_ori_history.flatten(0, 1)], dim=0)
+            marker_indices = [0]*self.num_envs + [1]*self.num_envs*self.cfg.viz_history_length + [2]*self.num_envs*self.cfg.viz_history_length
+            self.frame_visualizer.visualize(translation_pos, translation_ori, marker_indices=marker_indices)
+        elif self.cfg.viz_mode == "viz":
+            self._robot_positions = self._desired_pos_w
+            self._robot_orientations = self._desired_ori_w
+
+            goal_pos = self._desired_pos_w.clone()
+            goal_ori = self._desired_ori_w.clone()
+
+            robot_pos = self._robot.data.root_pos_w.clone()
+            robot_ori = self._robot.data.root_quat_w.clone()
+
+            translation_pos = torch.cat([goal_pos, robot_pos], dim=0)
+            translation_ori = torch.cat([goal_ori, robot_ori], dim=0)
+            marker_indices = [0]*self.num_envs + [1]*self.num_envs
+            self.frame_visualizer.visualize(translation_pos, translation_ori, marker_indices=marker_indices)
+

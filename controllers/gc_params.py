@@ -323,5 +323,23 @@ gc_params_dict = {
             "kd_att_gain_xy": 47.821,
             "kd_att_gain_z": 8.818,
         },
+    },
+
+
+    ################################################################################
+    "Isaac-Crazyflie-CTBR-Hover-v0": {
+        "log_dir": "./baseline_cf_ctbm/",
+        "controller_params": {
+            "feed_forward": True,
+            "control_mode": "CTBM",
+            "kp_pos_gain_xy": 14.078,
+            "kp_pos_gain_z": 10.447,
+            "kd_pos_gain_xy": 3.478,
+            "kd_pos_gain_z": 3.509,
+            "kp_att_gain_xy": 955.643,
+            "kp_att_gain_z": 18.182,
+            "kd_att_gain_xy": 61.529,
+            "kd_att_gain_z": 5.044,
+        }
     }
 }

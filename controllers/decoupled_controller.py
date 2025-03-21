@@ -95,7 +95,8 @@ class DecoupledController():
 
         self.control_mode = control_mode
 
-        print("\n\n[Debug] Total Mass: ", self.mass, "\n\n")
+        # print("\n\n[Debug] Total Mass: ", self.mass, "\n\n")
+        # self.mass = self.mass.unsqueeze(1)
 
         self.inertia_tensor = inertia_tensor
         self.position_offset = pos_offset
@@ -108,7 +109,8 @@ class DecoupledController():
             self.thrust_to_weight = 3.0
         else:
             #Crazyflie
-            self.thrust_to_weight = 1.8
+            # self.thrust_to_weight = 1.8
+            self.thrust_to_weight = 3.5
             self.moment_scale_xy = 0.01
             self.moment_scale_z = 0.01
             # self.attitude_scale = torch.pi/6.0
@@ -327,7 +329,7 @@ class DecoupledController():
             s_actual = flat_utils.getShapeFromRotationAndYaw(R_actual, yaw_actual) #(N, 3)
             self.s_buffer.append(s_actual)
 
-            collective_thrust = self.mass * (s_actual.unsqueeze(-1).transpose(-2, -1) @ (x_ddot_des.unsqueeze(-1) + gravity_vec.unsqueeze(-1))).squeeze(-1)
+            collective_thrust = self.mass.unsqueeze(1) * (s_actual.unsqueeze(-1).transpose(-2, -1) @ (x_ddot_des.unsqueeze(-1) + gravity_vec.unsqueeze(-1))).squeeze(-1)
 
             # if self.print_debug:
             #     print("Gravity vec (ge3): ", gravity_vec)
@@ -424,7 +426,9 @@ class DecoupledController():
             else:
                 pos_error_integral = torch.zeros_like(self.pos_error_integral)
 
-            F_des = self.mass * (-self.kp_pos * pos_error + \
+            # import code; code.interact(local=locals())
+
+            F_des = self.mass.unsqueeze(1) * (-self.kp_pos * pos_error + \
                              -self.kd_pos * vel_error + \
                                 -self.ki_pos * pos_error_integral + \
                              ff_acc + \
@@ -664,7 +668,8 @@ class DecoupledController():
         # print(M_des.shape)
 
         if self.control_mode == "CTBM":
-            u1 = self.rescale_command(collective_thrust, 0.0, self.thrust_to_weight * 9.81*self.mass).view(batch_size, 1)
+            ct_shape = collective_thrust.shape
+            u1 = self.rescale_command(collective_thrust, 0.0, self.thrust_to_weight * 9.81*self.mass.reshape(ct_shape)).view(batch_size, 1)
             u2 = self.rescale_command(M_des[:, 0], -self.moment_scale_xy, self.moment_scale_xy).view(batch_size, 1)
             u3 = self.rescale_command(M_des[:, 1], -self.moment_scale_xy, self.moment_scale_xy).view(batch_size, 1)
             u4 = self.rescale_command(M_des[:, 2], -self.moment_scale_z, self.moment_scale_z).view(batch_size, 1)
