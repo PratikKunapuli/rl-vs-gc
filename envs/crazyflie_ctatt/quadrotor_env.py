@@ -289,7 +289,7 @@ class BrushlessQuadrotorEnvCfg(QuadrotorEnvCfg):
     arm_length = 0.05
     k_eta = 4.81e-8 # Measured from thrust stand data
     k_m = 7.8e-10 #unchanged
-    tau_m = 0.03 # slower motor dynamics
+    tau_m = 0.01 # slower motor dynamics
     motor_speed_min = 0.0
     motor_speed_max = 2500.0
 
@@ -594,7 +594,7 @@ class QuadrotorEnv(DirectRLEnv):
 
     def _pre_physics_step(self, actions: torch.Tensor):
         # self._actions = actions.clone().clamp(-1.0, 1.0)
-        self._action_queue.roll(-1, dims=0) # roll the action queue to make room for the new action
+        self._action_queue = torch.roll(self._action_queue, shifts=-1, dims=0) # roll the action queue to make room for the new action
         self._action_queue[-1] = actions.clone().clamp(-1.0, 1.0) # add the new action to the end of the queue
         self._actions = self._action_queue[0]
 
@@ -623,16 +623,40 @@ class QuadrotorEnv(DirectRLEnv):
         # print("Desired Motor Speeds: ", self._motor_speeds_des[0])
         # print("Current Motor Speeds: ", self._motor_speeds[0])
 
+        # import code; code.interact(local=locals())
+
+        # print("\n--- CONTROL LATENCY DEBUG Pre Physics Step ---")
+        # print(f"Policy action (new):      {self._action_queue[-1, 0]}")
+        # print(f"Delayed action (applied): {self._actions[0]}")
+        # print(f"Queue state:\n{self._action_queue[:, 0]}")
+        # print(f"Wrench desired:           {self._wrench_des[0]}")
+        # print(f"Motor speeds desired:     {self._motor_speeds_des[0]}")
+        # print(f"Actual motor speeds:      {self._motor_speeds[0]}")
+        # print("--------------------------\n")
+
     def _apply_action(self):
-        # Update PD loop at a lower rate
+        # Update PD loop at the appropriate rate (100Hz or whatever pd_loop_rate_hz is)
         if self.pd_loop_counter % self.cfg.pd_loop_decimation == 0:
+            # Recompute wrench using CURRENT state but DELAYED actions
             if self.cfg.control_mode == "CTATT":
                 self._wrench_des[:,1:] = self._get_moment_from_ctatt(self._actions)
             elif self.cfg.control_mode == "CTBR":
                 self._wrench_des[:,1:] = self._get_moment_from_ctbr(self._actions)
-
+                
+            # Recompute motor speeds based on fresh wrench calculation
             self._motor_speeds_des = self._compute_motor_speeds(self._wrench_des)
+
+        # print("\n--- CONTROL LATENCY DEBUG Apply Action ---")
+        # print(f"Policy action (new):      {self._action_queue[-1, 0]}")
+        # print(f"Delayed action (applied): {self._actions[0]}")
+        # print(f"Queue state:\n{self._action_queue[:, 0]}")
+        # print(f"Wrench desired:           {self._wrench_des[0]}")
+        # print(f"Motor speeds desired:     {self._motor_speeds_des[0]}")
+        # print(f"Actual motor speeds:      {self._motor_speeds[0]}")
+        # print("--------------------------\n")
+
         self.pd_loop_counter += 1
+
         # print("--------------------")
         # print("Input wrench: ", self._wrench_des[0])
         # print("Motor speed des: ", self._motor_speeds_des.shape)
@@ -1221,7 +1245,7 @@ class QuadrotorEnv(DirectRLEnv):
             self._robot.root_physx_view.set_masses(new_masses.cpu(), env_ids.cpu())
 
         if self.cfg.dr_dict.get("tau_m", False):
-            self._tau_m[env_ids] = torch.zeros_like(self._tau_m[env_ids], device=self.device).uniform_(-0.01, 0.01) + self.cfg.tau_m*torch.ones(self._tau_m[env_ids].shape, device=self.device)
+            self._tau_m[env_ids] = torch.zeros_like(self._tau_m[env_ids], device=self.device).uniform_(-0.005, 0.005) + self.cfg.tau_m*torch.ones(self._tau_m[env_ids].shape, device=self.device)
             reinit_motor_dynamics = True
 
         if self.cfg.dr_dict.get("k_eta", False):
