@@ -925,7 +925,7 @@ class QuadrotorEnv(DirectRLEnv):
 
             gc_obs = torch.cat(
                 [
-                    quad_pos_w,                                 # (num_envs, 3)
+                    quad_pos_w,                                 # (num_envs, 3) 
                     quad_ori_w,                                 # (num_envs, 4)
                     quad_lin_vel_w,                             # (num_envs, 3)
                     quad_ang_vel_w,                             # (num_envs, 3)
@@ -1060,8 +1060,20 @@ class QuadrotorEnv(DirectRLEnv):
         return reward
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Returns the tensors corresponding to termination and truncation. 
+        """
+
+        # Check if end effector or body has collided with the ground
+        if self.cfg.has_end_effector:
+            died = torch.logical_or(self._robot.data.root_pos_w[:, 2] < 0.0, self._robot.data.body_state_w[:, self._body_id, 2].squeeze() < 0.0)
+        else:
+            died = torch.logical_or(self._robot.data.root_pos_w[:, 2] < 0.1, self._robot.data.body_state_w[:, self._body_id, 2].squeeze() < 0.0)
+
+        # Check if the robot is too high
+        # died = torch.logical_or(died, self._robot.data.root_pos_w[:, 2] > 10.0)
+
         time_out = self.episode_length_buf >= self.max_episode_length - 1
-        died = torch.logical_or(self._robot.data.root_pos_w[:, 2] < 0.1, self._robot.data.root_pos_w[:, 2] > 5.0)
         return died, time_out
 
     def _reset_idx(self, env_ids: torch.Tensor | None):
@@ -1167,6 +1179,11 @@ class QuadrotorEnv(DirectRLEnv):
         # Domain Randomization
         self.domain_randomization(env_ids)
 
+        # Reset action queue
+        hover_thrust = 2.0 / self._thrust_to_weight[env_ids] - 1.0
+        hover_actions = torch.zeros(len(env_ids), 4, device=self.device)
+        hover_actions[:, 0] = hover_thrust
+        self._action_queue[:,env_ids,:] = hover_actions.unsqueeze(0).repeat(self._action_queue.shape[0], 1, 1)
     def initialize_trajectories(self, env_ids):
         """
         Initializes the trajectory for the environment ids.
