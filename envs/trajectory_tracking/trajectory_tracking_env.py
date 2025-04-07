@@ -26,6 +26,7 @@ import numpy as np
 from configs.aerial_manip_asset import AERIAL_MANIPULATOR_0DOF_CFG, AERIAL_MANIPULATOR_0DOF_DEBUG_CFG, AERIAL_MANIPULATOR_QUAD_ONLY_CFG
 from configs.aerial_manip_asset import AERIAL_MANIPULATOR_0DOF_LONG_ARM_COM_MIDDLE_CFG
 from configs.aerial_manip_asset import AERIAL_MANIPULATOR_0DOF_SMALL_ARM_COM_V_CFG, AERIAL_MANIPULATOR_0DOF_SMALL_ARM_COM_MIDDLE_CFG, AERIAL_MANIPULATOR_0DOF_SMALL_ARM_COM_EE_CFG
+from configs.aerial_manip_asset import CRAZYFLIE_BRUSHLESS_CFG
 
 from utils.math_utilities import yaw_from_quat, yaw_error_from_quats, quat_from_yaw
 from utils.trajectory_utilities import eval_sinusoid
@@ -206,6 +207,29 @@ class AerialManipulator0DOFTrajectoryTrackingEnvCfg(AerialManipulatorTrajectoryT
     
     # robot
     robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+
+@configclass
+class BrushlessCrazyflieTrajectoryTrackingEnvCfg(AerialManipulatorTrajectoryTrackingEnvBaseCfg):
+    # env
+    num_actions = 4
+    num_joints = 0
+    num_observations = 91 # TODO: Need to update this..
+    # 3(vel) + 3(ang vel) + 3(pos) + 9(ori) = 18
+    # 3(vel) + 3(ang vel) + 3(pos) + 3(grav vector body frame) = 12
+
+    # action_space= gym.spaces.Box(low=-1.0, high=1.0, shape=(4,))
+    # observation_space= gym.spaces.Box(low=-np.inf, high=np.inf, shape=(91,))
+    # state_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(33,))
+    task_body = "body" # "root" or "endeffector" or "vehicle" or "COM"
+    goal_body = "body" # "root" or "endeffector" or "vehicle" or "COM"
+    reward_task_body = "body"
+    reward_goal_body = "body"    
+    body_name = "body"
+    has_end_effector = False
+
+    
+    # robot
+    robot: ArticulationCfg = CRAZYFLIE_BRUSHLESS_CFG.replace(prim_path="/World/envs/env_.*/Robot")
 
 @configclass
 class AerialManipulator0DOFLongArmTrajectoryTrackingEnvCfg(AerialManipulatorTrajectoryTrackingEnvBaseCfg):
@@ -411,8 +435,12 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         self._total_mass = self._robot.root_physx_view.get_masses()[0].sum()
         self.total_mass = self._total_mass
         self.quad_inertia = self._robot.root_physx_view.get_inertias()[0, self._body_id, :].view(-1, 3, 3).squeeze()
-        self.arm_offset = self._robot.root_physx_view.get_link_transforms()[0, self._body_id,:3].squeeze() - \
-                            self._robot.root_physx_view.get_link_transforms()[0, self._ee_id,:3].squeeze() 
+
+        if self.cfg.has_end_effector:
+            self.arm_offset = self._robot.root_physx_view.get_link_transforms()[0, self._body_id,:3].squeeze() - \
+                                self._robot.root_physx_view.get_link_transforms()[0, self._ee_id,:3].squeeze() 
+        else:
+            self.arm_offset = torch.zeros(3, device=self.device)
         
         # Compute position and orientation offset between the end effector and the vehicle
         quad_pos = self._robot.data.body_pos_w[0, self._body_id]
@@ -421,15 +449,17 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         com_pos = self._robot.data.body_pos_w[0, self._com_id]
         com_ori = self._robot.data.body_quat_w[0, self._com_id]
 
-        ee_pos = self._robot.data.body_pos_w[0, self._ee_id]
-        ee_ori = self._robot.data.body_quat_w[0, self._ee_id]
+        if self.cfg.has_end_effector:
+            ee_pos = self._robot.data.body_pos_w[0, self._ee_id]
+            ee_ori = self._robot.data.body_quat_w[0, self._ee_id]
+            print("EE Pos: ", ee_pos)
+            print("EE Ori: ", ee_ori)
+
 
         print("Quad Pos: ", quad_pos)
         print("Quad Ori: ", quad_ori)
         print("COM Pos: ", com_pos)
         print("COM Ori: ", com_ori)
-        print("EE Pos: ", ee_pos)
-        print("EE Ori: ", ee_ori)
 
 
         # get center of mass of whole system (vehicle + end effector)
@@ -441,15 +471,17 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
             self.com_pos_w += self._robot.root_physx_view.get_masses()[0, i] * self._robot.root_physx_view.get_link_transforms()[0, i, :3].squeeze()
         self.com_pos_w /= self._robot.root_physx_view.get_masses()[0].sum()
 
-        self.com_pos_e, self.com_ori_e = subtract_frame_transforms(ee_pos, ee_ori, com_pos, com_ori)
+        if self.cfg.has_end_effector:
+            self.com_pos_e, self.com_ori_e = subtract_frame_transforms(ee_pos, ee_ori, com_pos, com_ori)
+            print("COM_pos_e: ", self.com_pos_e)
 
-        self.arm_offset = self._robot.root_physx_view.get_link_transforms()[0, self._body_id,:3].squeeze() - \
-                            self._robot.root_physx_view.get_link_transforms()[0, self._ee_id,:3].squeeze() 
+
+        # self.arm_offset = self._robot.root_physx_view.get_link_transforms()[0, self._body_id,:3].squeeze() - \
+        #                     self._robot.root_physx_view.get_link_transforms()[0, self._ee_id,:3].squeeze() 
         
         self.arm_length = torch.linalg.norm(self.arm_offset, dim=-1)
 
         print("Arm Length: ", self.arm_length)
-        print("COM_pos_e: ", self.com_pos_e)
         print("Inertia: ", self.quad_inertia)
 
         # import code; code.interact(local=locals())
@@ -514,6 +546,8 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         if self.cfg.num_joints > 1:
             self._joint_torques[:, self._wrist_joint_idx] = self._actions[:, 5] * self.cfg.wrist_torque_scalar
             # self._joint_torques[:, self._wrist_joint_idx] = 0.0 # Turn off wrist joint for now
+        
+        self._previous_actions = self._actions.clone()
 
 
     def _apply_action(self):
@@ -1115,7 +1149,7 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
             base_ori_w = self._robot.data.body_quat_w[:, self._ee_id].squeeze(1)
             lin_vel_w = self._robot.data.root_lin_vel_w
             ang_vel_w = self._robot.data.root_ang_vel_w
-        elif task_body == "vehicle":
+        elif task_body == "vehicle" or task_body == "body":
             base_pos_w = self._robot.data.body_pos_w[:, self._body_id].squeeze(1)
             base_ori_w = self._robot.data.body_quat_w[:, self._body_id].squeeze(1)
             lin_vel_w = self._robot.data.body_lin_vel_w[:, self._body_id].squeeze(1)
@@ -1132,7 +1166,10 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         return base_pos_w, base_ori_w, lin_vel_w, ang_vel_w
 
     def get_goal_state_from_task(self, goal_body:str) -> tuple[torch.Tensor, torch.Tensor]:
-        if goal_body == "root":
+        if not self.cfg.has_end_effector:
+            goal_pos_w = self._desired_pos_w
+            goal_ori_w = self._desired_ori_w
+        elif goal_body == "root":
             goal_pos_w = self._desired_pos_w
             goal_ori_w = self._desired_ori_w
         elif goal_body == "endeffector":
@@ -1149,7 +1186,9 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         return goal_pos_w, goal_ori_w
     
     def convert_ee_goal_from_task(self, ee_pos_w, ee_ori_w, task_body:str) -> tuple[torch.Tensor, torch.Tensor]:
-        if task_body == "root":
+        if not self.cfg.has_end_effector:
+            desired_pos, desired_ori = ee_pos_w, ee_ori_w
+        elif task_body == "root":
             desired_pos, desired_ori = ee_pos_w, ee_ori_w
         elif task_body == "endeffector":
             desired_pos, desired_ori = ee_pos_w, ee_ori_w

@@ -52,7 +52,7 @@ def eval_lissajous_curve(t: torch.Tensor, amp: torch.Tensor, freq: torch.Tensor,
     num_envs_amp, num_curves = amp.shape
 
     # Validate that the number of environments matches between t and other parameters
-    assert num_envs == num_envs_amp, "Mismatch between number of environments in time and other parameters."
+    assert num_envs == num_envs_amp, "Mismatch between number of environments in time and other parameters. num_envs_amp: {}, num_envs: {}".format(num_envs_amp, num_envs)
 
     # Reshape and expand tensors to match the time dimension
     amp = amp.unsqueeze(-1).expand(num_envs, num_curves, num_samples)

@@ -118,8 +118,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         if "Crazyflie" in args_cli.task:
             env_cfg.task_body = "body"
             env_cfg.goal_body = "body"
-            env_cfg.reward_task_body = "endeffector"
-            env_cfg.reward_goal_body = "endeffector"
+            # env_cfg.reward_task_body = "endeffector"
+            # env_cfg.reward_goal_body = "endeffector"
+            env_cfg.reward_task_body = "body"
+            env_cfg.reward_goal_body = "body"
 
             # policy_path = "./baseline_cf_0dof/"
         else:
@@ -135,8 +137,13 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
             task_name = args_cli.task + "-Integral"
         elif args_cli.baseline_gains is not None:
             task_name = args_cli.task + "-" + args_cli.baseline_gains
-            
-        policy_path = gc_params_dict[task_name]["log_dir"]
+        
+        if task_name in gc_params_dict.keys():
+            policy_path = gc_params_dict[task_name]["log_dir"]
+        else:
+            print(f"[ERROR] Task name {task_name} not found in gc_params_dict.")
+            print(f"Available tasks: {gc_params_dict.keys()}")
+            return
             
 
         # env_cfg.yaw_distance_reward_scale = 5.0
@@ -344,12 +351,13 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
 
 
     if args_cli.baseline:
-        vehicle_mass = envs.vehicle_mass
-        arm_mass = envs.arm_mass
-        inertia =  envs.quad_inertia
-        arm_offset = envs.arm_offset
-        pos_offset = envs.position_offset
-        ori_offset = envs.orientation_offset
+        env = envs.unwrapped
+        vehicle_mass = envs.unwrapped.vehicle_mass
+        arm_mass = envs.unwrapped.arm_mass
+        inertia =  envs.unwrapped.quad_inertia
+        arm_offset = envs.unwrapped.arm_offset
+        pos_offset = envs.unwrapped.position_offset
+        ori_offset = envs.unwrapped.orientation_offset
 
         if "Traj" in args_cli.task:
             feed_forward = True
@@ -364,32 +372,36 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
             # Optuna-tuned gains for EE-Reward
             # use_feed_forward = "Traj" in args_cli.task and "Integral" not in args_cli.task
             control_params_dict = gc_params_dict[task_name]["controller_params"]
-            agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=device,
+            agent = DecoupledController(env.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
                                         **control_params_dict)
         else:
             # Crazyflie DC
-            agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=device,
-                                        kp_pos_gain_xy=6.5, kp_pos_gain_z=15.0, kd_pos_gain_xy=4.0, kd_pos_gain_z=9.0,
-                                        kp_att_gain_xy=544, kp_att_gain_z=544, kd_att_gain_xy=46.64, kd_att_gain_z=46.64, 
-                                        skip_precompute=True, vehicle="Crazyflie", control_mode="CTATT", print_debug=False, feed_forward=feed_forward)
+            control_params_dict = gc_params_dict[task_name]["controller_params"]
+            # agent = DecoupledController(env.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
+            #                             kp_pos_gain_xy=6.5, kp_pos_gain_z=15.0, kd_pos_gain_xy=4.0, kd_pos_gain_z=9.0,
+            #                             kp_att_gain_xy=544, kp_att_gain_z=544, kd_att_gain_xy=46.64, kd_att_gain_z=46.64, 
+            #                             skip_precompute=True, vehicle="Crazyflie", control_mode="CTBM", print_debug=False, feed_forward=feed_forward)
+            
+            agent = DecoupledController(env.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
+                                        skip_precompute=True, vehicle="Crazyflie", **control_params_dict)
             
         # Optuna-tuned gains for EE-LQR Cost (equal pos and yaw weight)
-        # agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=device,
+        # agent = DecoupledController(env.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
         #                             kp_pos_gain_xy=24.675, kp_pos_gain_z=31.101, kd_pos_gain_xy=7.894, kd_pos_gain_z=8.207,
         #                             kp_att_gain_xy=950.228, kp_att_gain_z=10.539, kd_att_gain_xy=39.918, kd_att_gain_z=5.719)
         
         # Optuna-tuned gains for COM-Reward
-        # agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=device,
+        # agent = DecoupledController(env.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
         #                             kp_pos_gain_xy=38.704, kp_pos_gain_z=39.755, kd_pos_gain_xy=10.413, kd_pos_gain_z=13.509,
         #                             kp_att_gain_xy=829.511, kp_att_gain_z=1.095, kd_att_gain_xy=38.383, kd_att_gain_z=4.322)
         
         # Optuna-tuned gains for COM-LQR Cost (equal pos and yaw weight)
-        # agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=device,
+        # agent = DecoupledController(env.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
         #                             kp_pos_gain_xy=49.960, kp_pos_gain_z=23.726, kd_pos_gain_xy=13.218, kd_pos_gain_z=6.878,
         #                             kp_att_gain_xy=775.271, kp_att_gain_z=3.609, kd_att_gain_xy=41.144, kd_att_gain_z=1.903)
         
         # Optuna-tuned gains for COM-LQR Cost (environment has further away goals)
-        # agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=device,
+        # agent = DecoupledController(env.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
         #                             kp_pos_gain_xy=24.172, kp_pos_gain_z=28.362, kd_pos_gain_xy=6.149, kd_pos_gain_z=8.881,
         #                             kp_att_gain_xy=955.034, kp_att_gain_z=14.370, kd_att_gain_xy=36.101, kd_att_gain_z=8.828)
     

@@ -341,5 +341,104 @@ gc_params_dict = {
             "kd_att_gain_xy": 61.529,
             "kd_att_gain_z": 5.044,
         }
-    }
+    },
+
+    "Isaac-Crazyflie-CTBR-Hover-v0-DR": {
+        "log_dir": "./baseline_cf_ctbm_DR/",
+        "controller_params": {
+            "feed_forward": True,
+            "control_mode": "CTBM",
+            "kp_pos_gain_xy": 13.842,
+            "kp_pos_gain_z": 23.479,
+            "kd_pos_gain_xy": 4.493,
+            "kd_pos_gain_z": 6.897,
+            "kp_att_gain_xy": 701.511,
+            "kp_att_gain_z": 19.116,
+            "kd_att_gain_xy": 41.828,
+            "kd_att_gain_z": 8.992,
+        },
+    },
+
+    "Isaac-Crazyflie-CTBR-Hover-v0-DR-20ms": {
+        "log_dir": "./baseline_cf_ctbm_DR_20ms/",
+        "controller_params": {
+            "feed_forward": True,
+            "control_mode": "CTBM",
+            "kp_pos_gain_xy": 12.475,
+            "kp_pos_gain_z": 9.819,
+            "kd_pos_gain_xy": 3.664,
+            "kd_pos_gain_z": 13.285,
+            "kp_att_gain_xy": 320.810,
+            "kp_att_gain_z": 19.943,
+            "kd_att_gain_xy": 27.181,
+            "kd_att_gain_z": 7.515,
+        },
+    },
+
+    "Isaac-Crazyflie-CTBR-Hover-v0-DR-40ms": {
+        "log_dir": "./baseline_cf_ctbm_DR_40ms/",
+        "controller_params": {
+            "feed_forward": True,
+            "control_mode": "CTBM",
+            "kp_pos_gain_xy": 5.657,
+            "kp_pos_gain_z": 8.990,
+            "kd_pos_gain_xy": 1.436,
+            "kd_pos_gain_z": 8.396,
+            "kp_att_gain_xy": 125.582,
+            "kp_att_gain_z": 15.348,
+            "kd_att_gain_xy": 11.992,
+            "kd_att_gain_z": 8.995,
+        },
+    },
+
+    "Isaac-Crazyflie-CTBR-Hover-v0-CTBR-NoFF": {
+        "log_dir": "./baseline_cf_ctbr/",
+        "controller_params": {
+            "feed_forward": False,
+            "control_mode": "CTBR",
+            # Original
+            # "kp_pos_gain_xy": 9.195,
+            # "kp_pos_gain_z": 27.006,
+            # "kd_pos_gain_xy": 3.780,
+            # "kd_pos_gain_z": 10.797,
+            # "kp_att_gain_xy": 977.197,
+            # "kp_att_gain_z": 18.357,
+            # "kd_att_gain_xy": 22.430,
+            # "kd_att_gain_z": 0.014,
+            # Tau=0.01
+            # "kp_pos_gain_xy": 13.154,
+            # "kp_pos_gain_z": 23.166,
+            # "kd_pos_gain_xy": 5.392,
+            # "kd_pos_gain_z": 6.801,
+            # "kp_att_gain_xy": 870.353,
+            # "kp_att_gain_z": 10.002,
+            # "kd_att_gain_xy": 37.353,
+            # "kd_att_gain_z": 8.887,
+            # Tau=0.017
+            "kp_pos_gain_xy": 9.720,
+            "kp_pos_gain_z": 38.171,
+            "kd_pos_gain_xy": 5.373,
+            "kd_pos_gain_z": 14.012,
+            "kp_att_gain_xy": 982.414,
+            "kp_att_gain_z": 10.412,
+            "kd_att_gain_xy": 38.580,
+            "kd_att_gain_z": 8.080,
+        }
+    },
+
+    "Isaac-Crazyflie-CTBR-Hover-v0-CTBR-FF": {
+        "log_dir": "./baseline_cf_ctbr/",
+        "controller_params": {
+            "feed_forward": False,
+            "control_mode": "CTBR",
+            "kp_pos_gain_xy": 14.078,
+            "kp_pos_gain_z": 10.447,
+            "kd_pos_gain_xy": 3.478,
+            "kd_pos_gain_z": 3.509,
+            "kp_att_gain_xy": 955.643,
+            "kp_att_gain_z": 18.182,
+            "kd_att_gain_xy": 61.529,
+            "kd_att_gain_z": 5.044,
+        }
+    },
 }

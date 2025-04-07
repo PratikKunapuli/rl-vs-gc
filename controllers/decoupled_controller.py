@@ -537,7 +537,7 @@ class DecoupledController():
                 # We already have collective thrust, we need to compute the desired body rates
                 # br_des = 0.01 * (-self.kp_att*att_err - self.kd_att*omega_err)
                 br_des = att_pd
-                print("DC BR Des: ", br_des)
+                # print("DC BR Des: ", br_des)
 
                 return collective_thrust, br_des
         

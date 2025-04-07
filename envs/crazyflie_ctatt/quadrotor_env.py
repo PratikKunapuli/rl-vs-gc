@@ -67,7 +67,7 @@ class QuadrotorEnvCfg(DirectRLEnvCfg):
     state_space = 0
     debug_vis = True
     sim_rate_hz = 1000
-    policy_rate_hz = 50
+    policy_rate_hz = 100
     pd_loop_rate_hz = 100
     decimation = sim_rate_hz // policy_rate_hz
 
@@ -289,7 +289,7 @@ class BrushlessQuadrotorEnvCfg(QuadrotorEnvCfg):
     arm_length = 0.05
     k_eta = 4.81e-8 # Measured from thrust stand data
     k_m = 7.8e-10 #unchanged
-    tau_m = 0.01 # slower motor dynamics
+    tau_m = 0.017 # slower motor dynamics
     motor_speed_min = 0.0
     motor_speed_max = 2500.0
 
@@ -298,19 +298,19 @@ class BrushlessQuadrotorEnvCfg(QuadrotorEnvCfg):
 
     # CTBR Parameters
     kp_omega = 5.27 # measured on static test stand
-    kd_omega = 0.0
+    kd_omega = 1.0
     body_rate_scale_xy = 10.0
     body_rate_scale_z = 2.5
 
     control_mode = "CTBR" # "CTBM" or "CTATT" or "CTBR"
 
     dr_dict = {
-        'thrust_to_weight':  False,
-        'mass': False,
-        'arm_length': False,
-        'k_eta': False,
-        'k_m': False,
-        'tau_m': False,
+        'thrust_to_weight':  0.0,
+        'mass': 0.0,
+        'arm_length': 0.0,
+        'k_eta': 0.0,
+        'k_m': 0.0,
+        'tau_m': 0.0,
     }
 
 
@@ -392,6 +392,7 @@ class QuadrotorEnv(DirectRLEnv):
         self.lissajous_offsets_rand_ranges = torch.tensor(self.cfg.lissajous_offsets_rand_ranges, device=self.device).float()
 
         self._time = torch.zeros(self.num_envs, 1, device=self.device)
+
         
 
         # Things necessary for motor dynamics
@@ -698,11 +699,12 @@ class QuadrotorEnv(DirectRLEnv):
             return
         
 
-        current_time = self.episode_length_buf[env_ids]
+        # current_time = self.episode_length_buf[env_ids]
+        current_time = self.episode_length_buf
         future_timesteps = torch.arange(0, 1+self.cfg.trajectory_horizon, device=self.device)
         # future_timesteps = torch.arange(0, 1+self.cfg.trajectory_horizon, device=self.device)
         time = (current_time + future_timesteps.unsqueeze(0)) * self.cfg.traj_update_dt
-
+        time = time.view(self.num_envs, -1)
         # env_ids =  # need to squeeze after getting current time
 
         # Update the desired position and orientation based on the trajectory
@@ -870,7 +872,7 @@ class QuadrotorEnv(DirectRLEnv):
 
         # Previous Action
         if self.cfg.use_previous_actions:
-            previous_actions = self._previous_actions
+            previous_actions = self._previous_action
         else:
             previous_actions = torch.zeros(self.num_envs, 0, device=self.device)
 
@@ -908,11 +910,7 @@ class QuadrotorEnv(DirectRLEnv):
                 grav_vector_b,                              # (num_envs, 3) if using gravity vector, 0 otherwise
                 lin_vel_b,                                  # (num_envs, 3)
                 ang_vel_b,                                  # (num_envs, 3)
-                shoulder_joint_pos,                         # (num_envs, 1)
-                wrist_joint_pos,                            # (num_envs, 1)
-                shoulder_joint_vel,                         # (num_envs, 1)
-                wrist_joint_vel,                            # (num_envs, 1)
-                previous_actions,                     # (num_envs, 4)
+                previous_actions,                           # (num_envs, 4)
                 future_pos_error_b.flatten(-2, -1),         # (num_envs, horizon * 3)
                 future_ori_error_b.flatten(-2, -1)          # (num_envs, horizon * 4) if use_yaw_representation_for_trajectory, else (num_envs, horizon, 1)
             ],
@@ -1234,29 +1232,31 @@ class QuadrotorEnv(DirectRLEnv):
         
         reinit_motor_dynamics = False
 
-        if self.cfg.dr_dict.get("thrust_to_weight", False):
+        if self.cfg.dr_dict.get("thrust_to_weight", 0.0) > 0:
             self._thrust_to_weight[env_ids] = torch.zeros_like(self._thrust_to_weight[env_ids]).normal_(mean=0.0, std=0.4) + self.cfg.thrust_to_weight
 
-        if self.cfg.dr_dict.get("mass", False):
-            self._robot_mass[env_ids] = torch.zeros_like(self._robot_mass[env_ids]).uniform_(0.9, 1.1) * self.cfg.mass
+        if self.cfg.dr_dict.get("mass", 0.0) > 0:
+            dr_range = self.cfg.dr_dict["mass"]
+            self._robot_mass[env_ids] = torch.zeros_like(self._robot_mass[env_ids]).uniform_(1-dr_range, 1+dr_range) * self.cfg.mass
             self._robot_weight[env_ids] = self._robot_mass[env_ids] * self._gravity_magnitude
             new_masses = self._default_masses.clone().to(device=self.device)
             new_masses[env_ids, self._body_id] = self._robot_mass[env_ids]
             self._robot.root_physx_view.set_masses(new_masses.cpu(), env_ids.cpu())
 
-        if self.cfg.dr_dict.get("tau_m", False):
-            self._tau_m[env_ids] = torch.zeros_like(self._tau_m[env_ids], device=self.device).uniform_(-0.005, 0.005) + self.cfg.tau_m*torch.ones(self._tau_m[env_ids].shape, device=self.device)
+        if self.cfg.dr_dict.get("tau_m", 0.0) > 0:
+            dr_range = self.cfg.dr_dict["tau_m"]
+            self._tau_m[env_ids] = torch.zeros_like(self._tau_m[env_ids], device=self.device).uniform_(1-dr_range, 1+dr_range) * self.cfg.tau_m
+
+        if self.cfg.dr_dict.get("k_eta", 0.0) > 0:
+            dr_range = self.cfg.dr_dict["k_eta"]
+            self._k_eta[env_ids] = torch.zeros_like(self._k_eta[env_ids], device=self.device).uniform_(1-dr_range, 1+dr_range) * self.cfg.k_eta
             reinit_motor_dynamics = True
 
-        if self.cfg.dr_dict.get("k_eta", False):
-            self._k_eta[env_ids] = torch.zeros_like(self._k_eta[env_ids], device=self.device).uniform_(-1e-8, 1e-8) + self.cfg.k_eta*torch.ones(self._k_eta[env_ids].shape, device=self.device)
-            reinit_motor_dynamics = True
-
-        if self.cfg.dr_dict.get("k_m", False):
+        if self.cfg.dr_dict.get("k_m", 0.0) > 0:
             self._k_m[env_ids] = torch.zeros_like(self._k_m[env_ids], device=self.device).uniform_(-1e-10, 1e-10) + self.cfg.k_m*torch.ones(self._k_m[env_ids].shape, device=self.device)
             reinit_motor_dynamics = True
         
-        if self.cfg.dr_dict.get("arm_length", False):
+        if self.cfg.dr_dict.get("arm_length", 0.0) > 0:
             self._arm_length[env_ids] = torch.zeros_like(self._arm_length[env_ids], device=self.device).uniform_(-0.01, 0.01) + self.cfg.arm_length*torch.ones(self._arm_length[env_ids].shape, device=self.device)
             reinit_motor_dynamics = True
 

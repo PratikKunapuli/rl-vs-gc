@@ -84,24 +84,30 @@ def eval_trial(trial):
 
     rewards = torch.zeros(args_cli.num_envs, device=env.device)
 
+    if "Crazyflie" in args_cli.task:
+        vehicle="Crazyflie"
+        skip_precompute=True
+    else:
+        vehicle="AM"
+        skip_precompute=False
 
     if "Traj" in args_cli.task:
         if not use_integral_terms:
             gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, com_pos_w=None, device=env.device,
                                     kp_pos_gain_xy=pos_kp_gain_xy, kp_pos_gain_z=pos_kp_gain_z, kd_pos_gain_xy=pos_kd_gain_xy, kd_pos_gain_z=pos_kd_gain_z,
                                     kp_att_gain_xy=ori_kp_gain_xy, kp_att_gain_z=ori_kp_gain_z, kd_att_gain_xy=ori_kd_gain_xy, kd_att_gain_z=ori_kd_gain_z,
-                                    tuning_mode=False, feed_forward=use_feed_forward_terms)
+                                    tuning_mode=False, feed_forward=use_feed_forward_terms, vehicle=vehicle, skip_precompute=skip_precompute)
         else:
             gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, com_pos_w=None, device=env.device,
                                     kp_pos_gain_xy=pos_kp_gain_xy, kp_pos_gain_z=pos_kp_gain_z, kd_pos_gain_xy=pos_kd_gain_xy, kd_pos_gain_z=pos_kd_gain_z,
                                     kp_att_gain_xy=ori_kp_gain_xy, kp_att_gain_z=ori_kp_gain_z, kd_att_gain_xy=ori_kd_gain_xy, kd_att_gain_z=ori_kd_gain_z,
                                     ki_pos_gain_xy=pos_ki_gain_xy, ki_pos_gain_z=pos_ki_gain_z, ki_att_gain_xy=ori_ki_gain_xy, ki_att_gain_z=ori_ki_gain_z,
-                                    tuning_mode=False, feed_forward=False, use_integral=True)
+                                    tuning_mode=False, feed_forward=False, use_integral=True, vehicle=vehicle, skip_precompute=skip_precompute)
     else:
         gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, com_pos_w=None, device=env.device,
                                 kp_pos_gain_xy=pos_kp_gain_xy, kp_pos_gain_z=pos_kp_gain_z, kd_pos_gain_xy=pos_kd_gain_xy, kd_pos_gain_z=pos_kd_gain_z,
                                 kp_att_gain_xy=ori_kp_gain_xy, kp_att_gain_z=ori_kp_gain_z, kd_att_gain_xy=ori_kd_gain_xy, kd_att_gain_z=ori_kd_gain_z,
-                                tuning_mode=False)
+                                tuning_mode=False, feed_forward=use_feed_forward_terms, vehicle=vehicle, skip_precompute=skip_precompute)
 
     while steps < 500:
         obs_tensor = obs_dict["policy"]
@@ -154,8 +160,12 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg):
     env_cfg.sim.render_interval = env_cfg.decimation
     env_cfg.gc_mode = True
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
-    env_cfg.task_body = "COM"
-    env_cfg.goal_body = "COM"
+    if "Crazyflie" in args_cli.task:
+        env_cfg.task_body = "body"
+        env_cfg.goal_body = "body"
+    else:
+        env_cfg.task_body = "COM"
+        env_cfg.goal_body = "COM"
 
     # Reward shaping
     env_cfg.pos_radius = 0.1
@@ -164,11 +174,15 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg):
     # env_cfg.yaw_error = -2.0
     # env_cfg.yaw_smooth_transition_scale = 0.0
 
+    print("Args Task: ", args_cli.task)
+
 
     global env
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
+    env = env.unwrapped
 
-    study_name = "Position Radius 0.1: " + args_cli.task
+    # study_name = "DR ALL ang_vel -0.05 Control Delay 40ms Fixed Position Radius 0.1: " + args_cli.task
+    study_name = "CTBR sim2real tau=0.017 Position Radius 0.1: " + args_cli.task
 
     if use_integral_terms:
         study_name += " Integral Terms"
