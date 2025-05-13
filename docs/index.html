@@ -13,12 +13,29 @@
             margin: 0;
             padding: 0;
         }
-        .container {
-            padding: 50px;
+        .hero .container {
+            padding: 10px;
+            max-width: 1050px !important;
         }
         .title {
             font-size: 3em;
             margin-bottom: 20px;
+        }
+        .title.is-3 {
+          position: relative;
+          display: inline-block;
+          padding-bottom: 8px;
+        }
+
+        .title.is-3:after {
+          content: '';
+          position: absolute;
+          bottom: 0;
+          left: 25%;
+          right: 25%;
+          height: 3px;
+          background: linear-gradient(90deg, transparent, rgba(0,0,0,0.2), transparent);
+          border-radius: 3px;
         }
         .authors {
             font-size: 1.5em;
