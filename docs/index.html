@@ -1,1 +1,367 @@
-<html><body><h1>Coming Soon: Leveling the Playing Field</h1><p>Code and documentation will be released soon.</p></body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description"
+        content="Leveling the Playing Field: Carefully Comparing Classical and Learned Controllers for Quadrotor Trajectory Tracking">
+    <title>Leveling the Playing Field</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            padding: 50px;
+        }
+        .title {
+            font-size: 3em;
+            margin-bottom: 20px;
+        }
+        .authors {
+            font-size: 1.5em;
+            margin-bottom: 40px;
+        }
+        .coming-soon {
+            font-size: 1.2em;
+            color: gray;
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css?family=Google+Sans|Noto+Sans|Castoro"
+    rel="stylesheet">
+
+    <link rel="stylesheet" href="./static/css/bulma.min.css">
+    <link rel="stylesheet" href="./static/css/bulma-carousel.min.css">
+    <link rel="stylesheet" href="./static/css/bulma-slider.min.css">
+    <link rel="stylesheet" href="./static/css/fontawesome.all.min.css">
+    <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css">
+    <link rel="stylesheet" href="./static/css/index.css">
+    <link rel="icon" href="./static/images/favicon.ico">
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script defer src="./static/js/fontawesome.all.min.js"></script>
+    <script src="./static/js/bulma-carousel.min.js"></script>
+    <script src="./static/js/bulma-slider.min.js"></script>
+    <script src="./static/js/index.js"></script>
+
+    <script>
+      MathJax = {
+        tex: {
+          inlineMath: [['$', '$'], ['\\(', '\\)']]
+        },
+        svg: {
+          fontCache: 'global'
+        }
+      };
+      </script>
+      <script type="text/javascript" id="MathJax-script" async
+        src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js">
+      </script>
+
+</head>
+<body>
+<nav class="navbar" role="navigation" aria-label="main navigation">
+    <div class="navbar-brand">
+      <a role="button" class="navbar-burger" aria-label="menu" aria-expanded="false">
+        <span aria-hidden="true"></span>
+        <span aria-hidden="true"></span>
+        <span aria-hidden="true"></span>
+      </a>
+    </div>
+    <div class="navbar-menu">
+      <div class="navbar-start" style="flex-grow: 1; justify-content: center;">
+        <a class="navbar-item" href="https://pratikkunapuli.github.io">
+        <span class="icon">
+            <i class="fas fa-home"></i>
+        </span>
+        </a>
+  
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link">
+            More Research
+          </a>
+          <div class="navbar-dropdown">
+            <a class="navbar-item" href="https://pratikkunapuli.github.io/EQTrackingControl/">
+              Equivariance in Tracking Control (ICRA 2025)
+            </a>
+            <a class="navbar-item" href="https://pratikkunapuli.github.io/rl-vs-gc/">
+             <b>Leveling the Playing Field (RSS 2025)</b>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+</nav>
+    
+    
+    <section class="hero">
+        <div class="hero-body">
+          <div class="container is-max-desktop">
+            <div class="columns is-centered">
+              <div class="column has-text-centered">
+                <h1 class="title is-2 publication-title">Leveling the Playing Field: Carefully Comparing Classical and Learned Controllers for Quadrotor Trajectory Tracking</h1>
+                <div class="is-size-5 publication-authors">
+                    <span class="author-block">
+                        <a href="https://pratikkunapuli.github.io">Pratik Kunapuli</a>,
+                    </span>
+                    <span class="author-block">
+                        <a href="https://jakewelde.com/">Jake Welde</a>,</span>
+                    <span class="author-block">
+                        <a href="https://www.seas.upenn.edu/~dineshj/">Dinesh Jayaraman</a>,
+                    </span>
+                    <span class="author-block">
+                        <a href="https://www.kumarrobotics.org/">Vijay Kumar</a>
+                    </span>
+                </div>
+      
+                <div class="is-size-5 publication-authors">
+                  <span class="author-block">University of Pennsylvania GRASP Lab</span>
+                </div>
+      
+                <div class="column has-text-centered">
+                  <div class="publication-links">
+                    <!-- PDF Link. -->
+                    <span class="link-block">
+                      <a href="https://arxiv.org/pdf/2409.11238"
+                         class="external-link button is-normal is-rounded is-dark">
+                        <span class="icon">
+                            <i class="fas fa-file-pdf"></i>
+                        </span>
+                        <span>Paper</span>
+                      </a>
+                    </span>
+                    <span class="link-block">
+                      <a href="https://arxiv.org/abs/2409.11238"
+                         class="external-link button is-normal is-rounded is-dark">
+                        <span class="icon">
+                            <i class="ai ai-arxiv"></i>
+                        </span>
+                        <span>arXiv</span>
+                      </a>
+                    </span>
+                    <!-- Code Link. -->
+                    <span class="link-block">
+                      <a href="https://github.com/PratikKunapuli/rl-vs-gc"
+                         class="external-link button is-normal is-rounded is-dark">
+                        <span class="icon">
+                            <i class="fab fa-github"></i>
+                        </span>
+                        <span>Code coming soon!</span>
+                        </a>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+
+    <section class="section">
+      <div class="container is-max-widescreen">
+        <!-- Abstract. -->
+        <div class="columns is-centered has-text-centered">
+          <div class="column">
+            <h2 class="title is-3">TLDR: We show how symmetry can reduce MDP size for tracking control problems in various robots.</h2>
+            <h2 class="title is-3">Abstract</h2>
+              <div class="content has-text-justified">
+                <p style="font-size:125%;">
+                    Tracking controllers enable robotic systems to accurately follow planned reference trajectories. In particular, reinforcement learning (RL) has shown promise in the synthesis of controllers for systems with complex dynamics and modest online compute budgets. However, the poor sample efficiency of RL and the challenges of reward design make training slow and sometimes unstable, especially for high-dimensional systems. 
+                    In this work, we leverage the inherent Lie group symmetries of robotic systems with a floating base to mitigate these challenges when learning tracking controllers. We model a general tracking problem as a Markov decision process (MDP) that captures the evolution of both the physical and reference states. 
+                    Next, we prove that symmetry in the underlying dynamics and running costs leads to an MDP homomorphism, a mapping that allows a policy trained on a lower-dimensional "quotient" MDP to be lifted to an optimal tracking controller for the original system. 
+                    We compare this symmetry-informed approach to an unstructured baseline, using Proximal Policy Optimization (PPO) to learn tracking controllers for three systems: the <code>Particle</code> (a forced point mass), the <code>Astrobee</code> (a fullyactuated space robot), and the <code>Quadrotor</code> (an underactuated system). Results show that a symmetry-aware approach both accelerates training and reduces tracking error after the same number of training steps.
+                </p>
+              </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+        <div class="container is-max-desktop">
+          <!-- Paper video. -->
+          <div class="columns is-centered has-text-centered">
+            <div class="column is-centered">
+              <h2 class="title is-3">Video</h2>
+              <div class="publication-video">
+                <iframe src="https://www.youtube.com/embed/AosGBe2uzxM?si=KDry6ULR-OMzcfOUrel=0&amp;showinfo=0"
+                        frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+              </div>
+            </div>
+          </div>
+          <!--/ Paper video. -->
+        </div>
+    </section>
+      
+    <section class="section">
+      <div class="container is-max-desktop">
+          <div class="columns is-centered">
+            <h2 class="title is-3">Methods</h2>
+          </div>
+          <div class="column is-centered">
+            <figure class="image">
+              <img src="./static/images/methods_displacement.png" alt="Symmetry">
+            </figure>
+            <div class="content has-text-justified">
+            <p style="font-size:125%;">
+            Given some system with a symmetry group $\Phi_g$, we can relate different state and referneces to be equivalent under the group action of $g$. This allows us to consider equivariant states and references, which can improve sample efficiency of RL algorithms.
+            </p>
+          </div>
+
+          <div class="columns is-centered">
+            <div class="column">
+              <figure class="image">
+                <img src="./static/images/methods_main.png" alt="Methods">
+              </figure>
+              <div class="content has-text-justified">
+              <p style="font-size:125%;">
+              Instead of training RL in the full state space $\mathcal{S}$, we can train in the quotient space $\mathcal{S} / \mathcal{G}$, which is a lower-dimensional space that captures the essential dynamics of the system. This allows us to train faster and more efficiently.
+              Note that since the reward function is also equivariant, the policy learned in the quotient space can be lifted to the full state space, and furthermore the optimal policy in the quotient space is also optimal in the full state space.
+              </p>
+            </div>
+          </div>
+      </div>
+    </section>
+      
+    <section class="section">
+    <div class="container is-max-desktop">
+        <!-- Results -->
+        <div class="column is-centered">
+            <h2 class="title is-3">Results</h2>
+            <div class="columns is-centered">
+            <div class="column content">
+
+              <div class="column is-full">
+                <h2 class="title is-4">Rollouts</h2>
+                <p style="font-size: 125%;">
+                  Select a robot to view the evaluation video.
+                </p>
+                <br>
+                <div class="select">
+                  <select id="robotName" class="custom-dropdown" onchange="updateResultsVideo()">
+                    <option value="Particle">Particle</option>
+                    <option value="Astrobee">Astrobee</option>
+                    <option value="Quadrotor">Quadrotor</option>
+                  </select>
+                </div>
+                <br>
+                <br>
+                <!-- Image that changes based on selection -->
+                <figure>
+                  <video id="resultsVideo" src="static/videos/particle.webm" alt="Particle" autoplay muted loop>
+                </figure>
+                <!--/ Image that changes based on selection -->
+              </div>
+              <br>
+              <p style="font-size:125%;">
+              Training and evaluation curves for the <code>Particle</code> system.
+              <div class="columns is-centered">
+                <div class="column">
+                  <figure class="image">
+                    <img src="./static/images/particle_lissajous_combined.png" alt="Particle Training">
+                  </figure>
+                </div>
+              </div>
+              </p>
+
+              <p style="font-size:125%;">
+              Training and evaluation curves for the <code>Astrobee</code> system.
+                <div class="columns is-centered">
+                  <div class="column">
+                    <figure class="image">
+                      <img src="./static/images/se3_lissajous_combined.png" alt="Astrobee Training">
+                    </figure>
+                  </div>
+                </div>
+              </p>
+
+
+              <p style="font-size:125%;">
+              Training and evaluation curves for the <code>Quadrotor</code> system.
+              <div class="columns is-centered">
+                <div class="column">
+                  <figure class="image">
+                    <img src="./static/images/se2xr_lissajous_combined.png" alt="Quadrotor Training">
+                  </figure>
+                </div>
+              </div>
+              </p>
+            </div>
+            </div>
+        </div>
+        <!--/ Results -->
+
+        </div>
+    </section>
+
+    <script>
+      function updateResultsVideo() {
+        var setting = document.getElementById("robotName").value;
+        var video = document.getElementById("resultsVideo");
+        
+        if (setting === "Particle") {
+          video.src = "static/videos/particle.webm";
+          video.alt = "Particle";
+        } else if (setting === "Astrobee") {
+          video.src = "static/videos/astrobee.webm";
+          video.alt = "Astrobee";
+        } else if (setting === "Quadrotor") {
+          video.src = "static/videos/quad.webm";
+          video.alt = "Quadrotor";
+        }
+      }
+    </script>
+    
+    
+    <section class="section" id="BibTeX">
+    <div class="container is-max-desktop content">
+        <h2 class="title">BibTeX</h2>
+        <pre style="text-align: left;"><code>
+@misc{welde2024leveragingsymmetryacceleratelearning,
+  title={Leveraging Symmetry to Accelerate Learning of Trajectory Tracking Controllers for Free-Flying Robotic Systems}, 
+  author={Jake Welde and Nishanth Rao and Pratik Kunapuli and Dinesh Jayaraman and Vijay Kumar},
+  year={2024},
+  eprint={2409.11238},
+  archivePrefix={arXiv},
+  primaryClass={cs.RO},
+  url={https://arxiv.org/abs/2409.11238}
+}
+</code></pre>
+    </div>
+    </section>
+    
+    
+    <footer class="footer">
+    <div class="container">
+        <div class="content has-text-centered">
+        <a class="icon-link"
+            href="https://arxiv.org/pdf/2409.11238">
+            <i class="fas fa-file-pdf"></i>
+        </a>
+        <a class="icon-link" href="https://github.com/pratikkunapuli" class="external-link" disabled>
+            <i class="fab fa-github"></i>
+        </a>
+        </div>
+        <div class="columns is-centered">
+        <div class="column is-8">
+            <div class="content">
+              <p>
+                This website is licensed under a <a rel="license"
+                                                    href="http://creativecommons.org/licenses/by-sa/4.0/">Creative
+                Commons Attribution-ShareAlike 4.0 International License</a>.
+              </p>
+              <p>
+                Template taken from <a
+                  href="https://github.com/nerfies/nerfies.github.io">here</a>. 
+              </p>
+            </div>
+        </div>
+        </div>
+    </div>
+    </footer>
+</body>
+</html>
