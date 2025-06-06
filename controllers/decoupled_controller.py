@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.distributions.normal import Normal
 import numpy as np
+from typing import Tuple
 
 import omni.isaac.lab.utils.math as isaac_math_utils
 from utils.math_utilities import vee_map, yaw_from_quat, quat_from_yaw, matrix_log
@@ -18,14 +19,14 @@ def get_point_state_from_ee_transform_w(ee_pos_w, ee_ori_quat_w, ee_vel_w, ee_om
     return point_pos_w, point_vel_w
 
 @torch.jit.script
-def rescale_command(command, min_val, max_val):
+def rescale_command(command: torch.Tensor, min_val: torch.Tensor, max_val: torch.Tensor) -> torch.Tensor:
     """
     We want to rescale the command to be between -1 and 1, where the original command is between min_val and max_val
     """
-    return 2.0 * (command - min_val) / (max_val - min_val) - 1.0
+    return 2.0 * torch.div((command - min_val),(max_val - min_val)) - torch.ones_like(command)
 
 @torch.jit.script
-def compute_ff_terms(obs, policy_dt):
+def compute_ff_terms(obs: torch.Tensor, policy_dt: float) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Given a batch of observations, compute the feed forward terms for position and yaw.
 
@@ -77,6 +78,10 @@ class DecoupledController():
         self.vehicle_mass = vehicle_mass
         self.arm_mass = arm_mass
         self.mass = vehicle_mass + arm_mass
+        if len(self.mass.shape) < 1:
+            self.mass = torch.tensor([self.mass], device=device)
+
+
         self.com_pos_w = com_pos_w
         self.policy_dt = policy_dt
         self.feed_forward = feed_forward
@@ -333,29 +338,32 @@ class DecoupledController():
 
         
         collective_thrust, M_des = self.SE3_Control(desired_pos, desired_yaw, com_pos, com_ori_quat, com_vel, com_omega, obs)
-        
+        ones = torch.ones(batch_size, device=self.device)    
 
         if self.control_mode == "CTBM":
             ct_shape = collective_thrust.shape
+            # print("Collective thrust shape:", ct_shape)
+
             mass_reshape = self.mass.reshape(ct_shape) if type(self.mass) == float else self.mass
-            u1 = rescale_command(collective_thrust.squeeze(), 0.0, self.thrust_to_weight * 9.81*mass_reshape).view(batch_size, 1)
-            u2 = rescale_command(M_des[:, 0], -self.moment_scale_xy, self.moment_scale_xy).view(batch_size, 1)
-            u3 = rescale_command(M_des[:, 1], -self.moment_scale_xy, self.moment_scale_xy).view(batch_size, 1)
-            u4 = rescale_command(M_des[:, 2], -self.moment_scale_z, self.moment_scale_z).view(batch_size, 1)
+            # print("Mass reshape shape:", mass_reshape.shape)
+            u1 = rescale_command(collective_thrust.squeeze(), torch.zeros_like(mass_reshape), self.thrust_to_weight * 9.81*mass_reshape).view(batch_size, 1)
+            u2 = rescale_command(M_des[:, 0], -self.moment_scale_xy * ones, self.moment_scale_xy * ones).view(batch_size, 1)
+            u3 = rescale_command(M_des[:, 1], -self.moment_scale_xy  * ones, self.moment_scale_xy * ones).view(batch_size, 1)
+            u4 = rescale_command(M_des[:, 2], -self.moment_scale_z * ones, self.moment_scale_z * ones).view(batch_size, 1)
         elif self.control_mode == "CTATT":
-            u1 = rescale_command(collective_thrust, 0.0, self.thrust_to_weight * 9.81*self.mass).view(batch_size, 1)
+            u1 = rescale_command(collective_thrust, torch.zeros_like(self.mass), self.thrust_to_weight * 9.81*self.mass).view(batch_size, 1)
             # u2 = rescale_command(M_des[:, 0], -self.attitude_scale_xy, self.attitude_scale_xy).view(batch_size, 1)
             # u3 = rescale_command(M_des[:, 1], -self.attitude_scale_xy, self.attitude_scale_xy).view(batch_size, 1)
             # u4 = rescale_command(M_des[:, 2], -self.attitude_scale_z, self.attitude_scale_z).view(batch_size, 1)
 
-            u2 = rescale_command(M_des[:, 0], -self.attitude_scale, self.attitude_scale).view(batch_size, 1)
-            u3 = rescale_command(M_des[:, 1], -self.attitude_scale, self.attitude_scale).view(batch_size, 1)
-            u4 = rescale_command(M_des[:, 2], -self.attitude_scale, self.attitude_scale).view(batch_size, 1)
+            u2 = rescale_command(M_des[:, 0], -self.attitude_scale * ones, self.attitude_scale * ones).view(batch_size, 1)
+            u3 = rescale_command(M_des[:, 1], -self.attitude_scale * ones, self.attitude_scale * ones).view(batch_size, 1)
+            u4 = rescale_command(M_des[:, 2], -self.attitude_scale * ones, self.attitude_scale * ones).view(batch_size, 1)
         elif self.control_mode == "CTBR":
-            u1 = rescale_command(collective_thrust, 0.0, self.thrust_to_weight * 9.81*self.mass).view(batch_size, 1)
-            u2 = rescale_command(M_des[:, 0], -self.body_rate_scale_xy, self.body_rate_scale_xy).view(batch_size, 1)
-            u3 = rescale_command(M_des[:, 1], -self.body_rate_scale_xy, self.body_rate_scale_xy).view(batch_size, 1)
-            u4 = rescale_command(M_des[:, 2], -self.body_rate_scale_z, self.body_rate_scale_z).view(batch_size, 1)
+            u1 = rescale_command(collective_thrust, torch.zeros_like(self.mass), self.thrust_to_weight * 9.81*self.mass).view(batch_size, 1)
+            u2 = rescale_command(M_des[:, 0], -self.body_rate_scale_xy * ones, self.body_rate_scale_xy * ones).view(batch_size, 1)
+            u3 = rescale_command(M_des[:, 1], -self.body_rate_scale_xy * ones, self.body_rate_scale_xy * ones).view(batch_size, 1)
+            u4 = rescale_command(M_des[:, 2], -self.body_rate_scale_z * ones, self.body_rate_scale_z * ones).view(batch_size, 1)
             
 
         return torch.stack([u1, u2, u3, u4], dim=1).view(batch_size, 4)
