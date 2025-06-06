@@ -384,7 +384,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
             #                             skip_precompute=True, vehicle="Crazyflie", control_mode="CTBM", print_debug=False, feed_forward=feed_forward)
             
             agent = DecoupledController(env.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
-                                        skip_precompute=True, vehicle="Crazyflie", **control_params_dict)
+                                        vehicle="Crazyflie", **control_params_dict)
             
         # Optuna-tuned gains for EE-LQR Cost (equal pos and yaw weight)
         # agent = DecoupledController(env.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
@@ -447,11 +447,13 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
     # print("starting norm: ", torch.norm(ee_start - goal_start, dim=1))
     # input("Check and press Enter to continue...")
     # import code; code.interact(local=locals())
+    max_steps = int(env_cfg.episode_length_s * env_cfg.policy_rate_hz)
+
 
     full_state_size = obs_dict["full_state"].shape[1]
-    full_states = torch.zeros((args_cli.num_envs, 1000, full_state_size), dtype=torch.float32).to(device)
-    rewards = torch.zeros((args_cli.num_envs, 1000), dtype=torch.float32).to(device)
-    actions_log = torch.zeros((args_cli.num_envs, 1000, 4), dtype=torch.float32).to(device)
+    full_states = torch.zeros((args_cli.num_envs, max_steps, full_state_size), dtype=torch.float32).to(device)
+    rewards = torch.zeros((args_cli.num_envs, max_steps), dtype=torch.float32).to(device)
+    actions_log = torch.zeros((args_cli.num_envs, max_steps, 4), dtype=torch.float32).to(device)
 
 
     steps = 0
@@ -461,23 +463,21 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
     # input("Press Enter to continue...")
     with torch.no_grad():
         while simulation_app.is_running():
-            while steps < 1000 and not done:
+            while steps < max_steps and not done:
                 obs_tensor = obs_dict["policy"]
                 full_states[:, steps, :] = obs_dict["full_state"]
                 # print("Full State: ", obs_dict["full_state"][0, 33:])
 
                 start = time.time()
                 if args_cli.baseline:
-                    # action = agent.get_action(obs_dict["full_state"])
-                    action = agent.get_action(obs_dict["gc"])
-                    # print("Obs: ", obs_dict["gc"][args_cli.follow_robot])
+                    actions = agent.get_action(obs_dict["gc"])
                 else:
                     actions = agent(obs_tensor)
                 actions_log[:, steps] = actions
                 times.append(time.time() - start)
 
                 if args_cli.baseline:
-                    obs_dict, reward, terminated, truncated, info = envs.step(action)
+                    obs_dict, reward, terminated, truncated, info = envs.step(actions)
                     done_count += terminated.sum().item() + truncated.sum().item()
                 else:
                     obs, reward, dones, extras = envs.step(actions)
@@ -586,40 +586,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
                 print(f"Saved actions plot to {save_path}")
                 plt.close(fig)
 
-
-
-
-
-
-
-
-            # import matplotlib.pyplot as plt
-            # plt.figure()
-            # plt.subplot(3, 1, 1)
-            # plt.plot(quad_pos[:, 0], label="Quad X")
-            # plt.plot(ee_pos[:, 0], label="EE X")
-            # plt.plot(goal_pos[:, 0], label="Goal X")
-            # plt.legend()
-            # plt.subplot(3, 1, 2)
-            # plt.plot(quad_pos[:, 1], label="Quad Y")
-            # plt.plot(ee_pos[:, 1], label="EE Y")
-            # plt.plot(goal_pos[:, 1], label="Goal Y")
-            # plt.legend()
-            # plt.subplot(3, 1, 3)
-            # plt.plot(quad_pos[:, 2], label="Quad Z")
-            # plt.plot(ee_pos[:, 2], label="EE Z")
-            # plt.plot(goal_pos[:, 2], label="Goal Z")
-            # plt.legend()
-            # plt.savefig(os.path.join(policy_path, save_prefix + "eval_plot.png"))
-
-
             envs.close()
             simulation_app.close()
 
     
-    
-
-
 if __name__ == "__main__":
     # run the main function
     main()
