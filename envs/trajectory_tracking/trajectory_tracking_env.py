@@ -332,12 +332,8 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         self._desired_ori_traj_w = torch.zeros(self.num_envs, 1+self.cfg.trajectory_horizon, 4, device=self.device)
         self._pos_traj = torch.zeros(5, self.num_envs, 1+self.cfg.trajectory_horizon, 3, device=self.device)
         self._yaw_traj = torch.zeros(5, self.num_envs, 1+self.cfg.trajectory_horizon, device=self.device)
-        self._pos_shift = torch.zeros(self.num_envs, 3, device=self.device)
-        self._yaw_shift = torch.zeros(self.num_envs, 1, device=self.device)
-        # self.amplitudes = torch.zeros(self.num_envs, 4, device=self.device)
-        # self.frequencies = torch.zeros(self.num_envs, 4, device=self.device)
-        # self.phases = torch.zeros(self.num_envs, 4, device=self.device)
-        # self.offsets = torch.zeros(self.num_envs, 4, device=self.device)
+        
+        # Initialization for Lisssajous and Polynomial Trajectories
         self.lissajous_amplitudes = torch.tensor(self.cfg.lissajous_amplitudes, device=self.device).tile((self.num_envs, 1)).float()
         self.lissajous_amplitudes_rand_ranges = torch.tensor(self.cfg.lissajous_amplitudes_rand_ranges, device=self.device).float()
         self.lissajous_frequencies = torch.tensor(self.cfg.lissajous_frequencies, device=self.device).tile((self.num_envs, 1)).float()
@@ -607,21 +603,13 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
             # print("Poly coefficients: ", self.polynomial_coefficients[0, :, :])
             # print("Pos Poly: ", pos_poly[:2, 0, :, 0])
             # print("Yaw poly: ", yaw_poly[:2, 0, 0])
-        elif self.cfg.trajectory_type == "random_walk":
-            pass
         else:
             raise NotImplementedError("Trajectory type not implemented")
     
         self._pos_traj = pos_traj
         self._yaw_traj = yaw_traj
         
-        if self.cfg.random_shift_trajectory:
-            # Ensure the shapes are compatible for broadcasting
-            pos_shift = self._pos_shift.unsqueeze(-1)
-            yaw_shift = self._yaw_shift
-
-            pos_traj[0, :, :, :] += pos_shift
-            yaw_traj[0, :, :] += yaw_shift
+        
 
         # we need to switch the last two dimensions of pos_traj since the _desired_pos_w is of shape (num_envs, horizon, 3) instead of (num_envs, 3, horizon)
         # print(self._desired_pos_traj_w.shape, pos_traj[0,env_ids.squeeze(1)].shape)
@@ -1159,11 +1147,8 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         self.lissajous_offsets[env_ids] = torch.tensor(self.cfg.lissajous_offsets, device=self.device).tile((num_envs, 1)).float() + random_offsets + terrain_offsets
 
         self.polynomial_coefficients[env_ids, 3] = torch.tensor(self.cfg.polynomial_yaw_coefficients, device=self.device).tile((num_envs, 1)).float() + random_poly_yaw
-        # # Rerandomize the random shift if needed
-        # if self.cfg.random_shift_trajectory:
-        #     self._pos_shift[env_ids] = torch.zeros_like(self._pos_shift[env_ids]).uniform_(-self.cfg.goal_pos_range, self.cfg.goal_pos_range)
-        #     self._yaw_shift[env_ids] = torch.zeros_like(self._yaw_shift[env_ids]).uniform_(-self.cfg.goal_yaw_range, self.cfg.goal_yaw_range)
-    
+        
+
     def get_frame_state_from_task(self, task_body:str) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         if task_body == "root":
             base_pos_w = self._robot.data.root_pos_w
