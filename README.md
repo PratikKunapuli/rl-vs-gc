@@ -1,11 +1,6 @@
 # Leveling the Playing Field: Carefully Comparing Classical and Learned Controllers for Quadrotor Trajectory Tracking
 
-[Project Website](https://pratikkunapuli.github.io/rl-vs-gc/)
-
-Code and details coming soon.
-<h1 align="center">
-  <b>AerialManipulation</b><br>
-</h1>
+## [Project Website](https://pratikkunapuli.github.io/rl-vs-gc/)
 
 [![IsaacSim](https://img.shields.io/badge/IsaacSim-4.2.0.2-silver.svg)](https://docs.omniverse.nvidia.com/isaacsim/latest/overview.html)
 [![IsaacLab](https://img.shields.io/badge/IsaacLab-1.4.1-green.svg)](https://github.com/isaac-sim/IsaacLab/tree/v1.1.0)
@@ -27,11 +22,11 @@ Instructions for installing IsaacSim are reproduced here for clarity - but you s
 <summary>Python environment installation</summary>
 
 ```bash
-pip install isaacsim==4.1.0.0 --extra-index-url https://pypi.nvidia.com
+pip install isaacsim==4.2.0.2 --extra-index-url https://pypi.nvidia.com
 ```
 (Optional)
 ```bash
-pip install isaacsim-extscache-physics==4.1.0.0 isaacsim-extscache-kit==4.1.0.0 isaacsim-extscache-kit-sdk==4.1.0.0 --extra-index-url https://pypi.nvidia.com
+pip install isaacsim-extscache-physics==4.2.0.2 isaacsim-extscache-kit==4.2.0.2 isaacsim-extscache-kit-sdk==4.2.0.2 --extra-index-url https://pypi.nvidia.com
 ```
 </details>
 
@@ -56,7 +51,7 @@ cd IsaacLab
 ```
 </details>
 
-## AerialManipulation Installation
+## rl-vs-gc Installation
 Clone the repo
 ```bash
 git clone git@github.com:PratikKunapuli/AerialManipulation.git
@@ -74,20 +69,21 @@ sudo apt-get install mysql-server
 ```
 
 # Demos
-Two demonstration files are available to investigate the model/physics. 
+Demonstration files are available to investigate the model/physics. 
 
-1. `demo_sim.py`: A script used to launch an IsaacSim window where the dynamics are simulated directly 
-2. `demo_env.py`: A script used to launch an IsaacSim window from the `gymnasium` api. 
+- `demo_env.py`: A script used to launch an IsaacSim window from the `gymnasium` api. 
 
 # Environments
+Details can be found in `envs/README.md`
 
 # Training
+Details can be found for the reinforcement learning (RL) training and evaluation in `rl/README.md` and for the geometric control (GC) in `controllers/README.md`.
 
 # Tools
 <details>
 <summary>Converting URDFs to USD</summary>
 
 ```bash
-python ./IsaacLab/source/standalone/tools/convert_urdf.py ./AerialManipulation/models/aerial_manipulator_2dof.urdf ./AerialManipulation/models/aerial_manipulator_2dof.usd --merge-joints --make-instanceable
+python ./IsaacLab/source/standalone/tools/convert_urdf.py ./AerialManipulation/models/uam_quadrotor.urdf ./AerialManipulation/models/uam_quadrotor.usd --merge-joints --make-instanceable
 ```
 </details>
