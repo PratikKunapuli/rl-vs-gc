@@ -84,51 +84,29 @@ def eval_trial(trial):
 
     rewards = torch.zeros(args_cli.num_envs, device=env.device)
 
-    if "Crazyflie" in args_cli.task:
-        vehicle="Crazyflie"
-        skip_precompute=True
-    else:
-        vehicle="AM"
-        skip_precompute=False
 
-    if "Traj" in args_cli.task:
-        if not use_integral_terms:
-            gc = GeometricController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, com_pos_w=None, device=env.device,
-                                    kp_pos_gain_xy=pos_kp_gain_xy, kp_pos_gain_z=pos_kp_gain_z, kd_pos_gain_xy=pos_kd_gain_xy, kd_pos_gain_z=pos_kd_gain_z,
-                                    kp_att_gain_xy=ori_kp_gain_xy, kp_att_gain_z=ori_kp_gain_z, kd_att_gain_xy=ori_kd_gain_xy, kd_att_gain_z=ori_kd_gain_z,
-                                    tuning_mode=False, feed_forward=use_feed_forward_terms, vehicle=vehicle, skip_precompute=skip_precompute)
-        else:
-            gc = GeometricController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, com_pos_w=None, device=env.device,
-                                    kp_pos_gain_xy=pos_kp_gain_xy, kp_pos_gain_z=pos_kp_gain_z, kd_pos_gain_xy=pos_kd_gain_xy, kd_pos_gain_z=pos_kd_gain_z,
-                                    kp_att_gain_xy=ori_kp_gain_xy, kp_att_gain_z=ori_kp_gain_z, kd_att_gain_xy=ori_kd_gain_xy, kd_att_gain_z=ori_kd_gain_z,
-                                    ki_pos_gain_xy=pos_ki_gain_xy, ki_pos_gain_z=pos_ki_gain_z, ki_att_gain_xy=ori_ki_gain_xy, ki_att_gain_z=ori_ki_gain_z,
-                                    tuning_mode=False, feed_forward=False, use_integral=True, vehicle=vehicle, skip_precompute=skip_precompute)
-    else:
-        gc = GeometricController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, com_pos_w=None, device=env.device,
+    vehicle = "Crazyflie" if "Crazyflie" in args_cli.task else "AM"
+
+
+    if not use_integral_terms:
+        gc = GeometricController(args_cli.num_envs, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, device=env.device,
                                 kp_pos_gain_xy=pos_kp_gain_xy, kp_pos_gain_z=pos_kp_gain_z, kd_pos_gain_xy=pos_kd_gain_xy, kd_pos_gain_z=pos_kd_gain_z,
                                 kp_att_gain_xy=ori_kp_gain_xy, kp_att_gain_z=ori_kp_gain_z, kd_att_gain_xy=ori_kd_gain_xy, kd_att_gain_z=ori_kd_gain_z,
-                                tuning_mode=False, feed_forward=use_feed_forward_terms, vehicle=vehicle, skip_precompute=skip_precompute)
+                                tuning_mode=False, feed_forward=use_feed_forward_terms, vehicle=vehicle)
+    else:
+        gc = GeometricController(args_cli.num_envs, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, device=env.device,
+                                kp_pos_gain_xy=pos_kp_gain_xy, kp_pos_gain_z=pos_kp_gain_z, kd_pos_gain_xy=pos_kd_gain_xy, kd_pos_gain_z=pos_kd_gain_z,
+                                kp_att_gain_xy=ori_kp_gain_xy, kp_att_gain_z=ori_kp_gain_z, kd_att_gain_xy=ori_kd_gain_xy, kd_att_gain_z=ori_kd_gain_z,
+                                ki_pos_gain_xy=pos_ki_gain_xy, ki_pos_gain_z=pos_ki_gain_z, ki_att_gain_xy=ori_ki_gain_xy, ki_att_gain_z=ori_ki_gain_z,
+                                tuning_mode=False, feed_forward=False, use_integral=True, vehicle=vehicle)
 
     while steps < 500:
         obs_tensor = obs_dict["policy"]
-        # full_state = obs_dict["full_state"]
-        # action_gc = gc.get_action(full_state)
+        
         gc_obs = obs_dict["gc"]
         action_gc = gc.get_action(gc_obs)
 
         action = action_gc.to(obs_tensor.device)
-
-        # # If we want metrics from the state directly intead of the reward we can use these.
-        # goal_pos_w = full_state[:, 26:26 + 3]
-        # goal_ori_w = full_state[:, 26 + 3:26 + 7]
-        # ee_pos = full_state[:, 13:16]
-        # ee_ori_quat = full_state[:, 16:20]
-        # ee_vel = full_state[:, 20:23]
-        # ee_omega = full_state[:, 23:26]
-        # quad_pos = full_state[:, :3]
-        # quad_ori_quat = full_state[:, 3:7]
-        # quad_vel = full_state[:, 7:10]
-        # quad_omega = full_state[:, 10:13]
 
         obs_dict, reward, terminated, truncated, info = env.step(action)
 
@@ -146,9 +124,7 @@ def eval_trial(trial):
 
 @hydra_task_config(args_cli.task, "rsl_rl_cfg_entry_point")
 def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg):
-    # master_env_cfg = parse_env_cfg(args_cli.task, num_envs= args_cli.num_envs, use_fabric=not args_cli.disable_fabric)
-    # env_cfg = master_env_cfg.copy()
-
+    
     env_cfg.goal_cfg = "rand" 
 
 
@@ -169,11 +145,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg):
 
     # Reward shaping
     env_cfg.pos_radius = 0.1
-    # env_cfg.pos_distance_reward_scale = 0.0
-    # env_cfg.pos_error_reward_scale = -2.0
-    # env_cfg.yaw_error = -2.0
-    # env_cfg.yaw_smooth_transition_scale = 0.0
-
+   
     print("Args Task: ", args_cli.task)
 
 

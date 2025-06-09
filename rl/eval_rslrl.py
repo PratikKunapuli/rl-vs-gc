@@ -279,7 +279,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         
         control_params_dict = gc_params_dict[task_name]["controller_params"]
         gc_vehicle = "Crazyflie" if "Crazyflie" in args_cli.task else "AM"
-        agent = GeometricController(env.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
+        agent = GeometricController(env.num_envs, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, device=device,
                                         vehicle=gc_vehicle, **control_params_dict)
 
     

@@ -63,14 +63,14 @@ def compute_ff_terms(obs: torch.Tensor, policy_dt: float) -> Tuple[torch.Tensor,
     return ff_pos, ff_vel, ff_acc, ff_jerk, ff_snap, ff_yaw, ff_yaw_dot, ff_yaw_ddot
 
 class GeometricController():
-    def __init__(self, num_envs, num_dofs, vehicle_mass, arm_mass, inertia_tensor, pos_offset, ori_offset, print_debug=False, com_pos_w=None, device='cpu',
+    def __init__(self, num_envs, vehicle_mass, arm_mass, inertia_tensor, pos_offset, ori_offset, print_debug=False, com_pos_w=None, device='cpu',
                   kp_pos_gain_xy=10.0, kp_pos_gain_z=20.0, kd_pos_gain_xy=7.0, kd_pos_gain_z=9.0, 
                   kp_att_gain_xy=400.0, kp_att_gain_z=2.0, kd_att_gain_xy=70.0, kd_att_gain_z=2.0,
                   ki_pos_gain_xy=0.0, ki_pos_gain_z=0.0, ki_att_gain_xy=0.0, ki_att_gain_z=0.0,
                   tuning_mode=False, vehicle="AM", control_mode="CTBM", policy_dt=0.02,
                   feed_forward=False, use_integral = False, disable_gravity=False, track_buffers = False, **kwargs):
         self.num_envs = num_envs
-        self.num_dofs = num_dofs
+        self.num_dofs = 0
         self.print_debug = print_debug
         self.tuning_mode = tuning_mode
         self.track_buffers = track_buffers
