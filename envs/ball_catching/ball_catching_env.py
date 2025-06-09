@@ -13,7 +13,6 @@ from omni.isaac.lab.sim import SimulationCfg
 from omni.isaac.lab.terrains import TerrainImporterCfg
 from omni.isaac.lab.utils import configclass
 from omni.isaac.lab.utils.assets import ISAAC_NUCLEUS_DIR
-from omni.isaac.lab.utils.math import subtract_frame_transforms, combine_frame_transforms, matrix_from_quat, quat_error_magnitude, random_orientation, quat_inv, quat_rotate_inverse, quat_mul, yaw_quat, quat_conjugate
 from omni.isaac.lab_assets import CRAZYFLIE_CFG
 from omni.isaac.lab.sim.spawners.shapes import SphereCfg, spawn_sphere
 from omni.isaac.lab.sim.spawners.materials import VisualMaterialCfg, PreviewSurfaceCfg, spawn_preview_surface
@@ -21,8 +20,9 @@ from omni.isaac.lab.sim.spawners.materials import VisualMaterialCfg, PreviewSurf
 from omni.isaac.core.utils.prims import get_prim_at_path
 from pxr import Usd, UsdShade, Gf
 # Local imports
-from configs.aerial_manip_asset import AERIAL_MANIPULATOR_0DOF_DEBUG_BALL_CATCHING_CFG, AERIAL_MANIPULATOR_0DOF_BALL_CATCHING_CFG, BALL_CFG
-from utils.math_utilities import yaw_from_quat, yaw_error_from_quats, quat_from_yaw, compute_desired_pose_from_transform
+from configs.aerial_manip_asset import AERIAL_MANIPULATOR_0DOF_BALL_CATCHING_CFG, BALL_CFG
+import utils.math_utilities as math_utils
+import omni.isaac.lab.utils.math as isaac_math_utils
 
 import gymnasium as gym
 import numpy as np
@@ -87,9 +87,7 @@ class AerialManipulatorBallCatchingEnvBaseCfg(DirectRLEnvCfg):
     )
 
     ball: RigidObjectCfg = BALL_CFG.replace(prim_path="/World/envs/env_.*/Ball")
-    # ball_caught = BALL_CFG.replace(prim_path="/World/envs/env_.*/Ball")
-    # ball_caught.spawn.visual_material = PreviewSurfaceCfg(diffuse_color=(0.0, 1.0, 0.0))
-
+    
 
     # scene
     scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=2.5, replicate_physics=True)
@@ -98,46 +96,8 @@ class AerialManipulatorBallCatchingEnvBaseCfg(DirectRLEnvCfg):
     observation_space= gym.spaces.Box(low=-np.inf, high=np.inf, shape=(12,))
     state_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(0,))
 
-    # sphere_cfg = SphereCfg(
-    #     radius=0.02,
-    #     visible=True,
-    #     physics_material=sim_utils.RigidBodyMaterialCfg(
-    #         friction_combine_mode="multiply",
-    #         restitution_combine_mode="multiply",
-    #         static_friction=1.0,
-    #         dynamic_friction=1.0,
-    #         restitution=0.0,
-    #     ),
-    #     visual_material=PreviewSurfaceCfg(
-    #         diffuse_color=(1.0, 0.0, 0.0)
-    #     ),
-    # )
 
-    # sphere_marker_cfg = VisualizationMarkersCfg(
-    #     markers={
-    #         "sphere": SphereCfg(
-    #             radius=0.02,
-    #             visible=True,
-    #             visual_material=PreviewSurfaceCfg(diffuse_color=(1.0, 0.0, 0.0)),
-    #         ),
-    #     }
-    # )
-    # sphere_spawner = spawn_sphere(prim_path = "/World/sphere", cfg=sphere_cfg)
-
-    # ball_cfg = RigidObjectCfg(
-    #     prim_path="/World/envs/env_.*/Ball",
-    #     spawn=sphere_spawner,
-    #     debug_vis=True,
-    # )
-
-    # ball = RigidObject(
-    #     cfg=ball_cfg,
-    # )
-
-    # action scaling
-    # moment_scale_xy = 1.0
-    # moment_scale_z = 0.05
-    # thrust_to_weight = 3.0
+    # Action Scaling
     moment_scale_xy = 0.5
     moment_scale_z = 0.025
     thrust_to_weight = 3.0
@@ -159,9 +119,6 @@ class AerialManipulatorBallCatchingEnvBaseCfg(DirectRLEnvCfg):
 
     # Task condionionals for the environment - modifies the goal
     goal_cfg = "rand" # "rand", "fixed", or "initial"
-    # "rand" - Random goal position and orientation
-    # "fixed" - Fixed goal position and orientation set apriori
-    # "initial" - Goal position and orientation is the initial position and orientation of the robot
     goal_pos = None
     goal_vel = None
     use_catch_pos = True
@@ -192,7 +149,6 @@ class AerialManipulatorBallCatchingEnvBaseCfg(DirectRLEnvCfg):
     eval_mode = False
     gc_mode = False
 
-    # ball_obj : RigidObjectCfg = BALL_CFG.replace(prim_path="/World/envs/env_.*/Ball")
 
 @configclass
 class AerialManipulator0DOFBallCatchingEnvCfg(AerialManipulatorBallCatchingEnvBaseCfg):
@@ -200,8 +156,6 @@ class AerialManipulator0DOFBallCatchingEnvCfg(AerialManipulatorBallCatchingEnvBa
     num_actions = 4
     num_joints = 0
     num_observations = 12 # TODO: Need to update this..
-    # 3(vel) + 3(ang vel) + 3(pos) + 9(ori) = 18
-    # 3(vel) + 3(ang vel) + 3(pos) + 3(grav vector body frame) = 12
     
     # robot
     robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_BALL_CATCHING_CFG.replace(prim_path="/World/envs/env_.*/Robot")
@@ -221,38 +175,6 @@ class AerialManipulator0DOFBallCatchingEnvCfg(AerialManipulatorBallCatchingEnvBa
     ),
 
 
-    # ball: RigidObjectCfg = BALL_CFG.replace(prim_path="/World/envs/env_.*/Ball")
-    # scene = AerialManipulatorBallCatchingSceneCfg()
-    # scene.robot = AERIAL_MANIPULATOR_0DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
-
-@configclass
-class AerialManipulator0DOFDebugBallCatchingEnvCfg(AerialManipulatorBallCatchingEnvBaseCfg):
-    # env
-    num_actions = 4
-    num_joints = 0
-    num_observations = 12 # TODO: Need to update this..
-    # 3(vel) + 3(ang vel) + 3(pos) + 9(ori) = 18
-    # 3(vel) + 3(ang vel) + 3(pos) + 3(grav vector body frame) = 12
-    
-    # robot
-    robot: ArticulationCfg = AERIAL_MANIPULATOR_0DOF_DEBUG_BALL_CATCHING_CFG.replace(prim_path="/World/envs/env_.*/Robot")
-    robot.collision_group = 0
-    robot.spawn.physics_material = sim_utils.RigidBodyMaterialCfg(
-        friction_combine_mode="multiply",
-        restitution_combine_mode="multiply",
-        static_friction=20.0,
-        dynamic_friction=20.0,
-        restitution=0.0,
-    )
-    robot.spawn.collision_props=sim_utils.CollisionPropertiesCfg(
-        collision_enabled=True,
-        contact_offset=0.02,
-        torsional_patch_radius=0.04,
-        min_torsional_patch_radius=0.0001,
-    ),
-    # scene = AerialManipulatorBallCatchingSceneCfg()
-    # scene.robot = AERIAL_MANIPULATOR_0DOF_CFG.replace(prim_path="/World/envs/env_.*/Robot")
-
 
 class AerialManipulatorBallCatchingEnv(DirectRLEnv):
     cfg: AerialManipulatorBallCatchingEnvBaseCfg
@@ -267,6 +189,8 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
         self._joint_torques = torch.zeros(self.num_envs, self._robot.num_joints, device=self.device)
         self._body_forces = torch.zeros(self.num_envs, 1, 3, device=self.device)
         self._body_moment = torch.zeros(self.num_envs, 1, 3, device=self.device)
+        self._previous_actions = torch.zeros(self.num_envs, self.cfg.num_actions, device=self.device)
+
 
         # Goal State    
         self._ball_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
@@ -343,7 +267,7 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
             self.com_pos_w += self._robot.root_physx_view.get_masses()[0, i] * self._robot.root_physx_view.get_link_transforms()[0, i, :3].squeeze()
         self.com_pos_w /= self._robot.root_physx_view.get_masses()[0].sum()
 
-        self.com_pos_e, self.com_ori_e = subtract_frame_transforms(ee_pos, ee_ori, com_pos, com_ori)
+        self.com_pos_e, self.com_ori_e = isaac_math_utils.subtract_frame_transforms(ee_pos, ee_ori, com_pos, com_ori)
 
 
         self.position_offset = quad_pos
@@ -418,7 +342,7 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
         if self.cfg.use_catch_pos:
             self._desired_pos_w = self._catch_pos_w
             yaw_angle_w = torch.atan2(self._ball_vel_w[:, 1], self._ball_vel_w[:, 0])
-            self._desired_ori_w = quat_from_yaw(yaw_angle_w)
+            # self._desired_ori_w = quat_from_yaw(yaw_angle_w)
             # self._desired_ori_w = torch.stack([torch.cos(yaw_angle_w / 2), 0.0, 0.0, torch.sin(yaw_angle_w / 2)], dim=-1)
             
             self._desired_ori_w = torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device).unsqueeze(0).repeat(self.num_envs, 1)
@@ -437,17 +361,16 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
         # Batched over number of environments, returns (num_envs, 3) and (num_envs, 4) tensors
         # pos_error_b, ori_error_b = subtract_frame_transforms(self._desired_pos_w, self._desired_ori_w, 
         #                                                      base_pos, base_ori)
-        pos_error_b, ori_error_b = subtract_frame_transforms(
+        pos_error_b, ori_error_b = isaac_math_utils.subtract_frame_transforms(
             base_pos_w, base_ori_w, 
-            # self._desired_pos_w, self._desired_ori_w
             goal_pos, goal_yaw
         )
 
         # Compute the orientation error as a yaw error in the body frame
-        goal_yaw_w = yaw_quat(self._desired_ori_w)
-        current_yaw_w = yaw_quat(base_ori_w)
+        goal_yaw_w = isaac_math_utils.yaw_quat(self._desired_ori_w)
+        current_yaw_w = isaac_math_utils.yaw_quat(base_ori_w)
         # yaw_error_w = quat_mul(quat_inv(current_yaw_w), goal_yaw_w)
-        yaw_error_w = yaw_error_from_quats(current_yaw_w, goal_yaw_w, dof=0).view(self.num_envs, 1)
+        yaw_error_w = math_utils.yaw_error_from_quats(current_yaw_w, goal_yaw_w, dof=0).view(self.num_envs, 1)
         
         if self.cfg.use_yaw_representation:
             yaw_representation = yaw_error_w
@@ -456,31 +379,27 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
         
 
         if self.cfg.use_full_ori_matrix:
-            ori_representation_b = matrix_from_quat(ori_error_b).flatten(-2, -1)
+            ori_representation_b = isaac_math_utils.matrix_from_quat(ori_error_b).flatten(-2, -1)
         else:
             ori_representation_b = torch.zeros(self.num_envs, 0, device=self.device)
 
         if self.cfg.use_grav_vector:
-            grav_vector_b = quat_rotate_inverse(base_ori_w, self._grav_vector_unit) # projected gravity vector in the cfg frame
+            grav_vector_b = isaac_math_utils.quat_rotate_inverse(base_ori_w, self._grav_vector_unit) # projected gravity vector in the cfg frame
         else:
             grav_vector_b = torch.zeros(self.num_envs, 0, device=self.device)
         
         # Compute the linear and angular velocities of the end-effector in body frame
         lin_vel_error_w = -lin_vel_w
-        lin_vel_b = quat_rotate_inverse(base_ori_w, lin_vel_error_w)
-        ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_w)
+        ang_vel_error_w = ang_vel_w
+        lin_vel_b = isaac_math_utils.quat_rotate_inverse(base_ori_w, lin_vel_error_w)
+        ang_vel_b = isaac_math_utils.quat_rotate_inverse(base_ori_w, ang_vel_error_w)
 
-        # Compute the joint states
-        shoulder_joint_pos = torch.zeros(self.num_envs, 0, device=self.device)
-        shoulder_joint_vel = torch.zeros(self.num_envs, 0, device=self.device)
-        wrist_joint_pos = torch.zeros(self.num_envs, 0, device=self.device)
-        wrist_joint_vel = torch.zeros(self.num_envs, 0, device=self.device)
-        if self.cfg.num_joints > 0:
-            shoulder_joint_pos = self._robot.data.joint_pos[:, self._shoulder_joint_idx].unsqueeze(1)
-            shoulder_joint_vel = self._robot.data.joint_vel[:, self._shoulder_joint_idx].unsqueeze(1)
-        if self.cfg.num_joints > 1:
-            wrist_joint_pos = self._robot.data.joint_pos[:, self._wrist_joint_idx].unsqueeze(1)
-            wrist_joint_vel = self._robot.data.joint_pos[:, self._wrist_joint_idx].unsqueeze(1)
+        # Previous Action
+        if self.cfg.use_previous_actions:
+            previous_actions = self._actions
+        else:
+            previous_actions = torch.zeros(self.num_envs, 0, device=self.device)
+
 
         obs = torch.cat(
             [
@@ -490,10 +409,7 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
                 grav_vector_b,                              # (num_envs, 3) if using gravity vector, 0 otherwise
                 lin_vel_b,                                  # (num_envs, 3)
                 ang_vel_b,                                  # (num_envs, 3)
-                shoulder_joint_pos,                         # (num_envs, 1)
-                wrist_joint_pos,                            # (num_envs, 1)
-                shoulder_joint_vel,                         # (num_envs, 1)
-                wrist_joint_vel,                            # (num_envs, 1)
+                previous_actions,                           # (num_envs, 0) if not using previous actions, 4 if using previous actions
             ],
             dim=-1                                          # (num_envs, 22)
         )
@@ -512,7 +428,7 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
                     quad_lin_vel_w,
                     quad_ang_vel_w,
                     goal_pos,
-                    yaw_from_quat(goal_ori).unsqueeze(1),
+                    math_utils.yaw_from_quat(goal_ori).unsqueeze(1),
                 ],
                 dim=-1
             )
@@ -537,10 +453,6 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
                 ee_ori_w,                                   # (num_envs, 4) [16-20]
                 ee_lin_vel_w,                               # (num_envs, 3) [20-23]
                 ee_ang_vel_w,                               # (num_envs, 3) [23-26]
-                shoulder_joint_pos,                         # (num_envs, 1) [26] 
-                wrist_joint_pos,                            # (num_envs, 1) [27]
-                shoulder_joint_vel,                         # (num_envs, 1) [28]
-                wrist_joint_vel,                            # (num_envs, 1) [29]
                 self._desired_pos_w,                        # (num_envs, 3) [30-33] [26-29]
                 self._desired_ori_w,                        # (num_envs, 4) [33-37] [29-33]
             ],
@@ -559,15 +471,15 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
         pos_error = torch.linalg.norm(self._ball_pos_w - base_pos_w, dim=1)
         pos_distance = 1.0 - torch.tanh(pos_error / self.cfg.pos_radius)
 
-        ori_error = quat_error_magnitude(self._ball_ori_w, base_ori_w)
+        ori_error = isaac_math_utils.quat_error_magnitude(self._ball_ori_w, base_ori_w)
         
-        goal_yaw_w = yaw_quat(self._ball_ori_w)
-        current_yaw_w = yaw_quat(base_ori_w)
+        goal_yaw_w = isaac_math_utils.yaw_quat(self._ball_ori_w)
+        current_yaw_w = isaac_math_utils.yaw_quat(base_ori_w)
         # yaw_error_w = quat_mul(quat_inv(current_yaw_w), goal_yaw_w)
         # yaw_error = quat_error_magnitude(yaw_error_w, torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device).tile((self.num_envs, 1)))
 
         # other_yaw_error = yaw_error_from_quats(goal_yaw_w, current_yaw_w, self.cfg.num_joints).unsqueeze(1)
-        yaw_error = yaw_error_from_quats(self._ball_ori_w, base_ori_w, self.cfg.num_joints).unsqueeze(1)
+        yaw_error = math_utils.yaw_error_from_quats(self._ball_ori_w, base_ori_w, self.cfg.num_joints).unsqueeze(1)
         # other_yaw_error = torch.sum(torch.square(other_yaw_error), dim=1)
         yaw_error = torch.linalg.norm(yaw_error, dim=1)
 
@@ -575,8 +487,8 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
         yaw_error = yaw_error * (1.0 - torch.exp(-1.0/(self.cfg.yaw_smooth_transition_scale*pos_error)))
 
         # Velocity error components, used for stabliization tuning
-        lin_vel_b = quat_rotate_inverse(base_ori_w, lin_vel_w)
-        ang_vel_b = quat_rotate_inverse(base_ori_w, ang_vel_w)
+        lin_vel_b = isaac_math_utils.quat_rotate_inverse(base_ori_w, lin_vel_w)
+        ang_vel_b = isaac_math_utils.quat_rotate_inverse(base_ori_w, ang_vel_w)
         # lin_vel_error = torch.linalg.norm(lin_vel_b, dim=-1)
         # ang_vel_error = torch.linalg.norm(ang_vel_b, dim=-1)
         # lin_vel_error = torch.sum(torch.square(lin_vel_b), dim=1)
@@ -778,8 +690,8 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
 
         # Logging the episode sums
         final_distance_to_goal = torch.linalg.norm(self._desired_pos_w[env_ids] - base_pos_w[env_ids], dim=1).mean()
-        final_ori_error_to_goal = quat_error_magnitude(self._desired_ori_w[env_ids], base_ori_w[env_ids]).mean()
-        final_yaw_error_to_goal = quat_error_magnitude(yaw_quat(self._desired_ori_w[env_ids]), yaw_quat(base_ori_w[env_ids])).mean()
+        final_ori_error_to_goal = isaac_math_utils.quat_error_magnitude(self._desired_ori_w[env_ids], base_ori_w[env_ids]).mean()
+        final_yaw_error_to_goal = isaac_math_utils.quat_error_magnitude(isaac_math_utils.yaw_quat(self._desired_ori_w[env_ids]), isaac_math_utils.yaw_quat(base_ori_w[env_ids])).mean()
         extras = dict()
         for key in self._episode_sums.keys():
             episodic_sum = self._episode_sums[key][env_ids].sum()
@@ -805,52 +717,10 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
         elif self.cfg.eval_mode:
             self.episode_length_buf[env_ids] = 0
         
-        # Sample new goal position and orientation
-        # if self.cfg.goal_cfg == "rand":
-            # self._ball_pos_w[env_ids, :2] = torch.zeros_like(self._ball_pos_w[env_ids, :2])
-            # # self._ball_pos_w[env_ids, :2] = torch.zeros_like(self._ball_pos_w[env_ids, :2])
-            # self._ball_pos_w[env_ids, :2] += self._terrain.env_origins[env_ids, :2]
-            # self._ball_pos_w[env_ids, 2] = 2.0 * torch.ones_like(self._ball_pos_w[env_ids, 2])
-            # # self._ball_vel_w[env_ids, :2] = torch.zeros_like(self._ball_vel_w[env_ids, :2]).uniform_(-1.0, 1.0)
-            # self._ball_vel_w[env_ids, :2] = torch.zeros_like(self._ball_vel_w[env_ids, :2])
-            # self._ball_vel_w[env_ids, 2] = 9.06 * torch.ones_like(self._ball_vel_w[env_ids, 2])
-            # self._ball_ori_w[env_ids] = random_orientation(env_ids.size(0), device=self.device)
-
-            # self._catch_pos_w[env_ids] = self.get_catch_point(self._ball_pos_w[env_ids], self._ball_vel_w[env_ids])
-
-            # default_ball_state = self._ball.data.default_root_state[env_ids, :7]
-            # default_ball_state[:, :3] = torch.zeros_like(default_ball_state[:, :3])
-            # default_ball_state[:, :2] += self._terrain.env_origins[env_ids, :2]
-            # default_ball_state[:, 2] = 2.0 * torch.ones_like(default_ball_state[:, 2])
-            # self._ball.write_root_pose_to_sim(default_ball_state[:, :7], env_ids=env_ids)
-            # default_ball_vel = self._ball.data.default_root_state[env_ids, 7:]
-            # default_ball_vel[:, :3] = torch.zeros_like(default_ball_vel[:, :3])
-            # default_ball_vel[:, 2] = 6.0 * torch.ones_like(default_ball_vel[:, 2])
-            # self._ball.write_root_velocity_to_sim(default_ball_vel, env_ids=env_ids)
-
-            # self._catch_pos_w[env_ids] = self.get_catch_point(default_ball_state[:, :3], default_ball_vel[:, :3])
+        
 
         self.rethrow_ball(env_ids)
 
-            # ball_default_pose = self.ball.data.default_root_state[env_ids, :7]
-            # ball_default_pose[:, :3] = self._desired_pos_w[env_ids]
-            # ball_default_pose[:, 3:7] = self._desired_ori_w[env_ids]
-            # self.ball.write_root_pose_to_sim(ball_default_pose, env_ids=env_ids)
-            # ball_default_vel = self.ball.data.default_root_state[env_ids, 7:]
-            # ball_default_vel[:, :3] = self._ball_vel_w[env_ids]
-            # self.ball.write_root_velocity_to_sim(ball_default_vel, env_ids=env_ids)
-
-        # elif self.cfg.goal_cfg == "fixed":
-        #     self._desired_pos_w[env_ids] = torch.tensor(self.cfg.goal_pos, device=self.device).tile((env_ids.size(0), 1))
-        #     self._desired_pos_w[env_ids, :2] += self._terrain.env_origins[env_ids, :2]
-        #     self._desired_ori_w[env_ids] = torch.tensor(self.cfg.goal_ori, device=self.device).tile((env_ids.size(0), 1))
-        # elif self.cfg.goal_cfg == "initial":
-        #     default_root_state = self._robot.data.default_root_state[env_ids]
-        #     self._desired_pos_w[env_ids] = default_root_state[:, :3]
-        #     self._desired_pos_w[env_ids, :2] += self._terrain.env_origins[env_ids, :2]
-        #     self._desired_ori_w[env_ids] = default_root_state[:, 3:7]
-        # else:
-        #     raise ValueError("Invalid goal task: ", self.cfg.goal_cfg)
 
         # Reset Robot state
         self._robot.reset()
@@ -918,9 +788,9 @@ class AerialManipulatorBallCatchingEnv(DirectRLEnv):
             goal_ori_w = self._desired_ori_w
         elif goal_body == "COM":
             # desired_pos, desired_yaw = self.compute_desired_pose_from_transform(self._desired_pos_w, self._desired_ori_w, self.com_pos_e)
-            desired_pos, desired_yaw = compute_desired_pose_from_transform(self._desired_pos_w, self._desired_ori_w, self.com_pos_e, 0)
+            desired_pos, desired_yaw = math_utils.compute_desired_pose_from_transform(self._desired_pos_w, self._desired_ori_w, self.com_pos_e, 0)
             goal_pos_w = desired_pos
-            goal_ori_w = quat_from_yaw(desired_yaw)
+            goal_ori_w = math_utils.quat_from_yaw(desired_yaw)
         else:
             raise ValueError("Invalid goal body: ", self.cfg.goal_body)
 

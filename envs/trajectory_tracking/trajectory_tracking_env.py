@@ -883,21 +883,9 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
         ang_vel_b = isaac_math_utils.quat_rotate_inverse(base_ori_w, ang_vel_error_w)
 
 
-        # Compute the joint states
-        shoulder_joint_pos = torch.zeros(self.num_envs, 0, device=self.device)
-        shoulder_joint_vel = torch.zeros(self.num_envs, 0, device=self.device)
-        wrist_joint_pos = torch.zeros(self.num_envs, 0, device=self.device)
-        wrist_joint_vel = torch.zeros(self.num_envs, 0, device=self.device)
-        if self.cfg.num_joints > 0:
-            shoulder_joint_pos = self._robot.data.joint_pos[:, self._shoulder_joint_idx].unsqueeze(1)
-            shoulder_joint_vel = self._robot.data.joint_vel[:, self._shoulder_joint_idx].unsqueeze(1)
-        if self.cfg.num_joints > 1:
-            wrist_joint_pos = self._robot.data.joint_pos[:, self._wrist_joint_idx].unsqueeze(1)
-            wrist_joint_vel = self._robot.data.joint_pos[:, self._wrist_joint_idx].unsqueeze(1)
-
         # Previous Action
         if self.cfg.use_previous_actions:
-            previous_actions = self._previous_actions
+            previous_actions = self._actions
         else:
             previous_actions = torch.zeros(self.num_envs, 0, device=self.device)
 
@@ -909,10 +897,6 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
                 grav_vector_b,                              # (num_envs, 3) if using gravity vector, 0 otherwise
                 lin_vel_b,                                  # (num_envs, 3)
                 ang_vel_b,                                  # (num_envs, 3)
-                shoulder_joint_pos,                         # (num_envs, 1)
-                wrist_joint_pos,                            # (num_envs, 1)
-                shoulder_joint_vel,                         # (num_envs, 1)
-                wrist_joint_vel,                            # (num_envs, 1)
                 previous_actions,                           # (num_envs, 4)
                 future_pos_error_b.flatten(-2, -1),         # (num_envs, horizon * 3)
                 future_ori_error_b.flatten(-2, -1)          # (num_envs, horizon * 4) if use_yaw_representation_for_trajectory, else (num_envs, horizon, 1)
@@ -973,10 +957,6 @@ class AerialManipulatorTrajectoryTrackingEnv(DirectRLEnv):
                     ee_ori_w,                                   # (num_envs, 4) [16-20]
                     ee_lin_vel_w,                               # (num_envs, 3) [20-23]
                     ee_ang_vel_w,                               # (num_envs, 3) [23-26]
-                    shoulder_joint_pos,                         # (num_envs, 1) [26] 
-                    wrist_joint_pos,                            # (num_envs, 1) [27]
-                    shoulder_joint_vel,                         # (num_envs, 1) [28]
-                    wrist_joint_vel,                            # (num_envs, 1) [29]
                     self._desired_pos_w,                        # (num_envs, 3) [30-33] [26-29]
                     self._desired_ori_w,                        # (num_envs, 4) [33-37] [29-33]
                     pos_traj,                                   # (num_envs, 3 * horizon) [37-37 + 3*horizon] [33-33 + 3*horizon]   
