@@ -55,7 +55,7 @@ import yaml
 
 import gymnasium as gym
 import envs
-from controllers.decoupled_controller import DecoupledController
+from controllers.geometric_controller import GeometricController
 from controllers.gc_params import gc_params_dict
 
 
@@ -80,13 +80,6 @@ import torch
 
 @hydra_task_config(args_cli.task, "rsl_rl_cfg_entry_point")
 def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolicyRunnerCfg):
-    # torch.manual_seed(args_cli.seed)
-    # env_cfg = parse_env_cfg(
-    #     args_cli.task, device=args_cli.device, num_envs=args_cli.num_envs, use_fabric=not args_cli.disable_fabric
-    # )
-
-    
-    # agent_cfg: RslRlOnPolicyRunnerCfg = cli_args.parse_rsl_rl_cfg(args_cli.task, args_cli)
     agent_cfg = cli_args.update_rsl_rl_cfg(agent_cfg, args_cli)
     env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
 
@@ -102,35 +95,18 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
     if not args_cli.baseline:
         policy_path = log_dir
     else:
-        # policy_path = "./baseline_0dof/"
-        # policy_path = "./baseline_0dof_com_lqr_tune/"
-        # policy_path = "./baseline_0dof_com_reward_tune/"
-        # policy_path = "./baseline_0dof_ee_reward_tune/"
-        # policy_path = "./baseline_0dof_ee_lqr_tune/"
-
         
-        # env_cfg.sim_rate_hz = 100
-        # env_cfg.policy_rate_hz = 50
-        # env_cfg.sim.dt = 1/env_cfg.sim_rate_hz
-        # env_cfg.decimation = env_cfg.sim_rate_hz // env_cfg.policy_rate_hz
-        # env_cfg.sim.render_interval = env_cfg.decimation
         env_cfg.gc_mode = True
         if "Crazyflie" in args_cli.task:
             env_cfg.task_body = "body"
             env_cfg.goal_body = "body"
-            # env_cfg.reward_task_body = "endeffector"
-            # env_cfg.reward_goal_body = "endeffector"
             env_cfg.reward_task_body = "body"
             env_cfg.reward_goal_body = "body"
-
-            # policy_path = "./baseline_cf_0dof/"
         else:
             env_cfg.task_body = "COM"
             env_cfg.goal_body = "COM"
             env_cfg.reward_task_body = "root"
             env_cfg.reward_goal_body = "root"
-
-            # policy_path = "./baseline_0dof_ee_reward_tune/"
 
         task_name = args_cli.task            
         if args_cli.use_integral_terms:
@@ -146,12 +122,6 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
             return
             
 
-        # env_cfg.yaw_distance_reward_scale = 5.0
-    # else:
-    #     print("\n\nSaved args: ", saved_args_cli)
-    #     print("Keys: ", saved_args_cli.keys())
-    #     env_cfg = update_env_cfg(env_cfg, saved_args_cli)
-
     env_cfg.eval_mode = True
     env_cfg.viewer.resolution = (1920, 1080)
     env_cfg.seed = args_cli.seed
@@ -163,9 +133,6 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
     if os.path.exists(os.path.join(log_dir, "params/env.yaml")):
         with open(os.path.join(log_dir, "params/env.yaml")) as f:
             hydra_cfg = yaml.load(f, Loader=yaml.UnsafeLoader)
-        # f = os.path.join(log_dir, "params/env.yaml")
-        # loader = yaml.YAML(typ="safe")
-        # hydra_cfg = loader.load(f)
 
         
         if "use_yaw_representation" in hydra_cfg:
@@ -198,61 +165,24 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
                 env_cfg.combined_tolerance = hydra_cfg["combined_tolerance"]
             if "combined_reward_scale" in hydra_cfg:
                 env_cfg.combined_reward_scale = hydra_cfg["combined_reward_scale"]
-
-    # else:
-    #     yaml_base = "./logs/rsl_rl/AM_0DOF_Hover/2024-09-14_14-38-12_rsl_rl_test_default_1024_env_pos_distance_15_yaw_error_-2.0_no_smooth_transition_full_ori"
-    #     with open(os.path.join(yaml_base, "params/env.yaml"), "r") as f:
-    #         hydra_cfg = yaml.load(f, Loader=yaml.FullLoader)
-    #         if "use_yaw_representation" in hydra_cfg:
-    #             env_cfg.use_yaw_representation = hydra_cfg["use_yaw_representation"]
-    #         if "yaw_error_reward_scale" in hydra_cfg:
-    #             env_cfg.yaw_error_reward_scale = hydra_cfg["yaw_error_reward_scale"]
-    #         if "yaw_distance_reward_scale" in hydra_cfg:
-    #             env_cfg.yaw_distance_reward_scale = hydra_cfg["yaw_distance_reward_scale"]
-    #         if "yaw_smooth_transition_scale" in hydra_cfg:
-    #             env_cfg.yaw_smooth_transition_scale = hydra_cfg["yaw_smooth_transition_scale"]
-    #         if "yaw_radius" in hydra_cfg:
-    #             env_cfg.yaw_radius = hydra_cfg["yaw_radius"]
-            
-    #         if "use_full_ori_matrix" in hydra_cfg:
-    #             env_cfg.use_full_ori_matrix = hydra_cfg["use_full_ori_matrix"]
-            
-    #         if "scale_reward_with_time" in hydra_cfg:
-    #             env_cfg.scale_reward_with_time = hydra_cfg["scale_reward_with_time"]
-
-    # env_cfg.yaw_radius = 0.5
     
     if env_cfg.use_yaw_representation:
-        # env_cfg.num_observations += 4
         env_cfg.num_observations += 1
     
     if env_cfg.use_full_ori_matrix:
-        # env_cfg.num_observations += 6
         env_cfg.num_observations += 9
 
     if "Traj" in args_cli.task:
         env_cfg.goal_cfg = "rand"
-        # env_cfg.trajectory_params["x_amp"] = 1.0
-        # env_cfg.trajectory_params["x_freq"] = 0.5
-        # env_cfg.trajectory_params["y_amp"] = 2.0
-        # env_cfg.trajectory_params["y_freq"] = 1.0
-        # env_cfg.trajectory_params["z_amp"] = 0.0
-        # env_cfg.trajectory_params["z_offset"] = 0.5
-        # env_cfg.trajectory_params["yaw_amp"] = 1.0
-        # env_cfg.trajectory_params["yaw_freq"] = 1.0
-        # env_cfg.traj_update_dt = 1.0
-        # env_cfg.traj_update_dt = 2.0
-
+    
     env_cfg.seed = args_cli.seed
 
-    # import code; code.interact(local=locals())
     print("\n\nUpdated env cfg: ", env_cfg)
 
     robot_index_prefix = ""
     if args_cli.case_study:
         # Manual override of env cfg
         env_cfg.goal_cfg = "fixed"
-        # env_cfg.goal_pos = [0.0, 0.0, 0.5]
         env_cfg.goal_pos = [0.0, 0.0, 3.0]
         env_cfg.goal_ori = [0.7071068, 0.0, 0.0, 0.7071068]
         env_cfg.init_cfg = "default"
@@ -260,10 +190,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         # Camera settings
         if "Crazyflie" in args_cli.task:
             env_cfg.viewer.eye = (0.25, 0.25, 3.25)
-            # env_cfg.viewer.lookat = (0.0, 0.0, 0.5)
         else:
             env_cfg.viewer.eye = (0.75, 0.75, 3.75)
-            # env_cfg.viewer.lookat = (0.0, 0.0, 0.5)
         env_cfg.viewer.lookat = (0.0, 0.0, 3.0)
         env_cfg.viewer.resolution = (1080, 1920)
         env_cfg.viewer.origin_type = "env"
@@ -296,23 +224,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
                     env_cfg.viewer.env_index = args_cli.follow_robot
                     env_cfg.viewer.asset_name = "robot"
 
-
-
-
             robot_index_prefix = f"_robot_{args_cli.follow_robot}"
-
-
-    
-    # env_cfg.viewer.eye = (3.0, 1.5, 2.0)
-    # env_cfg.viewer.resolution = (1920, 1080)
-    # env_cfg.viewer.lookat = (0.0, 1.5, 0.5)
-    # env_cfg.viewer.origin_type = "env"
-    # env_cfg.viewer.env_index = 0
-
-    # Manual override of env cfg
-    # env_cfg.goal_pos_range = 2.0
-    # env_cfg.goal_yaw_range = 0.0 #0.0 1.5708  3.14159
-
 
 
     envs = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array")
@@ -328,7 +240,6 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         save_prefix += "eval_traj_track_" + str(int(1/env_cfg.traj_update_dt)) + "Hz_"
 
     
-    # save_prefix = "ball_catch_side_view_"
     if "Traj" in args_cli.task:
         viz_mode = env_cfg.viz_mode
     else:
@@ -343,7 +254,6 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
     video_kwargs = {
         "video_folder": video_folder_path,
         "step_trigger": lambda step: step == 0,
-        # "episode_trigger": lambda episode: (episode % args.save_interval) == 0,
         "video_length": args_cli.video_length,
         "name_prefix": video_name
     }
@@ -365,46 +275,13 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         else:
             feed_forward = False
 
-        # Hand-tuned gains
-        # agent = DecoupledController(envs.num_envs, 0, envs.vehicle_mass, envs.arm_mass, envs.quad_inertia, envs.arm_offset, envs.orientation_offset, com_pos_w=None, device=device)
+       
         
-        
-        if "Crazyflie" not in args_cli.task:
-            # Optuna-tuned gains for EE-Reward
-            # use_feed_forward = "Traj" in args_cli.task and "Integral" not in args_cli.task
-            control_params_dict = gc_params_dict[task_name]["controller_params"]
-            agent = DecoupledController(env.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
-                                        **control_params_dict)
-        else:
-            # Crazyflie DC
-            control_params_dict = gc_params_dict[task_name]["controller_params"]
-            # agent = DecoupledController(env.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
-            #                             kp_pos_gain_xy=6.5, kp_pos_gain_z=15.0, kd_pos_gain_xy=4.0, kd_pos_gain_z=9.0,
-            #                             kp_att_gain_xy=544, kp_att_gain_z=544, kd_att_gain_xy=46.64, kd_att_gain_z=46.64, 
-            #                             skip_precompute=True, vehicle="Crazyflie", control_mode="CTBM", print_debug=False, feed_forward=feed_forward)
-            
-            agent = DecoupledController(env.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
-                                        vehicle="Crazyflie", **control_params_dict)
-            
-        # Optuna-tuned gains for EE-LQR Cost (equal pos and yaw weight)
-        # agent = DecoupledController(env.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
-        #                             kp_pos_gain_xy=24.675, kp_pos_gain_z=31.101, kd_pos_gain_xy=7.894, kd_pos_gain_z=8.207,
-        #                             kp_att_gain_xy=950.228, kp_att_gain_z=10.539, kd_att_gain_xy=39.918, kd_att_gain_z=5.719)
-        
-        # Optuna-tuned gains for COM-Reward
-        # agent = DecoupledController(env.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
-        #                             kp_pos_gain_xy=38.704, kp_pos_gain_z=39.755, kd_pos_gain_xy=10.413, kd_pos_gain_z=13.509,
-        #                             kp_att_gain_xy=829.511, kp_att_gain_z=1.095, kd_att_gain_xy=38.383, kd_att_gain_z=4.322)
-        
-        # Optuna-tuned gains for COM-LQR Cost (equal pos and yaw weight)
-        # agent = DecoupledController(env.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
-        #                             kp_pos_gain_xy=49.960, kp_pos_gain_z=23.726, kd_pos_gain_xy=13.218, kd_pos_gain_z=6.878,
-        #                             kp_att_gain_xy=775.271, kp_att_gain_z=3.609, kd_att_gain_xy=41.144, kd_att_gain_z=1.903)
-        
-        # Optuna-tuned gains for COM-LQR Cost (environment has further away goals)
-        # agent = DecoupledController(env.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
-        #                             kp_pos_gain_xy=24.172, kp_pos_gain_z=28.362, kd_pos_gain_xy=6.149, kd_pos_gain_z=8.881,
-        #                             kp_att_gain_xy=955.034, kp_att_gain_z=14.370, kd_att_gain_xy=36.101, kd_att_gain_z=8.828)
+        control_params_dict = gc_params_dict[task_name]["controller_params"]
+        gc_vehicle = "Crazyflie" if "Crazyflie" in args_cli.task else "AM"
+        agent = GeometricController(env.num_envs, 0, env.vehicle_mass, env.arm_mass, env.quad_inertia, env.arm_offset, env.orientation_offset, com_pos_w=None, device=device,
+                                        vehicle=gc_vehicle, **control_params_dict)
+
     
     else:
         envs = RslRlVecEnvWrapper(envs) # This calls Reset!!
@@ -416,11 +293,6 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         # obtain the trained policy for inference
         agent = ppo_runner.get_inference_policy(device=envs.unwrapped.device)
 
-        # actor_params =  sum(p.numel() for p in ppo_runner.alg.actor_critic.actor.parameters() if p.requires_grad)
-        # critic_params = sum(p.numel() for p in ppo_runner.alg.actor_critic.critic.parameters() if p.requires_grad)
-        # print(f"Actor params: {actor_params}, Critic params: {critic_params}")
-        # print("Total params: ", actor_params + critic_params)
-        # input()
 
         export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
         export_policy_as_jit(
@@ -431,22 +303,15 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
     if args_cli.baseline:
         obs_dict, info = envs.reset()
         obs = obs_dict["policy"]
-        # print(envs.vehicle_mass)
-
-        # Refresh GC models for mass, inertia and ttw
-        # agent.reset_dr_terms(None, env.vehicle_mass, env.vehicle_inertia, env._thrust_to_weight)
+        
     else:
-        # obs, dict_obs = envs.reset()
+        # Reset is called when the environment is wrapped in RslRlVecEnvWrapper
         obs, dict_obs = envs.get_observations()
         obs_dict = dict_obs['observations']
 
     print("Starting obs: ", obs_dict["full_state"])
 
-    ee_start = obs_dict["full_state"][:, 13:16]
-    goal_start = obs_dict["full_state"][:, 26:26 + 3]
-    # print("starting norm: ", torch.norm(ee_start - goal_start, dim=1))
-    # input("Check and press Enter to continue...")
-    # import code; code.interact(local=locals())
+    
     max_steps = int(env_cfg.episode_length_s * env_cfg.policy_rate_hz)
 
 
@@ -460,13 +325,11 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
     done = False
     done_count = 0
     times = []
-    # input("Press Enter to continue...")
     with torch.no_grad():
         while simulation_app.is_running():
             while steps < max_steps and not done:
                 obs_tensor = obs_dict["policy"]
                 full_states[:, steps, :] = obs_dict["full_state"]
-                # print("Full State: ", obs_dict["full_state"][0, 33:])
 
                 start = time.time()
                 if args_cli.baseline:

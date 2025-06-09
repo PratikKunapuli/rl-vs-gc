@@ -45,7 +45,7 @@ import envs
 import envs.hover
 # from AerialManipulation.envs.hover import hover_env
 
-from controllers.decoupled_controller import DecoupledController
+from controllers.geometric_controller import GeometricController
 
 import optuna
 
@@ -93,18 +93,18 @@ def eval_trial(trial):
 
     if "Traj" in args_cli.task:
         if not use_integral_terms:
-            gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, com_pos_w=None, device=env.device,
+            gc = GeometricController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, com_pos_w=None, device=env.device,
                                     kp_pos_gain_xy=pos_kp_gain_xy, kp_pos_gain_z=pos_kp_gain_z, kd_pos_gain_xy=pos_kd_gain_xy, kd_pos_gain_z=pos_kd_gain_z,
                                     kp_att_gain_xy=ori_kp_gain_xy, kp_att_gain_z=ori_kp_gain_z, kd_att_gain_xy=ori_kd_gain_xy, kd_att_gain_z=ori_kd_gain_z,
                                     tuning_mode=False, feed_forward=use_feed_forward_terms, vehicle=vehicle, skip_precompute=skip_precompute)
         else:
-            gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, com_pos_w=None, device=env.device,
+            gc = GeometricController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, com_pos_w=None, device=env.device,
                                     kp_pos_gain_xy=pos_kp_gain_xy, kp_pos_gain_z=pos_kp_gain_z, kd_pos_gain_xy=pos_kd_gain_xy, kd_pos_gain_z=pos_kd_gain_z,
                                     kp_att_gain_xy=ori_kp_gain_xy, kp_att_gain_z=ori_kp_gain_z, kd_att_gain_xy=ori_kd_gain_xy, kd_att_gain_z=ori_kd_gain_z,
                                     ki_pos_gain_xy=pos_ki_gain_xy, ki_pos_gain_z=pos_ki_gain_z, ki_att_gain_xy=ori_ki_gain_xy, ki_att_gain_z=ori_ki_gain_z,
                                     tuning_mode=False, feed_forward=False, use_integral=True, vehicle=vehicle, skip_precompute=skip_precompute)
     else:
-        gc = DecoupledController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, com_pos_w=None, device=env.device,
+        gc = GeometricController(args_cli.num_envs, 0, vehicle_mass, arm_mass, inertia, arm_offset, ori_offset, print_debug=False, com_pos_w=None, device=env.device,
                                 kp_pos_gain_xy=pos_kp_gain_xy, kp_pos_gain_z=pos_kp_gain_z, kd_pos_gain_xy=pos_kd_gain_xy, kd_pos_gain_z=pos_kd_gain_z,
                                 kp_att_gain_xy=ori_kp_gain_xy, kp_att_gain_z=ori_kp_gain_z, kd_att_gain_xy=ori_kd_gain_xy, kd_att_gain_z=ori_kd_gain_z,
                                 tuning_mode=False, feed_forward=use_feed_forward_terms, vehicle=vehicle, skip_precompute=skip_precompute)
