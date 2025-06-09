@@ -33,22 +33,6 @@ gc_params_dict = {
         },
     },
 
-    # Old Parameters
-    # "Isaac-AerialManipulator-0DOF-TrajectoryTracking-v0-Hover-FF" : {
-    #     "log_dir": "./baseline_0dof_ee_reward_tune_with_ff_hover/",
-    #     "controller_params": {
-    #         "kp_pos_gain_xy": 17.601,
-    #         "kp_pos_gain_z": 28.995,
-    #         "kd_pos_gain_xy": 5.576,
-    #         "kd_pos_gain_z": 12.412,
-    #         "kp_att_gain_xy": 966.060,
-    #         "kp_att_gain_z": 19.171,
-    #         "kd_att_gain_xy": 33.214,
-    #         "kd_att_gain_z": 9.086,
-    #         "feed_forward": True,
-    #     },
-    # },
-
     "Isaac-AerialManipulator-0DOF-TrajectoryTracking-v0-Hover-FF" : {
         "log_dir": "./baseline_0dof_ee_reward_tune_with_ff_hover/",
         "controller_params": {
@@ -64,21 +48,6 @@ gc_params_dict = {
         },
     },
 
-    # Old parameters
-    # "Isaac-AerialManipulator-0DOF-TrajectoryTracking-v0" : {
-    #     "log_dir": "./baseline_0dof_ee_reward_tune_with_ff/",
-    #     "controller_params": {
-    #         "kp_pos_gain_xy": 43.507,
-    #         "kp_pos_gain_z": 24.167,
-    #         "kd_pos_gain_xy": 9.129,
-    #         "kd_pos_gain_z": 6.081,
-    #         "kp_att_gain_xy": 998.777,
-    #         "kp_att_gain_z": 18.230,
-    #         "kd_att_gain_xy": 47.821,
-    #         "kd_att_gain_z": 8.818,
-    #         "feed_forward": True,
-    #     },
-    # },
 
     "Isaac-AerialManipulator-0DOF-TrajectoryTracking-v0" : {
         "log_dir": "./baseline_0dof_ee_reward_tune_with_ff/",
@@ -210,35 +179,6 @@ gc_params_dict = {
         },
     },
 
-    "Isaac-AerialManipulator-0DOF-LongArm-TrajectoryTracking-v0" : {
-        "log_dir": "./baseline_0dof_long_arm_com_middle_tuned/",
-        "controller_params": {
-            "kp_pos_gain_xy": 16.954,
-            "kp_pos_gain_z": 35.462,
-            "kd_pos_gain_xy": 5.877,
-            "kd_pos_gain_z": 13.473,
-            "kp_att_gain_xy": 982.229,
-            "kp_att_gain_z": 19.315,
-            "kd_att_gain_xy": 38.180,
-            "kd_att_gain_z": 8.487,
-            "feed_forward": True,
-        },
-    },
-
-    "Isaac-Crazyflie-0DOF-Hover-v0" : {
-        "log_dir": "./baseline_cf_0dof/",
-        "controller_params": {
-            "kp_pos_gain_xy": 6.5,
-            "kp_pos_gain_z": 15.0,
-            "kd_pos_gain_xy": 4.0,
-            "kd_pos_gain_z": 9.0,
-            "kp_att_gain_xy": 544.0,
-            "kp_att_gain_z": 544.0,
-            "kd_att_gain_xy": 46.64,
-            "kd_att_gain_z": 46.64,
-        },
-    },
-
 
     "Isaac-AerialManipulator-0DOF-BallCatch-v0": {
         "log_dir": "./baseline_0dof_ee_reward_tune/",
@@ -251,6 +191,7 @@ gc_params_dict = {
             "kp_att_gain_z": 18.230,
             "kd_att_gain_xy": 47.821,
             "kd_att_gain_z": 8.818,
+            "feed_forward": False,
         },
     },
 
@@ -325,25 +266,6 @@ gc_params_dict = {
         "controller_params": {
             "feed_forward": False,
             "control_mode": "CTBR",
-            # Original
-            # "kp_pos_gain_xy": 9.195,
-            # "kp_pos_gain_z": 27.006,
-            # "kd_pos_gain_xy": 3.780,
-            # "kd_pos_gain_z": 10.797,
-            # "kp_att_gain_xy": 977.197,
-            # "kp_att_gain_z": 18.357,
-            # "kd_att_gain_xy": 22.430,
-            # "kd_att_gain_z": 0.014,
-            # Tau=0.01
-            # "kp_pos_gain_xy": 13.154,
-            # "kp_pos_gain_z": 23.166,
-            # "kd_pos_gain_xy": 5.392,
-            # "kd_pos_gain_z": 6.801,
-            # "kp_att_gain_xy": 870.353,
-            # "kp_att_gain_z": 10.002,
-            # "kd_att_gain_xy": 37.353,
-            # "kd_att_gain_z": 8.887,
-            # Tau=0.017
             "kp_pos_gain_xy": 9.720,
             "kp_pos_gain_z": 38.171,
             "kd_pos_gain_xy": 5.373,
