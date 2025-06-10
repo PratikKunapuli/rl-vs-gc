@@ -54,12 +54,13 @@ cd IsaacLab
 ## rl-vs-gc Installation
 Clone the repo
 ```bash
-git clone git@github.com:PratikKunapuli/AerialManipulation.git
+git clone git@github.com:PratikKunapuli/rl-vs-gc.git
 ```
 
 Install locally
 ```bash
-cd AerialManipulation
+cd rl-vs-gc
+conda activate isaaclab
 pip install -e .
 ```
 
