@@ -45,6 +45,60 @@
             font-size: 1.2em;
             color: gray;
         }
+        .subtitle strong {
+          font-size: 1.1em;
+          color: #363636;
+        }
+
+        .subtitle::after {
+          content: '';
+          display: block;
+          width: 50px;
+          height: 3px;
+          margin: 10px auto 0;
+        }
+        
+        /* 增大section重要描述的字体 */
+        h2.subtitle[style*="background-color"] {
+          font-size: 1.35rem;
+          line-height: 1.5;
+        }
+
+        .publication-links .button {
+          transition: all 0.3s ease;
+          border: none;
+          background: linear-gradient(135deg, #2c3e50, #4d7085);
+          color: white;
+          font-weight: 600;
+          padding: 0.7rem 1.5rem;
+          border-radius: 50px;
+          box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+          margin: 0 0.5rem;
+          animation: buttonsFadeIn 1.2s ease-out;
+          animation-delay: 0.9s;
+          animation-fill-mode: both;
+        }
+        
+        @keyframes buttonsFadeIn {
+          0% {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          100% {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        
+        .publication-links .button:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 7px 15px rgba(0,0,0,0.2);
+          background: linear-gradient(135deg, #3a7bd5, #4d7085);
+        }
+        
+        .publication-links .button .icon {
+          margin-right: 0.5rem;
+        }
     </style>
     <link href="https://fonts.googleapis.com/css?family=Google+Sans|Noto+Sans|Castoro"
     rel="stylesheet">
@@ -182,17 +236,216 @@
       <div class="container is-max-widescreen">
         <!-- Abstract. -->
         <div class="columns is-centered has-text-centered">
-          <div class="column">
-            <h2 class="title is-3">Coming soon!</h2>
+          <div class="column is-four-fifths">
+            <h2 class="title is-3">Abstract</h2>
+            <div class="content has-text-justified" style="background-color: #f5f5f5; padding: 2rem 1.5rem; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); max-width: 100%; margin-left: auto; margin-right: auto;">
+              <p>
+                Learning-based control approaches like reinforcement learning (RL) have recently produced a slew of impressive results for tasks like quadrotor trajectory tracking and drone racing. Naturally, it is common to demonstrate the advantages of these new controllers against established methods like analytical controllers. We observe, however, that reliably comparing the performance of such very different classes of controllers is more complicated than might appear at first sight. As a case study, we take up the problem of agile tracking of an end-effector for a quadrotor with a fixed arm. We develop a set of best practices for synthesizing the best-in-class RL and geometric controllers (GC) for benchmarking. In the process, we resolve widespread RL-favoring biases in prior studies that provide asymmetric access to: (1) the task definition, in the form of an objective function, (2) representative datasets, for parameter optimization, and (3) “feedforward” information, describing the desired future trajectory. The resulting findings are the following: our improvements to the experimental protocol for comparing learned and classical controllers are critical, and each of the above asymmetries can yield misleading conclusions. Prior works have claimed that RL outperforms GC, but we find the gaps between the two controller classes are much smaller than previously published when accounting for symmetric comparisons. Geometric control achieves lower steady-state error than RL, while RL has better transient performance, resulting in GC performing better in relatively slow or less agile tasks, but RL performing better when greater agility is required. Finally, we open-source implementations of geometric and RL controllers for these aerial vehicles, implementing best practices for future development. 
+              </p>
+            </div>
           </div>
         </div>
       </div>
     </section>
 
+    <section class="section">
+      <div class="container is-max-desktop">
+        <h3 class="title is-3 has-text-centered">Prior Comparisons in the Literature</h3>
+        <h2 class="subtitle has-text-centered" style="margin-bottom: 0rem; margin-top: 0rem; max-width: 100%; margin-left: auto; margin-right: auto;">
+          We performed a partial literature review of prior comparisons between RL and geometric controllers for quadrotor trajectory tracking. The table below summarizes the components of the RL and geometric controllers used in each paper, as well as the asymmetries in task, data, and feedforward information.
+        </h2>
+        <div class="columns is-centered">
+          <div class="column is-full-width">
+            <div class="has-text-centered">
+              <div class="content">
+                <img src="./static/images/lit_review.png" alt="Partial Literature Review" style="max-width: 100%; margin: 0 auto; border-radius: 8px;">
+              </div>
+            </div>
+            <h2 class="subtitle has-text-centered">
+              $\checkmark$ represents a controller had this component, $\sim$ represents a suboptimal implementation, and $\unicode{10007}$ represents a method that did not have this component. Asymmetries occur when comparing across model classes whose implementation was granted unequal access to task, data, or feedforward information.
+            </h2>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container is-max-desktop">
+        <h3 class="title is-3 has-text-centered">Correcting Asymmetries</h3>
+        <h2 class="subtitle has-text-centered" style="margin-bottom: 0rem; margin-top: 0rem; max-width: 100%; margin-left: auto; margin-right: auto;">
+          We correct for asymmetries in task, data, and feedforward information by ensuring that both RL and geometric controllers have equal access to these components during evaluation. We ensure that controllers are <b>optimized on a task objective</b>, given <b>fair access to the task-aligned data</b> in simulation, and have equal access to <b>feedforward information</b> about the desired trajectory.
+        </h2>
+        <div class="columns is-centered">
+          <div class="column is-full-width">
+            <div class="has-text-centered">
+              <div class="content">
+                <img src="./static/images/asymmetries.png" alt="Asymmetries" style="max-width: 100%; margin: 0 auto; border-radius: 8px;">
+              </div>
+            </div>
+            <h2 class="subtitle has-text-centered">
+              We show that any one of the asymmetries can lead to misleading conclusions about the performance of RL and geometric controllers. Applying our corrective protocols improves the performance of both controllers, and leads to a more accurate comparison of their performance.
+            </h2>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container is-max-desktop">
+        <h3 class="title is-3 has-text-centered">Best-in-Class Comparison</h3>
+        <h2 class="subtitle has-text-centered" style="margin-bottom: 0rem; margin-top: 0rem; max-width: 100%; margin-left: auto; margin-right: auto;">
+          Having corrected for asymmetries, we compare the performance of the best-in-class RL and geometric controllers. We train and evaluate the GC and RL conrtollers for the task of trajectory tracking for both a quadrotor and an aerial manipulator with a fixed-arm end-effector.
+        </h2>
+        <div class="columns is-centered">
+          <!-- Quadrotor -->
+          <div class="column">
+            <div class="content">
+              <h2 class="title is-3">Quadrotor</h2>
+              <h2 class="subtitle has-text-centered" style="margin-bottom: 0rem; margin-top: 0rem; max-width: 100%; margin-left: auto; margin-right: auto;">
+                GC
+              </h2>
+              <video id="quad_traj_track_gc" autoplay muted loop playsinline height="100%">
+                <source src="./static/videos/quad_traj_track_gc.mp4"
+                        type="video/mp4">
+              </video>
+              <h2 class="subtitle has-text-centered" style="margin-bottom: 0rem; margin-top: 0rem; max-width: 100%; margin-left: auto; margin-right: auto;">
+                RL
+              </h2>
+              <video id="quad_traj_track_rl" autoplay muted loop playsinline height="100%">
+                <source src="./static/videos/quad_traj_track_rl.mp4"
+                        type="video/mp4">
+              </video>
+            </div>
+          </div>
+          <!--/ Quadrotor -->
+
+          <!-- Aerial Manipulator. -->
+          <div class="column">
+            <h2 class="title is-3">Aerial Manipulator</h2>
+            <div class="columns is-centered">
+              <div class="column content">
+                <h2 class="subtitle has-text-centered" style="margin-bottom: 0rem; margin-top: 0rem; max-width: 100%; margin-left: auto; margin-right: auto;">
+                GC
+                </h2>
+                <video id="am_traj_track_gc" autoplay muted loop playsinline height="100%">
+                  <source src="./static/videos/am_traj_track_gc.mp4"
+                          type="video/mp4">
+                </video>
+                <h2 class="subtitle has-text-centered" style="margin-bottom: 0rem; margin-top: 0rem; max-width: 100%; margin-left: auto; margin-right: auto;">
+                RL
+                </h2>
+                <video id="am_traj_track_rl" autoplay muted loop playsinline height="100%">
+                  <source src="./static/videos/am_traj_track_rl.mp4"
+                          type="video/mp4">
+                </video>
+              </div>
+
+            </div>
+          </div>
+        </div> <!--/ Aerial Manipulator -->
+        <h2 class="subtitle has-text-centered" style="margin-bottom: 0rem; margin-top: 0rem; max-width: 100%; margin-left: auto; margin-right: auto;">
+         Performance between the two controller classes is much more similar than previously published. 
+        </h2>
+        <div class="has-text-centered">
+          <div class="content">
+            <img src="./static/images/trajectory_tracking_table.png" alt="trajectory_tracking_table" style="max-width: 100%; margin: 0 auto; border-radius: 8px;">
+          </div>
+        </div>
+        <h2 class="subtitle has-text-centered" style="margin-bottom: 0rem; margin-top: 0rem; max-width: 100%; margin-left: auto; margin-right: auto;">
+         There is no clear winner between RL and GC.
+        </h2>
+      </div>
+    </section>
+
+     <section class="section">
+      <div class="container is-max-desktop">
+        <h3 class="title is-3 has-text-centered">Trajectory Tracking</h3>
+        <h2 class="subtitle has-text-centered" style="margin-bottom: 0rem; margin-top: 0rem; max-width: 100%; margin-left: auto; margin-right: auto;">
+        Digging deeper into the performance in trajectory tracking of the two controllers, we find interesting insights into where each controller excels.
+        </h2>
+        <div class="columns is-centered">
+          <!-- Left -->
+          <div class="column">
+            <div class="content">
+              <img src="./static/images/trajectory_tracking_results.png" alt="trajectory_tracking_table" style="max-width: 100%; margin: 0 auto; border-radius: 8px;">
+            </div>
+          </div>
+
+          <div class="column">
+            <div class="content">
+              <img src="./static/images/am_example_motion.png" alt="trajectory_tracking_table" style="max-width: 100%; margin: 0 auto; border-radius: 8px;">
+            </div>
+          </div>
+        </div>
+        <h2 class="subtitle has-text-centered" style="margin-bottom: 0rem; margin-top: 0rem; max-width: 100%; margin-left: auto; margin-right: auto;">
+          We find that RL performs better in transient performance, while GC performs better in steady-state error. The GC controller is able to converge to perfect tracking given enough time, but the RL controller converges to lower error sooner for end-effector tracking. 
+        </h2>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container is-max-desktop">
+        <h3 class="title is-3 has-text-centered">Agile Behaviors</h3>
+        <h2 class="subtitle has-text-centered" style="margin-bottom: 0rem; margin-top: 0rem; max-width: 100%; margin-left: auto; margin-right: auto;">
+          We evaluate the controllers on the task of ball catching, which requires agile behaviors. This agility is motivated by the time limitation of the task, as well as the precision needed for the end-effector to reach the goal catch location. 
+        </h2>
+        <div class="columns is-centered">
+          <!-- Left -->
+          <div class="column">
+            <div class="content">
+              <img src="./static/images/am_hover_results.png" alt="ball_catch_results" style="max-width: 100%; margin: 0 auto; border-radius: 8px;">
+              <div class="content">
+                <img src="./static/images/ball_catch_table.png" alt="ball_catch_table" style="max-width: 60%; margin: 0 auto; border-radius: 8px;">
+              </div>
+            </div>
+          </div>
+
+           <!-- Left -->
+          <div class="column">
+            <div class="content">
+              <h2 class="title is-3">GC</h2>
+              <video id="ball_catch_gc" autoplay muted loop playsinline height="100%">
+                <source src="./static/videos/GC_ball_catching.mp4"
+                        type="video/mp4">
+              </video>
+              <h2 class="title is-3">RL</h2>
+              <video id="ball_catch_rl" autoplay muted loop playsinline height="100%">
+                <source src="./static/videos/RL_ball_catching.mp4"
+                        type="video/mp4">
+              </video>
+            </div>
+          </div>
+      </div>
+      <h2 class="subtitle has-text-centered" style="margin-bottom: 0rem; margin-top: 0rem; max-width: 100%; margin-left: auto; margin-right: auto;">
+        We find that RL performs better in this ball catching task, owing to the ability to get the end-effector close to the catch location quickly, while GC is slightly slower but converges to the catch location exactly. 
+      </h2>
+      </div>
+    </section>
     
-      
-    
-    
+    <section class="section">
+      <div class="container is-max-desktop">
+        <h3 class="title is-3 has-text-centered">Sim2Real Considerations</h3>
+        <h2 class="subtitle has-text-centered" style="margin-bottom: 0rem; margin-top: 0rem; max-width: 100%; margin-left: auto; margin-right: auto;">
+          We also consider common sim2real considerations including the use of domain randomization (DR) and realistic motor dynamics in the simulation, and find that the results hold.
+        </h2>
+        <div class="columns is-centered">
+          <div class="column">
+            <div class="content">
+              <h2 class="title is-3">DR</h2>
+              <img src="./static/images/domain_randomization_table.png" alt="domain_randomization" style="max-width: 100%; margin: 0 auto; border-radius: 8px;">
+            </div>
+          </div>
+
+          <div class="column">
+            <div class="content">
+              <h2 class="title is-3">Motor Dynamics</h2>
+              <img src="./static/images/dynamics_table.png" alt="realistic_dynamics" style="max-width: 100%; margin: 0 auto; border-radius: 8px;">
+            </div>
+          </div>
+        </div>
+        <h2 class="subtitle has-text-centered" style="margin-bottom: 0rem; margin-top: 0rem; max-width: 100%; margin-left: auto; margin-right: auto;">
+          GC is more robust to domain randomization due to the model-based nature of the controller. RL and GC both perform similarly under realistic motor dynamics.
+      </div>
+    </section>
+
     <footer class="footer">
     <div class="container">
         <div class="content has-text-centered">
@@ -213,8 +466,7 @@
                 Commons Attribution-ShareAlike 4.0 International License</a>.
               </p>
               <p>
-                Template taken from <a
-                  href="https://github.com/nerfies/nerfies.github.io">here</a>. 
+                Template taken from <a href="https://github.com/nerfies/nerfies.github.io">here</a>, and modeled after <a href="https://zdchan.github.io/Robust_DexGrasp/">this project</a>. 
               </p>
             </div>
         </div>
